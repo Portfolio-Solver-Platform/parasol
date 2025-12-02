@@ -1,0 +1,17 @@
+{
+  "name" : "K Means",
+  "version": "1.0",
+  "id": "org.psp.k_means",
+  "executable": "${EXECUTABLE_PATH}",
+  "tags": ["portfolio"],
+  "stdFlags": ["-p", "-f"],
+  "extraFlags": [
+    ["--output-mode", "Output solutions in DZN format", "string", "dzn"],
+    ["--output-objective", "Output the objective value as _objective for optimisation problems", "bool", ""]
+  ],
+  "inputType": "MZN",
+  "supportsMzn": true,
+  "supportsFzn": false,
+  "supportsNL": false,
+  "needsMznExecutable": true,
+}
