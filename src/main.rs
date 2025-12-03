@@ -1,25 +1,9 @@
-use clap::{Parser, ValueEnum};
-
-#[derive(Debug, Clone, ValueEnum)]
-enum OutputMode {
-    Dzn,
-}
-
-#[derive(Parser, Debug)]
-#[command(author, version, about)]
-struct Args {
-    #[arg(long, value_enum)]
-    output_mode: Option<OutputMode>,
-
-    #[arg(long)]
-    output_objective: bool,
-
-    #[arg(short = 'f')]
-    ignore_search: bool,
-
-    #[arg(short = 'p')]
-    threads: Option<usize>,
-}
+mod input;
+use clap::Parser;
+use input::{Args, OutputMode};
+mod minizinc_runner;
+use minizinc_runner::run;
+mod solver_output;
 
 fn main() {
     let args = Args::parse();
@@ -38,8 +22,14 @@ fn main() {
     }
 
     if let Some(n) = args.threads {
-        println!("Running with {} threads", n);
+        println!("Running with {n} threads");
     } else {
         println!("Running with default threads");
     }
+
+    run(
+        // "/Users/sofus/speciale/psp/problems/nfc/nfc.mzn",
+        // "/Users/sofus/speciale/psp/problems/nfc/12_2_10.dzn",
+        "coinbc", &args,
+    );
 }

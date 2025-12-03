@@ -37,6 +37,7 @@
               pkgs.rustup
               pkgs.cargo-audit
               pkgs.minizinc
+              pkgs.git
             ];
           };
         }
