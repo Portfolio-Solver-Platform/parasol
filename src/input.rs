@@ -5,7 +5,7 @@ pub enum OutputMode {
     Dzn,
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(author, version, about)]
 pub struct Args {
     pub model: PathBuf,
@@ -22,5 +22,5 @@ pub struct Args {
     pub ignore_search: bool,
 
     #[arg(short = 'p')]
-    pub threads: Option<usize>,
+    pub cores: Option<usize>,
 }

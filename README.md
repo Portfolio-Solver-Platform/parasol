@@ -1,7 +1,7 @@
 # Portfolio Solver Framework
 
 ## Setup
-
+To make your own portofolio solver available to MiniZinc do the following:
 Take the `solver.msc.template` and copy it to one of these paths:
 - `/usr/share/minizinc/solvers` (on Linux only)
 - `$HOME/.minizinc/solvers`
