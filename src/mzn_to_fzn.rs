@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
 #[derive(Debug)]
@@ -14,25 +14,25 @@ impl From<tokio::io::Error> for ConversionError {
 }
 
 pub async fn convert_mzn_to_fzn(
-    model: PathBuf,
-    data: Option<PathBuf>,
+    model: &Path,
+    data: Option<&Path>,
     solver_name: &str,
 ) -> Result<PathBuf, ConversionError> {
-    let fzn_file_path = get_new_model_file_name(&model, solver_name);
+    let fzn_file_path = get_new_model_file_name(model, solver_name);
     run_mzn_to_fzn_cmd(&model, data, solver_name, &fzn_file_path).await?;
     Ok(fzn_file_path)
 }
 
-fn get_new_model_file_name(model: &PathBuf, solver_name: &str) -> PathBuf {
+fn get_new_model_file_name(model: &Path, solver_name: &str) -> PathBuf {
     let new_file_name = format!("_portfolio-model-{solver_name}.fzn");
     model.with_file_name(new_file_name)
 }
 
 async fn run_mzn_to_fzn_cmd(
-    model: &PathBuf,
-    data: Option<PathBuf>,
+    model: &Path,
+    data: Option<&Path>,
     solver_name: &str,
-    fzn_result_path: &PathBuf,
+    fzn_result_path: &Path,
 ) -> Result<(), ConversionError> {
     let mut cmd = get_mzn_to_fzn_cmd(model, data, solver_name, fzn_result_path);
     let mut child = cmd.spawn()?;
@@ -44,10 +44,10 @@ async fn run_mzn_to_fzn_cmd(
 }
 
 fn get_mzn_to_fzn_cmd(
-    model: &PathBuf,
-    data: Option<PathBuf>,
+    model: &Path,
+    data: Option<&Path>,
     solver_name: &str,
-    fzn_result_path: &PathBuf,
+    fzn_result_path: &Path,
 ) -> Command {
     let mut cmd = Command::new("minizinc");
 

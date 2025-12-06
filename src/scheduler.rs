@@ -1,17 +1,28 @@
 use crate::input::Args;
+use crate::model_parser;
+use crate::model_parser::{ObjectiveType, parse_objective_type};
+use crate::solver_output::Output;
+use crate::solver_output::OutputParseError;
+use crate::solver_output::Solution;
+use crate::solver_output::Status;
+// use futures::channel::mpsc::UnboundedReceiver;
 use futures::future::join_all;
 use kill_tree;
 use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
+use regex::Regex;
 use std::collections::{HashMap, HashSet};
+use std::fs;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
+
 pub struct ScheduleElement {
     pub solver: String,
     pub id: usize,
@@ -31,6 +42,7 @@ pub enum Error {
     KillTree(kill_tree::Error),
     InvalidSolver(String),
     Io(std::io::Error),
+    OutputParseError(OutputParseError),
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -46,13 +58,22 @@ impl From<kill_tree::Error> for Error {
     }
 }
 
-#[derive(Debug)]
-struct Msg {}
-
-impl Msg {
-    fn new() -> Self {
-        Msg {}
+impl From<OutputParseError> for Error {
+    fn from(value: OutputParseError) -> Self {
+        Error::OutputParseError(value)
     }
+}
+
+// impl From<SolverParseError> for Error {
+//     fn from(value: SolverParseError) -> Self {
+//         Error::InvalidSolver(format!("Failed to parse solver output: {:?}", value))
+//     }
+// }
+
+#[derive(Debug)]
+enum Msg {
+    Solution(Solution),
+    Status(Status),
 }
 
 pub struct Scheduler {
@@ -64,24 +85,13 @@ pub struct Scheduler {
 
 impl Scheduler {
     pub fn new(args: Args) -> Self {
+        let objective_type =
+            parse_objective_type(&args.model).expect("Failed to parse objective type from model");
         let (tx, rx) = mpsc::unbounded_channel::<Msg>();
         let running_pids = cleanup_handler();
         let pids_for_background = running_pids.clone();
 
-        tokio::spawn(async move {
-            let mut receiver = rx;
-
-            while let Some(msg) = receiver.recv().await {
-                println!("{:?}", msg);
-            }
-
-            let pids = pids_for_background.lock().await;
-            for pid in pids.iter() {
-                // kill_tree is async, await it
-                let _ = kill_tree::tokio::kill_tree(*pid).await;
-            }
-            std::process::exit(0);
-        });
+        tokio::spawn(async move { Self::receiver(rx, pids_for_background, objective_type).await });
 
         Self {
             tx,
@@ -89,6 +99,56 @@ impl Scheduler {
             solver_to_pid: Arc::new(Mutex::new(HashMap::new())),
             args,
         }
+    }
+
+    async fn receiver(
+        rx: mpsc::UnboundedReceiver<Msg>,
+        pids_for_background: Arc<Mutex<HashSet<u32>>>,
+        objective_type: ObjectiveType,
+    ) {
+        let mut receiver = rx;
+        let mut objective: Option<i64> = None;
+        let is_better = match objective_type {
+            ObjectiveType::Maximize => |objective: Option<i64>, new_result: i64| match objective {
+                Some(val) => val < new_result,
+                None => true,
+            },
+            ObjectiveType::Minimize => |objective: Option<i64>, new_result: i64| match objective {
+                Some(val) => val > new_result,
+                None => true,
+            },
+            ObjectiveType::Satisfy => |_: Option<i64>, _: i64| true,
+        };
+        // let s = {
+        //     let op = match objective_type {
+        //         ObjectiveType::Maximize => <,
+        //         ObjectiveType::Minimize => >,
+        //         ObjectiveType::Satisfy => =,
+        // };
+        // }
+        while let Some(output) = receiver.recv().await {
+            match output {
+                Msg::Solution(s) => {
+                    if is_better(objective, s.objective) {
+                        objective = Some(s.objective);
+                        println!("{}", s.solution);
+                    }
+                }
+                Msg::Status(s) => {
+                    println!("{:?}", s);
+                    if let Status::OptimalSolution = s {
+                        break;
+                    }
+                }
+            }
+        }
+
+        let pids = pids_for_background.lock().await;
+        for pid in pids.iter() {
+            // kill_tree is async, await it
+            let _ = kill_tree::tokio::kill_tree(*pid).await;
+        }
+        std::process::exit(0);
     }
 
     async fn start_solver(&mut self, elem: ScheduleElement) -> std::io::Result<()> {
@@ -137,7 +197,7 @@ impl Scheduler {
 
         let tx_clone = self.tx.clone();
         tokio::spawn(async move {
-            Self::handle_solver_stdout(stdout, tx_clone).await;
+            Self::handle_solver_stdout(stdout, tx_clone).await.unwrap();
         });
 
         tokio::spawn(async move { Self::handle_solver_stderr(stderr).await });
@@ -147,6 +207,7 @@ impl Scheduler {
 
         tokio::spawn(async move {
             let _ = child.wait().await;
+
             {
                 let mut pids = running_pids_clone.lock().await;
                 pids.remove(&pid);
@@ -163,18 +224,24 @@ impl Scheduler {
     async fn handle_solver_stdout(
         stdout: tokio::process::ChildStdout,
         tx: tokio::sync::mpsc::UnboundedSender<Msg>,
-    ) {
+    ) -> std::result::Result<(), Error> {
         let reader = BufReader::new(stdout);
         let mut lines = reader.lines();
 
-        while let Ok(Some(_)) = lines.next_line().await {
-            let msg = Msg::new();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let output = Output::parse(&line)?;
+            let msg = match output {
+                Output::Ignore => continue,
+                Output::Solution(solution) => Msg::Solution(solution),
+                Output::Status(status) => Msg::Status(status),
+            };
 
             if let Err(e) = tx.send(msg) {
                 eprintln!("Could not send message, receiver dropped: {}", e);
                 break;
             }
         }
+        Ok(())
     }
 
     async fn handle_solver_stderr(stderr: tokio::process::ChildStderr) {

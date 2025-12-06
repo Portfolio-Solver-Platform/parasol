@@ -17,9 +17,14 @@ impl From<tokio::io::Error> for Error {
 
 pub async fn fzn_to_features(fzn_model: &PathBuf) -> Result<Features, Error> {
     let output = run_fzn_to_feat_cmd(fzn_model).await?;
+    println!("{output}");
     output
+        .replace("\n", "")
         .split(",")
-        .map(|s| s.parse::<f32>())
+        .map(|s| {
+            println!("{s}");
+            s.parse::<f32>()
+        })
         .collect::<Result<Features, _>>()
         .map_err(|e| Error::FeatureParseFailed(output, e))
 }
