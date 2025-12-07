@@ -46,16 +46,16 @@ async fn apply_schedule(
 
 fn static_schedule(cores: usize) -> Schedule {
     vec![
-        ScheduleElement::new("picat".to_string(), cores / 10, 0),
-        ScheduleElement::new("gecode".to_string(), cores / 10, 0),
-        ScheduleElement::new("cp-sat".to_string(), cores / 10, 0),
-        ScheduleElement::new("chuffed".to_string(), cores / 10, 0),
-        ScheduleElement::new("coinbc".to_string(), cores / 10, 0),
-        ScheduleElement::new("yuck".to_string(), cores / 10, 0),
-        ScheduleElement::new("xpress".to_string(), cores / 10, 0),
-        ScheduleElement::new("scip".to_string(), cores / 10, 0),
-        ScheduleElement::new("highs".to_string(), cores / 10, 0),
-        ScheduleElement::new("gurobi".to_string(), cores / 10, 0),
-        // ScheduleElement::new("coinbc".to_string(), cores / 2, 1),
+        ScheduleElement::new(0, "picat".to_string(), cores / 10),
+        ScheduleElement::new(1, "gecode".to_string(), cores / 10),
+        ScheduleElement::new(2, "cp-sat".to_string(), cores / 10),
+        ScheduleElement::new(3, "chuffed".to_string(), cores / 10),
+        ScheduleElement::new(4, "coinbc".to_string(), cores / 10),
+        ScheduleElement::new(5, "yuck".to_string(), cores / 10),
+        // ScheduleElement::new(6, "xpress".to_string(), cores / 10),
+        // ScheduleElement::new(7, "scip".to_string(), cores / 10),
+        // ScheduleElement::new(8, "highs".to_string(), cores / 10),
+        // ScheduleElement::new(9, "gurobi".to_string(), cores / 10),
+        // ScheduleElement::new(10, "coinbc".to_string(), cores / 2),
     ]
 }

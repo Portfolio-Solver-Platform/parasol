@@ -29,6 +29,17 @@ pub enum ObjectiveType {
     Maximize,
 }
 
+impl ObjectiveType {
+    pub fn is_better(&self, old: Option<i64>, new: i64) -> bool {
+        match (self, old) {
+            (_, None) => true,
+            (Self::Maximize, Some(val)) => val < new,
+            (Self::Minimize, Some(val)) => val > new,
+            (Self::Satisfy, _) => true,
+        }
+    }
+}
+
 pub fn parse_objective_type(model_path: &Path) -> Result<ObjectiveType, ModelParseError> {
     let content = fs::read_to_string(model_path)?;
     let re = Regex::new(r"solve([\S\s]*?;)")?;

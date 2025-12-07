@@ -1,21 +1,13 @@
 use crate::input::Args;
-use crate::model_parser;
 use crate::model_parser::{ObjectiveType, parse_objective_type};
-use crate::solver_output::Output;
-use crate::solver_output::OutputParseError;
-use crate::solver_output::Solution;
-use crate::solver_output::Status;
-// use futures::channel::mpsc::UnboundedReceiver;
+use crate::solver_output::{Output, OutputParseError, Solution, Status};
 use futures::future::join_all;
-use kill_tree;
 use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
-use regex::Regex;
-use std::collections::{HashMap, HashSet};
-use std::fs;
+use std::collections::HashMap;
+use std::io::ErrorKind;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
-use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -24,14 +16,14 @@ use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 
 pub struct ScheduleElement {
-    pub solver: String,
     pub id: usize,
+    pub solver: String,
     pub cores: usize,
 }
 
 impl ScheduleElement {
-    pub fn new(solver: String, cores: usize, id: usize) -> Self {
-        Self { solver, id, cores }
+    pub fn new(id: usize, solver: String, cores: usize) -> Self {
+        Self { id, solver, cores }
     }
 }
 
@@ -64,11 +56,25 @@ impl From<OutputParseError> for Error {
     }
 }
 
-// impl From<SolverParseError> for Error {
-//     fn from(value: SolverParseError) -> Self {
-//         Error::InvalidSolver(format!("Failed to parse solver output: {:?}", value))
-//     }
-// }
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::KillTree(e) => write!(f, "failed to kill process tree: {}", e),
+            Error::InvalidSolver(msg) => write!(f, "invalid solver: {}", msg),
+            Error::Io(e) => write!(f, "IO error: {}", e),
+            Error::OutputParseError(e) => write!(f, "output parse error: {:?}", e),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::Io(e) => Some(e),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug)]
 enum Msg {
@@ -78,7 +84,6 @@ enum Msg {
 
 pub struct Scheduler {
     tx: mpsc::UnboundedSender<Msg>,
-    running_pids: Arc<Mutex<HashSet<u32>>>,
     solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>,
     args: Args,
 }
@@ -88,66 +93,47 @@ impl Scheduler {
         let objective_type =
             parse_objective_type(&args.model).expect("Failed to parse objective type from model");
         let (tx, rx) = mpsc::unbounded_channel::<Msg>();
-        let running_pids = cleanup_handler();
-        let pids_for_background = running_pids.clone();
+        let solver_to_pid = Arc::new(Mutex::new(HashMap::new()));
 
-        tokio::spawn(async move { Self::receiver(rx, pids_for_background, objective_type).await });
+        cleanup_handler(solver_to_pid.clone());
+        let solver_to_pid_clone = solver_to_pid.clone();
+
+        tokio::spawn(async move { Self::receiver(rx, solver_to_pid_clone, objective_type).await });
 
         Self {
             tx,
-            running_pids,
-            solver_to_pid: Arc::new(Mutex::new(HashMap::new())),
+            solver_to_pid,
             args,
         }
     }
 
     async fn receiver(
-        rx: mpsc::UnboundedReceiver<Msg>,
-        pids_for_background: Arc<Mutex<HashSet<u32>>>,
+        mut rx: mpsc::UnboundedReceiver<Msg>,
+        solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>,
         objective_type: ObjectiveType,
     ) {
-        let mut receiver = rx;
         let mut objective: Option<i64> = None;
-        let is_better = match objective_type {
-            ObjectiveType::Maximize => |objective: Option<i64>, new_result: i64| match objective {
-                Some(val) => val < new_result,
-                None => true,
-            },
-            ObjectiveType::Minimize => |objective: Option<i64>, new_result: i64| match objective {
-                Some(val) => val > new_result,
-                None => true,
-            },
-            ObjectiveType::Satisfy => |_: Option<i64>, _: i64| true,
-        };
-        // let s = {
-        //     let op = match objective_type {
-        //         ObjectiveType::Maximize => <,
-        //         ObjectiveType::Minimize => >,
-        //         ObjectiveType::Satisfy => =,
-        // };
-        // }
-        while let Some(output) = receiver.recv().await {
+
+        while let Some(output) = rx.recv().await {
             match output {
                 Msg::Solution(s) => {
-                    if is_better(objective, s.objective) {
+                    if objective_type.is_better(objective, s.objective) {
                         objective = Some(s.objective);
                         println!("{}", s.solution);
                     }
                 }
                 Msg::Status(s) => {
                     println!("{:?}", s);
-                    if let Status::OptimalSolution = s {
+                    if matches!(s, Status::OptimalSolution) {
                         break;
                     }
                 }
             }
         }
 
-        let pids = pids_for_background.lock().await;
-        for pid in pids.iter() {
-            // kill_tree is async, await it
-            let _ = kill_tree::tokio::kill_tree(*pid).await;
-        }
+        Self::_stop_all_solvers(solver_to_pid.clone())
+            .await
+            .expect("could not kill all solvers");
         std::process::exit(0);
     }
 
@@ -163,16 +149,17 @@ impl Scheduler {
         cmd.arg("-i");
         cmd.arg("--json-stream");
         cmd.arg("--output-mode").arg("json");
-        cmd.arg("-f");
         cmd.arg("--output-objective");
 
-        if self.args.output_objective {
-            cmd.arg("--output-objective");
-        }
+        // if self.args.output_objective { // TODO make this an option to the output we print since it is in the rules i think
+        //     cmd.arg("--output-objective");
+        // }
 
-        if self.args.ignore_search {
-            cmd.arg("-f");
-        }
+        // if self.args.ignore_search {  // TODO maybe also this? This option however gives some errors for some solvers
+        //     cmd.arg("-f");
+        // }
+        // cmd.arg("-f");
+
         cmd.arg("-p").arg(elem.cores.to_string());
 
         #[cfg(unix)]
@@ -187,35 +174,25 @@ impl Scheduler {
             let mut map = self.solver_to_pid.lock().await;
             map.insert(elem.id, pid);
         }
-        {
-            let mut pids = self.running_pids.lock().await;
-            pids.insert(pid);
-        }
 
         let stdout = child.stdout.take().expect("Failed stdout");
         let stderr = child.stderr.take().expect("Failed stderr");
 
         let tx_clone = self.tx.clone();
         tokio::spawn(async move {
-            Self::handle_solver_stdout(stdout, tx_clone).await.unwrap();
+            if let Err(e) = Self::handle_solver_stdout(stdout, tx_clone).await {
+                eprintln!("Error handling solver stdout: {:?}", e);
+            }
         });
 
         tokio::spawn(async move { Self::handle_solver_stderr(stderr).await });
 
-        let running_pids_clone = self.running_pids.clone(); // clones the reference to the HashSet, not the actual set
         let solver_to_pid_clone = self.solver_to_pid.clone();
 
         tokio::spawn(async move {
             let _ = child.wait().await;
-
-            {
-                let mut pids = running_pids_clone.lock().await;
-                pids.remove(&pid);
-            }
-            {
-                let mut map = solver_to_pid_clone.lock().await;
-                map.remove(&elem.id);
-            }
+            let mut map = solver_to_pid_clone.lock().await;
+            map.remove(&elem.id);
         });
 
         Ok(())
@@ -272,76 +249,77 @@ impl Scheduler {
             Err(errors)
         }
     }
-    pub async fn stop_solver(&mut self, id: usize) -> std::result::Result<(), Error> {
+
+    async fn _stop_solver(
+        solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>,
+        id: usize,
+    ) -> std::result::Result<(), Error> {
         let pid = {
-            let mut map = self.solver_to_pid.lock().await;
-            match map.remove(&id) {
-                Some(id) => id,
-                None => {
-                    return Err(Error::InvalidSolver(format!("Solver {id} was not running")));
-                }
-            }
+            let map = solver_to_pid.lock().await;
+            map.get(&id).copied()
         };
 
-        kill_tree::tokio::kill_tree(pid).await?;
+        if let Some(pid) = pid {
+            if let Err(e) = kill_tree::tokio::kill_tree(pid).await {
+                let is_zombie = match &e {
+                    kill_tree::Error::Io(io_err) => io_err.kind() == ErrorKind::NotFound,
+                    kill_tree::Error::InvalidProcessId { .. } => true,
+                    _ => false,
+                };
+                if !is_zombie {
+                    return Err(Error::KillTree(e));
+                }
+            }
 
-        /*
-        let pgid = Pid::from_raw(-(pid_num as i32));
-
-        // This kills minizinc AND the solver
-        if let Err(errno) = signal::kill(pgid, Signal::SIGKILL) {
-             // Handle "Process not found" errors gracefully, imply it's already dead
-             if errno != nix::errno::Errno::ESRCH {
-                 return Err(Error::Io(std::io::Error::from_raw_os_error(errno as i32)));
-             }
-        } */
-        {
-            let mut pids = self.running_pids.lock().await;
-            pids.remove(&pid);
-        }
-        {
-            let mut map = self.solver_to_pid.lock().await;
+            let mut map = solver_to_pid.lock().await;
             map.remove(&id);
         }
+
         Ok(())
     }
 
-    /// Filters errors that are invalid process ids, since we can assume that those pid do not exist
-    pub async fn stop_all_solvers(&self) -> std::result::Result<(), Vec<Error>> {
-        let mut running_pids_guard = self.running_pids.lock().await;
-        let pids_to_kill: Vec<u32> = running_pids_guard.iter().cloned().collect();
+    pub async fn stop_solver(&self, id: usize) -> std::result::Result<(), Error> {
+        Self::_stop_solver(self.solver_to_pid.clone(), id).await
+    }
 
-        let kill_futures = pids_to_kill
+    async fn _stop_solvers(
+        solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>,
+        ids: Vec<usize>,
+    ) -> std::result::Result<(), Vec<Error>> {
+        let kill_futures = ids
             .iter()
-            .map(|id| kill_tree::tokio::kill_tree(*id));
+            .map(|id| Self::_stop_solver(solver_to_pid.clone(), *id));
 
         let results = join_all(kill_futures).await;
 
-        let mut errors = Vec::new();
-        let mut pids_to_remove = Vec::new();
-
-        for (pid, result) in pids_to_kill.into_iter().zip(results) {
-            match result {
-                Ok(_) => {
-                    pids_to_remove.push(pid);
-                }
-                Err(err) => {
-                    if let kill_tree::Error::InvalidProcessId { .. } = err {
-                        pids_to_remove.push(pid);
-                    } else {
-                        errors.push(Error::from(err));
-                    }
-                }
-            }
-        }
-
-        running_pids_guard.retain(|pid| !pids_to_remove.contains(pid));
+        let errors: Vec<Error> = results
+            .into_iter()
+            .filter_map(|result| result.err())
+            .collect();
 
         if errors.is_empty() {
             Ok(())
         } else {
             Err(errors)
         }
+    }
+
+    pub async fn stop_solvers(&self, ids: Vec<usize>) -> std::result::Result<(), Vec<Error>> {
+        Self::_stop_solvers(self.solver_to_pid.clone(), ids).await
+    }
+
+    async fn _stop_all_solvers(
+        solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>,
+    ) -> std::result::Result<(), Vec<Error>> {
+        let ids = {
+            let map = solver_to_pid.lock().await;
+            map.keys().copied().collect()
+        };
+        Self::_stop_solvers(solver_to_pid.clone(), ids).await
+    }
+
+    pub async fn stop_all_solvers(&self) -> std::result::Result<(), Vec<Error>> {
+        Self::_stop_all_solvers(self.solver_to_pid.clone()).await
     }
 
     pub async fn pause_solver(&self, id: usize) -> std::result::Result<(), Error> {
@@ -372,19 +350,12 @@ impl Scheduler {
     }
 
     pub async fn suspend_all_solvers(&self) -> std::result::Result<(), Vec<Error>> {
-        let mut errors = Vec::new();
+        let ids: Vec<usize> = { self.solver_to_pid.lock().await.keys().cloned().collect() };
 
-        // We need to clone the keys to avoid holding the lock while awaiting
-        let ids: Vec<usize> = {
-            let map = self.solver_to_pid.lock().await;
-            map.keys().cloned().collect()
-        };
+        let futures = ids.iter().map(|id| self.pause_solver(*id));
+        let results = join_all(futures).await;
 
-        for id in ids {
-            if let Err(e) = self.pause_solver(id).await {
-                errors.push(e);
-            }
-        }
+        let errors: Vec<Error> = results.into_iter().filter_map(|res| res.err()).collect();
 
         if errors.is_empty() {
             Ok(())
@@ -394,20 +365,17 @@ impl Scheduler {
     }
 }
 
-fn cleanup_handler() -> Arc<Mutex<HashSet<u32>>> {
-    let running_processes: Arc<Mutex<HashSet<u32>>> = Arc::new(Mutex::new(HashSet::new()));
-    let processes_for_signal = running_processes.clone();
+fn cleanup_handler(solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>) {
+    let solver_to_pid_clone = solver_to_pid.clone();
 
     ctrlc::set_handler(move || {
-        let pids = processes_for_signal.blocking_lock();
+        let solver_to_pid_guard = solver_to_pid_clone.blocking_lock();
 
-        for pid in pids.iter() {
-            // kill the minizinc solver plus all the processes it spawned (including grandchildren)
+        for pid in solver_to_pid_guard.values() {
             let _ = kill_tree::blocking::kill_tree(*pid);
         }
 
         std::process::exit(0);
     })
     .expect("Error setting Ctrl-C handler");
-    return running_processes;
 }
