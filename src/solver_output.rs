@@ -1,6 +1,7 @@
 use std::fmt;
 
 use serde_json::{Map, Value};
+use crate::input::DebugVerbosityLevel;
 
 #[derive(Debug)]
 pub enum Output {
@@ -56,7 +57,7 @@ impl Output {
     const UNBOUNDED_TERMINATOR: &str = "=====UNBOUNDED=====";
     const UNKNOWN_TERMINATOR: &str = "=====UNKNOWN=====";
 
-    pub fn parse(output: &str) -> Result<Self, OutputParseError> {
+    pub fn parse(output: &str, verbosity: DebugVerbosityLevel) -> Result<Self, OutputParseError> {
         let Value::Object(json) = serde_json::from_str(output)? else {
             return Err(OutputParseError::Field(
                 "Output is not a JSON object".to_owned(),
@@ -70,12 +71,23 @@ impl Output {
             "status" => Ok(Self::Status(parse_status(&json)?)),
             "comment" => Ok(Self::Ignore),
             "warning" => {
-                println!("{:?}", json);
+                if verbosity >= DebugVerbosityLevel::Warning {
+                    eprintln!("Solver warning: {:?}", json);
+                }
                 Ok(Self::Ignore)
             }
 
             "error" => {
-                println!("{:?}", json);
+                if verbosity >= DebugVerbosityLevel::Error {
+                    eprintln!("Solver error: {:?}", json);
+                }
+                Ok(Self::Ignore)
+            }
+
+            "message" => {
+                if verbosity >= DebugVerbosityLevel::Info {
+                    eprintln!("Solver message: {:?}", json);
+                }
                 Ok(Self::Ignore)
             }
 
@@ -175,7 +187,7 @@ mod tests {
     #[test]
     fn test_parse_solution() {
         let input = ARITHMETIC_TARGET_SOLUTION;
-        let output = Output::parse(input).unwrap();
+        let output = Output::parse(input, DebugVerbosityLevel::Quiet).unwrap();
         let Output::Solution(solution) = output else {
             panic!("Output is not a solution");
         };
@@ -186,7 +198,7 @@ mod tests {
     #[test]
     fn test_parse_unknown_status() {
         let input = ARITHMETIC_TARGET_STATUS;
-        let output = Output::parse(input).unwrap();
+        let output = Output::parse(input, DebugVerbosityLevel::Quiet).unwrap();
         let Output::Status(status) = output else {
             panic!("Output is not a status");
         };
@@ -196,7 +208,7 @@ mod tests {
     #[test]
     fn test_parse_optimal_status() {
         let input = NFC_STATUS;
-        let output = Output::parse(input).unwrap();
+        let output = Output::parse(input, DebugVerbosityLevel::Quiet).unwrap();
         let Output::Status(status) = output else {
             panic!("Output is not a status");
         };
@@ -206,7 +218,7 @@ mod tests {
     #[test]
     fn test_parse_comment() {
         let input = COMMENT;
-        let output = Output::parse(input).unwrap();
+        let output = Output::parse(input, DebugVerbosityLevel::Quiet).unwrap();
         let Output::Ignore = output else {
             panic!("Output is not a status");
         };

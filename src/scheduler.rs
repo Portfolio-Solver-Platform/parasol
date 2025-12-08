@@ -1,4 +1,4 @@
-use crate::input::Args;
+use crate::input::{Args, DebugVerbosityLevel};
 use crate::model_parser::{ModelParseError, ObjectiveType, parse_objective_type};
 use crate::solver_output::{Output, OutputParseError, Solution, Status};
 use futures::future::join_all;
@@ -185,22 +185,29 @@ impl Scheduler {
         let stderr = child.stderr.take().expect("Failed stderr");
 
         let tx_clone = self.tx.clone();
+        let verbosity = self.args.debug_verbosity;
         tokio::spawn(async move {
-            Self::handle_solver_stdout(stdout, tx_clone).await;
+            Self::handle_solver_stdout(stdout, tx_clone, verbosity).await;
         });
 
-        tokio::spawn(async move { Self::handle_solver_stderr(stderr).await });
+        let verbosity_stderr = self.args.debug_verbosity;
+        tokio::spawn(async move { Self::handle_solver_stderr(stderr, verbosity_stderr).await });
 
         let solver_to_pid_clone = self.solver_to_pid.clone();
         let solver_name = elem.solver.clone();
+        let verbosity_wait = self.args.debug_verbosity;
 
         tokio::spawn(async move {
             match child.wait().await {
                 Ok(status) if !status.success() => {
-                    eprintln!("Solver '{}' exited with status: {}", solver_name, status);
+                    if verbosity_wait >= DebugVerbosityLevel::Info {
+                        eprintln!("Solver '{}' exited with status: {}", solver_name, status);
+                    }
                 }
                 Err(e) => {
-                    eprintln!("Error waiting for solver '{}': {}", solver_name, e);
+                    if verbosity_wait >= DebugVerbosityLevel::Error {
+                        eprintln!("Error waiting for solver '{}': {}", solver_name, e);
+                    }
                 }
                 _ => {}
             }
@@ -214,6 +221,7 @@ impl Scheduler {
     async fn handle_solver_stdout(
         stdout: tokio::process::ChildStdout,
         tx: tokio::sync::mpsc::UnboundedSender<Msg>,
+        verbosity: DebugVerbosityLevel,
     ) {
         let reader = BufReader::new(stdout);
         let mut lines = reader.lines();
@@ -221,10 +229,12 @@ impl Scheduler {
         loop {
             match lines.next_line().await {
                 Ok(Some(line)) => {
-                    let output = match Output::parse(&line) {
+                    let output = match Output::parse(&line, verbosity) {
                         Ok(o) => o,
                         Err(e) => {
-                            eprintln!("Error parsing solver output: {:?}", e);
+                            if verbosity >= DebugVerbosityLevel::Error {
+                                eprintln!("Error parsing solver output: {:?}", e);
+                            }
                             continue;
                         }
                     };
@@ -235,28 +245,39 @@ impl Scheduler {
                     };
 
                     if let Err(e) = tx.send(msg) {
-                        eprintln!("Could not send message, receiver dropped: {}", e);
+                        if verbosity >= DebugVerbosityLevel::Error {
+                            eprintln!("Could not send message, receiver dropped: {}", e);
+                        }
                         break;
                     }
                 }
                 Ok(None) => break, // EOF
                 Err(e) => {
-                    eprintln!("Error reading solver stdout: {}", e);
+                    if verbosity >= DebugVerbosityLevel::Error {
+                        eprintln!("Error reading solver stdout: {}", e);
+                    }
                     break;
                 }
             }
         }
     }
 
-    async fn handle_solver_stderr(stderr: tokio::process::ChildStderr) {
+    async fn handle_solver_stderr(
+        stderr: tokio::process::ChildStderr,
+        verbosity: DebugVerbosityLevel,
+    ) {
         let reader = BufReader::new(stderr);
         let mut lines = reader.lines();
 
         while let Some(line) = lines.next_line().await.unwrap_or_else(|e| {
-            eprintln!("Error reading solver stderr: {}", e);
+            if verbosity >= DebugVerbosityLevel::Error {
+                eprintln!("Error reading solver stderr: {}", e);
+            }
             None
         }) {
-            eprintln!("Solver stderr: {}", line);
+            if verbosity >= DebugVerbosityLevel::Error {
+                eprintln!("Solver stderr: {}", line);
+            }
         }
     }
 

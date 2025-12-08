@@ -20,9 +20,14 @@ pub async fn sunny(args: Args, mut ai: impl Ai, dynamic_schedule_interval: u64) 
         .expect("if we fail to apply the static schedule, we can't recover"); // TODO: Maybe do this in another thread
 
     let mut timer = sleep(timer_duration);
-    let fzn = convert_mzn_to_fzn(&args.model, args.data.as_deref(), FEATURES_SOLVER)
-        .await
-        .expect("failed to initially convert .mzn to .fzn");
+    let fzn = convert_mzn_to_fzn(
+        &args.model,
+        args.data.as_deref(),
+        FEATURES_SOLVER,
+        args.debug_verbosity,
+    )
+    .await
+    .expect("failed to initially convert .mzn to .fzn");
     // let features = fzn_to_features(&fzn)
     //     .await
     //     .expect("if we fail to get features, we can't run the AI and thus can't recover");
@@ -78,7 +83,7 @@ fn static_schedule(cores: usize) -> Schedule {
         ScheduleElement::new(5, "yuck".to_string(), 1),
         // ScheduleElement::new(6, "xpress".to_string(), cores / 10),
         // ScheduleElement::new(7, "scip".to_string(), cores / 10),
-        // ScheduleElement::new(8, "highs".to_string(), cores / 10),
+        ScheduleElement::new(8, "highs".to_string(), cores / 10),
         // ScheduleElement::new(9, "gurobi".to_string(), cores / 10),
         // ScheduleElement::new(10, "coinbc".to_string(), cores / 2),
     ]
