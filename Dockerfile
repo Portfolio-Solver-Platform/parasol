@@ -29,8 +29,8 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs
 # Build dependencies (this layer is cached unless Cargo.toml changes)
 RUN nix develop -c cargo build --release
 
-# Remove dummy artifacts
-RUN rm -rf src
+# Remove dummy artifacts and force rebuild of main binary
+RUN rm -rf src target/release/portfolio-solver-framework target/release/deps/portfolio_solver_framework*
 
 # Now copy actual source code (changes frequently)
 COPY src ./src
@@ -80,9 +80,9 @@ COPY --from=builder /app/target/release/portfolio-solver-framework /usr/local/bi
 #   This is done to avoid running `nix develop -c` in the entrypoint.
 #   Avoiding this is important because `nix develop` evaluates the
 #   flake derivation every time it runs which is slow.
-# RUN echo '#!/bin/bash' > /entrypoint.sh && \
-#     nix print-dev-env >> /entrypoint.sh && \
-#     echo 'exec "$@"' >> /entrypoint.sh && \
-#     chmod +x /entrypoint.sh
+RUN echo '#!/bin/bash' > /entrypoint.sh && \
+    nix print-dev-env >> /entrypoint.sh && \
+    echo 'exec "$@"' >> /entrypoint.sh && \
+    chmod +x /entrypoint.sh
 
-ENTRYPOINT [ "portfolio-solver-framework" ]
+ENTRYPOINT [ "/entrypoint.sh", "portfolio-solver-framework" ]
