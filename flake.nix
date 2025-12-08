@@ -41,11 +41,12 @@
               pkgs.git
             ];
 
-            env = lib.optionalAttrs pkgs.stdenv.isLinux {
+            env = {
               LD_LIBRARY_PATH = lib.makeLibraryPath (
                 with pkgs;
                 [
                   highs
+                  scipopt-scip # TODO: Handle Apache 2.0 license
                 ]
               );
             };
