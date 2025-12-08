@@ -51,8 +51,10 @@
               LD_LIBRARY_PATH = lib.makeLibraryPath (
                 with pkgs;
                 [
+                  # Provide the executables for some builtin solvers in minizinc
                   highs
                   scipopt-scip # TODO: Handle Apache 2.0 license
+                  picat # TODO: Look into Mozilla public license 2.0
                 ]
               );
             };

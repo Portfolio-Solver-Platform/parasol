@@ -1,6 +1,13 @@
-FROM rust:1.91 AS builder
+FROM nixos/nix:latest AS builder
+RUN echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
 
 WORKDIR /usr/src/app
+
+COPY ./flake.nix ./flake.lock ./
+COPY ./nix/ ./nix/
+COPY ./rust-toolchain.toml ./
+
+RUN nix develop
 
 # Copy dependency manifests first (changes rarely)
 COPY Cargo.toml Cargo.lock ./
@@ -9,7 +16,7 @@ COPY Cargo.toml Cargo.lock ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 
 # Build dependencies (this layer is cached unless Cargo.toml changes)
-RUN cargo build --release
+RUN nix develop -c cargo build --release
 
 # Remove dummy artifacts
 RUN rm -rf src
@@ -17,8 +24,8 @@ RUN rm -rf src
 # Now copy actual source code (changes frequently)
 COPY src ./src
 
-# Build only your code (dependencies are cached!)
-RUN touch src/main.rs && cargo build --release
+# Build code (dependencies are cached)
+RUN nix develop -c cargo build --release
 
 
 FROM ubuntu:24.04
@@ -27,13 +34,12 @@ WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
+    curl \
+    xz-utils \
     ca-certificates \
     libssl-dev \
     wget \
     git \
-    flex \
-    bison \
-    libxml++2.6-dev \
     build-essential \
     libgl1 \
     libglu1-mesa \
@@ -41,30 +47,14 @@ RUN apt-get update && apt-get install -y \
     libfontconfig1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install MiniZinc
-RUN wget https://github.com/MiniZinc/MiniZincIDE/releases/download/2.8.7/MiniZincIDE-2.8.7-bundle-linux-x86_64.tgz \
-    && tar -xzf MiniZincIDE-2.8.7-bundle-linux-x86_64.tgz -C /opt \
-    && mv /opt/MiniZincIDE-2.8.7-bundle-linux-x86_64 /opt/minizinc \
-    && ln -s /opt/minizinc/bin/minizinc /usr/local/bin/minizinc \
-    && rm MiniZincIDE-2.8.7-bundle-linux-x86_64.tgz
 
-# Install mzn2feat
-RUN git clone https://github.com/CP-Unibo/mzn2feat.git /opt/mzn2feat
+# Install Nix
+RUN curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install linux --init none --no-confirm
+ENV PATH="${PATH}:/nix/var/nix/profiles/default/bin"
 
-RUN cd /opt/mzn2feat && bash install --no-xcsp
-
-RUN ln -s /opt/mzn2feat/bin/mzn2feat /usr/local/bin/mzn2feat \
-    && ln -s /opt/mzn2feat/bin/fzn2feat /usr/local/bin/fzn2feat
-
-# Install Picat solver
-RUN wget http://picat-lang.org/download/picat394_linux64.tar.gz \
-    && tar -xzf picat394_linux64.tar.gz -C /opt \
-    && ln -s /opt/Picat/picat /usr/local/bin/picat \
-    && rm picat394_linux64.tar.gz
-
-# Download Picat MiniZinc configuration
-RUN wget https://raw.githubusercontent.com/CP-Unibo/mzn-picat/main/fzn_picat.msc -O /opt/minizinc/share/minizinc/solvers/picat.msc 2>/dev/null || \
-    echo '{"id": "org.picat-lang.picat", "name": "Picat", "version": "3.9.4", "executable": "/usr/local/bin/picat", "mznlib": "", "tags": ["cp", "int"], "supportsMzn": false, "supportsFzn": true, "needsSolns2Out": true, "needsMznExecutable": false, "isGUIApplication": false}' > /opt/minizinc/share/minizinc/solvers/picat.msc
+# Insert Picat MiniZinc configuration
+RUN mkdir -p /opt/minizinc/share/minizinc/solvers/
+RUN echo '{"id": "org.picat-lang.picat", "name": "Picat", "version": "3.9.4", "executable": "/usr/local/bin/picat", "mznlib": "", "tags": ["cp", "int"], "supportsMzn": false, "supportsFzn": true, "needsSolns2Out": true, "needsMznExecutable": false, "isGUIApplication": false}' > /opt/minizinc/share/minizinc/solvers/picat.msc
 
 # Install Yuck solver (requires Java)
 RUN apt-get update && apt-get install -y unzip default-jre \
@@ -81,6 +71,18 @@ RUN apt-get update && apt-get install -y unzip default-jre \
 
 COPY --from=builder /usr/src/app/target/release/portfolio-solver-framework /usr/local/bin/portfolio-solver-framework
 
+COPY ./flake.nix ./flake.lock ./
+COPY ./nix/ ./nix/
+COPY ./rust-toolchain.toml ./
+RUN nix develop
 
+# Create a small startup script which has the `nix develop` environment baked into it.
+#   This is done to avoid running `nix develop -c` in the entrypoint.
+#   Avoiding this is important because `nix develop` evaluates the
+#   flake derivation every time it runs which is slow.
+RUN echo '#!/bin/bash' > /entrypoint.sh && \
+    nix print-dev-env >> /entrypoint.sh && \
+    echo 'exec "$@"' >> /entrypoint.sh && \
+    chmod +x /entrypoint.sh
 
-ENTRYPOINT ["portfolio-solver-framework"]
+ENTRYPOINT [ "/entrypoint.sh" ]
