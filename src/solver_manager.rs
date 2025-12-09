@@ -145,14 +145,15 @@ impl SolverManager {
         std::process::exit(0);
     }
 
-    async fn start_solver(&self, elem: &ScheduleElement) -> std::io::Result<()> {
+    async fn start_solver(&self, elem: &ScheduleElement) -> Result<()> {
+        let fzn = self
+            .mzn_to_fzn
+            .convert(&self.args.model, self.args.data.as_deref(), &elem.solver)
+            .await?;
+
         let mut cmd = Command::new("minizinc");
         cmd.arg("--solver").arg(&elem.solver);
-        cmd.arg(&self.args.model);
-
-        if let Some(data_path) = &self.args.data {
-            cmd.arg(data_path);
-        }
+        cmd.arg(fzn);
 
         cmd.arg("-i");
         cmd.arg("--json-stream");
@@ -290,10 +291,7 @@ impl SolverManager {
     ) -> std::result::Result<(), Vec<Error>> {
         let futures = schedule.iter().map(|elem| self.start_solver(elem));
         let results = join_all(futures).await;
-        let errors: Vec<Error> = results
-            .into_iter()
-            .filter_map(|res| res.err().map(Error::from))
-            .collect();
+        let errors: Vec<Error> = results.into_iter().filter_map(Result::err).collect();
 
         if errors.is_empty() {
             Ok(())

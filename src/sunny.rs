@@ -2,7 +2,7 @@ use crate::config::Config;
 use crate::mzn_to_fzn::convert_mzn_to_fzn;
 use crate::scheduler::{Schedule, ScheduleElement, Scheduler};
 use crate::{ai::Ai, args::Args};
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 
 const FEATURES_SOLVER: &str = "gecode";
 
@@ -65,11 +65,11 @@ fn static_schedule(cores: usize) -> Schedule {
     // }
     // schedule
     vec![
-        ScheduleElement::new(0, "picat".to_string(), 1),
+        ScheduleElement::new(0, "coinbc".to_string(), 1),
         ScheduleElement::new(1, "gecode".to_string(), 1),
-        ScheduleElement::new(2, "cp-sat".to_string(), 1),
-        ScheduleElement::new(3, "chuffed".to_string(), 1),
-        ScheduleElement::new(4, "coinbc".to_string(), 1),
+        ScheduleElement::new(2, "picat".to_string(), 1),
+        ScheduleElement::new(3, "cp-sat".to_string(), 1),
+        ScheduleElement::new(4, "chuffed".to_string(), 1),
         ScheduleElement::new(5, "yuck".to_string(), 1),
         // ScheduleElement::new( "xpress".to_string(), cores / 10),
         // ScheduleElement::new( "scip".to_string(), cores / 10),

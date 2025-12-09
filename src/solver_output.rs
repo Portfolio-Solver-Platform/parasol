@@ -36,6 +36,7 @@ pub enum OutputParseError {
     JsonParsing(serde_json::Error),
     MissingObjective,
     Field(String),
+    ObjectiveParse,
 }
 
 impl From<serde_json::Error> for OutputParseError {
@@ -99,10 +100,22 @@ impl Output {
 }
 
 fn parse_solution(json: &Map<String, Value>) -> Result<Solution, OutputParseError> {
-    let output = parse_object_field(&json, "output")?;
-    let solution = parse_string_field(output, "default")?;
-    let output_json = parse_object_field(output, "json")?;
-    let objective = parse_i64_field(output_json, "_objective")?;
+    const OBJECTIVE_PREFIX: &str = "objective = ";
+    let output = parse_object_field(json, "output")?;
+    let solution = parse_string_field(output, "dzn")?;
+    let objective_line = solution
+        .split(';')
+        .next()
+        .ok_or(OutputParseError::MissingObjective)?;
+    if !objective_line.starts_with(OBJECTIVE_PREFIX) {
+        return Err(OutputParseError::MissingObjective);
+    }
+
+    let objective_str = &objective_line[OBJECTIVE_PREFIX.len()..];
+
+    let objective = objective_str
+        .parse::<i64>()
+        .map_err(|_| OutputParseError::ObjectiveParse)?;
 
     Ok(Solution {
         solution: solution.clone(),
