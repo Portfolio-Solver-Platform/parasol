@@ -118,14 +118,7 @@ pub async fn get_objective_type(model_path: &Path) -> Result<ObjectiveType, Mode
         return Err(CommandOutputError::JsonIsNotObject.into());
     };
 
-    let val = parse_method_from_json_object(object);
-
-    match val {
-        Ok(value) => println!("{value:?}"),
-        Err(_) => println!("Error"),
-    }
-
-    val
+    parse_method_from_json_object(object)
 }
 
 fn parse_method_from_json_object(
