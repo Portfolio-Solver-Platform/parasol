@@ -9,7 +9,9 @@ const FEATURES_SOLVER: &str = "gecode";
 pub async fn sunny(args: Args, mut ai: impl Ai, config: Config) {
     let timer_duration = Duration::from_secs(config.dynamic_schedule_interval);
     let cores = args.cores.unwrap_or(2);
-    let mut scheduler = Scheduler::new(&args, &config).expect("Failed to create scheduler");
+    let mut scheduler = Scheduler::new(&args, &config)
+        .await
+        .expect("Failed to create scheduler");
     scheduler.apply(static_schedule(cores)).await.unwrap(); // TODO: Maybe do this in another thread
 
     let mut timer = sleep(timer_duration);
