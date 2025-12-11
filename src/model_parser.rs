@@ -46,7 +46,7 @@ pub enum ObjectiveType {
 }
 
 impl ObjectiveType {
-    pub fn is_better(&self, old: Option<i64>, new: i64) -> bool {
+    pub fn is_better(&self, old: Option<f64>, new: f64) -> bool {
         match (self, old) {
             (_, None) => true,
             (Self::Maximize, Some(val)) => val < new,
@@ -59,7 +59,7 @@ impl ObjectiveType {
 pub fn insert_objective(
     fzn_path: &PathBuf,
     objective_type: &ObjectiveType,
-    objective: i64,
+    objective: f64,
 ) -> Result<PathBuf, ()> {
     // TODO: Optimise: don't read the entire file, but only read from the end.
     let content = fs::read_to_string(fzn_path).map_err(|_| ())?;
@@ -98,7 +98,7 @@ pub fn insert_objective(
 fn get_objective_constraint(
     objective_type: &ObjectiveType,
     objective_name: &str,
-    objective: i64,
+    objective: f64,
 ) -> Result<String, ()> {
     fn int_lt(left: &str, right: &str) -> String {
         format!("constraint int_lt({left}, {right});")

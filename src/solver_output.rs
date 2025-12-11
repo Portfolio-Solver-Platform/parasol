@@ -22,7 +22,7 @@ pub enum Status {
 #[derive(Debug)]
 pub struct Solution {
     pub solution: String,
-    pub objective: i64,
+    pub objective: f64,
 }
 
 impl Status {
@@ -109,7 +109,7 @@ fn parse_solution(json: &Map<String, Value>) -> Result<Solution, OutputParseErro
     let objective_str = &objective_line[OBJECTIVE_PREFIX.len()..];
 
     let objective = objective_str
-        .parse::<i64>()
+        .parse::<f64>()
         .map_err(|_| OutputParseError::ObjectiveParse)?;
 
     Ok(Solution {
@@ -199,7 +199,7 @@ mod tests {
         let Output::Solution(solution) = output else {
             panic!("Output is not a solution");
         };
-        assert_eq!(solution.objective, 137);
+        assert_eq!(solution.objective, 137.0);
         assert_eq!(solution.solution, ARITHMETIC_TARGET_SOLUTION_DZN);
     }
 

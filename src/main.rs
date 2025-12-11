@@ -15,7 +15,7 @@ use crate::sunny::sunny;
 use args::Args;
 use clap::Parser;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     let args = Args::parse();
     let config = Config::default();

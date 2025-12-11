@@ -8,8 +8,8 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             dynamic_schedule_interval: 5,
-            memory_enforcer_interval: 1,
-            memory_threshold: 0.8,
+            memory_enforcer_interval: 3,
+            memory_threshold: 0.9,
         }
     }
 }

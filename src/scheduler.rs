@@ -1,16 +1,13 @@
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::Duration;
-use std::vec;
-
-use sysinfo::System;
-use tokio::sync::Mutex;
-
 use crate::{
     args::{Args, DebugVerbosityLevel},
     config::Config,
     solver_manager::{Error, SolverManager},
 };
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::Duration;
+use sysinfo::System;
+use tokio::sync::Mutex;
 
 #[derive(Clone, Debug)]
 pub struct ScheduleElement {
@@ -44,6 +41,7 @@ struct MemoryEnforcerState {
     system: System,
     memory_threshold: f64,
     memory_limit: u64, // In bytes (0 = use system total)
+    id: usize,
 }
 
 pub struct Scheduler {
@@ -71,6 +69,7 @@ impl Scheduler {
             system: System::new_all(),
             memory_threshold: config.memory_threshold,
             memory_limit,
+            id: 0,
         }));
 
         let state_clone = state.clone();
@@ -93,7 +92,10 @@ impl Scheduler {
         })
     }
 
-    fn get_memory_usage(state: &mut MemoryEnforcerState) -> (f64, f64) {
+    fn get_memory_usage(
+        state: &mut MemoryEnforcerState,
+        debug_verbosity: DebugVerbosityLevel,
+    ) -> (f64, f64) {
         state
             .system
             .refresh_processes(sysinfo::ProcessesToUpdate::All, false);
@@ -105,6 +107,16 @@ impl Scheduler {
         } else {
             state.system.total_memory() as f64
         };
+        if debug_verbosity >= DebugVerbosityLevel::Info {
+            let div = (1024 * 1024) as f64;
+
+            println!(
+                "Info: Memory used by system: {} MiB, Memory Available: {} MiB, Memory threshold: {}",
+                used / div,
+                total / div,
+                total * state.memory_threshold / div,
+            );
+        }
         (used, total)
     }
 
@@ -144,12 +156,12 @@ impl Scheduler {
         debug_verbosity: DebugVerbosityLevel,
     ) -> f64 {
         let ids: Vec<usize> = state.running_solvers.keys().copied().collect();
-        let num_running: usize = state
+        let total_cores: usize = state
             .running_solvers
             .iter()
             .map(|(_, info)| info.cores)
             .sum();
-        if num_running == 0 {
+        if total_cores == 0 {
             return used_memory;
         }
 
@@ -157,7 +169,7 @@ impl Scheduler {
             .solvers_sorted_by_mem(&ids, &state.system)
             .await;
         let per_core_threshold =
-            (total_memory / num_running as f64 * state.memory_threshold) as u64;
+            (total_memory / total_cores as f64 * state.memory_threshold) as u64;
 
         let mut remaining = Vec::new();
 
@@ -168,7 +180,7 @@ impl Scheduler {
                     // should never fail since the state is locked however error logging just for safety
                     if debug_verbosity >= DebugVerbosityLevel::Error {
                         eprintln!(
-                            "Failed to get solver info. Cause of this error is propably from a logic error in the code"
+                            "Failed to get solver info. Cause of this error is probably from a logic error in the code"
                         );
                     }
                     continue;
@@ -188,8 +200,11 @@ impl Scheduler {
                 remaining.push((solver_mem, id));
             }
         }
-        while is_over_threshold(used_memory, total_memory, state.memory_threshold) {
+        while !remaining.is_empty()
+            && is_over_threshold(used_memory, total_memory, state.memory_threshold)
+        {
             let (mem, id) = remaining.remove(0);
+            state.running_solvers.remove(&id);
             if let Err(e) = solver_manager.stop_solver(id).await {
                 if debug_verbosity >= DebugVerbosityLevel::Error {
                     eprintln!("failed to stop running solver: {e}");
@@ -224,7 +239,7 @@ impl Scheduler {
 
             Self::remove_exited_solvers(&mut state, &solver_manager).await;
 
-            let (used, total) = Self::get_memory_usage(&mut state);
+            let (used, total) = Self::get_memory_usage(&mut state, debug_verbosity);
             if !is_over_threshold(used, total, state.memory_threshold) {
                 continue;
             }
@@ -247,35 +262,6 @@ impl Scheduler {
                 )
                 .await;
             }
-        }
-    }
-
-    async fn limit_to_single_solver(
-        keep_running: &[usize],
-        to_resume: Vec<usize>,
-        to_start: Schedule,
-        state: &MemoryEnforcerState,
-        solver_manager: &Arc<SolverManager>,
-    ) -> (Schedule, Vec<usize>, Vec<usize>) {
-        // Returns (to_start, to_resume, to_stop)
-        let mut to_stop = Vec::new();
-
-        if !keep_running.is_empty() {
-            // Keep only the smallest running solver, stop the rest
-            let solvers_sorted_by_mem = solver_manager
-                .solvers_sorted_by_mem(keep_running, &state.system)
-                .await;
-            let len = solvers_sorted_by_mem.len();
-            for (_, id) in solvers_sorted_by_mem.iter().take(len.saturating_sub(1)) {
-                to_stop.push(*id);
-            }
-            (Vec::new(), Vec::new(), to_stop)
-        } else if !to_resume.is_empty() {
-            // Resume only the first suspended solver
-            (Vec::new(), vec![to_resume[0]], to_stop)
-        } else {
-            // Start only the first new solver
-            (vec![to_start[0].clone()], Vec::new(), to_stop)
         }
     }
 
@@ -336,18 +322,43 @@ impl Scheduler {
         }
     }
 
-    pub async fn apply(&mut self, schedule: Schedule) -> std::result::Result<(), Vec<Error>> {
+    pub async fn apply(&mut self, mut schedule: Schedule) -> std::result::Result<(), Vec<Error>> {
         let mut state = self.state.lock().await;
-        let changes =
-            Self::categorize_schedule(schedule, &mut state, self.solver_manager.clone()).await;
-        Self::apply_changes_to_state(&mut state, &changes);
+        for elem in &mut schedule {
+            elem.id = state.id;
+            state.id += 1;
+        }
+        if let Some(objective) = self.solver_manager.get_best_objective().await {
+            self.solver_manager.stop_all_solvers().await.unwrap();
+            // insert new objective bound
 
-        self.solver_manager
-            .suspend_solvers(&changes.to_suspend)
-            .await?;
-        self.solver_manager
-            .resume_solvers(&changes.to_resume)
-            .await?;
-        self.solver_manager.start_solvers(&changes.to_start).await
+            self.solver_manager.start_solvers(&schedule).await?;
+            state.suspended_solvers = HashMap::new();
+            state.running_solvers = schedule
+                .into_iter()
+                .map(|elem| {
+                    (
+                        elem.id,
+                        SolverInfo {
+                            name: elem.solver,
+                            cores: elem.cores,
+                        },
+                    )
+                })
+                .collect();
+            Ok(())
+        } else {
+            let changes =
+                Self::categorize_schedule(schedule, &mut state, self.solver_manager.clone()).await;
+            Self::apply_changes_to_state(&mut state, &changes);
+
+            self.solver_manager
+                .suspend_solvers(&changes.to_suspend)
+                .await?;
+            self.solver_manager
+                .resume_solvers(&changes.to_resume)
+                .await?;
+            self.solver_manager.start_solvers(&changes.to_start).await
+        }
     }
 }

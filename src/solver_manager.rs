@@ -11,8 +11,7 @@ use std::sync::Arc;
 use sysinfo::{Pid, System};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::Mutex;
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex, RwLock, mpsc};
 
 const SUSPEND_SIGNAL: &str = "SIGSTOP";
 const RESUME_SIGNAL: &str = "SIGCONT";
@@ -94,6 +93,7 @@ pub struct SolverManager {
     solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>,
     args: Args,
     mzn_to_fzn: mzn_to_fzn::CachedConverter,
+    best_objective: Arc<RwLock<Option<f64>>>,
 }
 
 impl SolverManager {
@@ -104,14 +104,19 @@ impl SolverManager {
 
         cleanup_handler(solver_to_pid.clone());
         let solver_to_pid_clone = solver_to_pid.clone();
+        let best_objective = Arc::new(RwLock::new(None));
 
-        tokio::spawn(async move { Self::receiver(rx, solver_to_pid_clone, objective_type).await });
+        let shared_objective = best_objective.clone();
+        tokio::spawn(async move {
+            Self::receiver(rx, solver_to_pid_clone, objective_type, shared_objective).await
+        });
 
         Ok(Self {
             tx,
             solver_to_pid,
             mzn_to_fzn: mzn_to_fzn::CachedConverter::new(args.debug_verbosity),
             args,
+            best_objective,
         })
     }
 
@@ -119,14 +124,19 @@ impl SolverManager {
         mut rx: mpsc::UnboundedReceiver<Msg>,
         solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>,
         objective_type: ObjectiveType,
+        shared_objective: Arc<RwLock<Option<f64>>>,
     ) {
-        let mut objective: Option<i64> = None;
+        let mut objective: Option<f64> = None;
 
         while let Some(output) = rx.recv().await {
             match output {
                 Msg::Solution(s) => {
                     if objective_type.is_better(objective, s.objective) {
                         objective = Some(s.objective);
+                        {
+                            let mut guard = shared_objective.write().await;
+                            *guard = Some(s.objective);
+                        }
                         println!("{}", s.solution.trim_end());
                         println!("{}", solver_output::dzn::SOLUTION_TERMINATOR);
                     }
@@ -301,6 +311,7 @@ impl SolverManager {
         }
     }
 
+    // could probably be optimized to be able to send multiple signals to a process at a time, instead of traversing it twice
     async fn send_signal_to_solver(
         solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>,
         id: usize,
@@ -388,27 +399,30 @@ impl SolverManager {
         solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>,
         id: usize,
     ) -> std::result::Result<(), Error> {
-        // Resume first so stopped processes can receive SIGTERM
+        Self::send_signal_to_solver(solver_to_pid.clone(), id, String::from(KILL_SIGNAL)).await?;
         let _ = Self::send_signal_to_solver(solver_to_pid.clone(), id, String::from(RESUME_SIGNAL))
-            .await;
-        Self::send_signal_to_solver(solver_to_pid.clone(), id, String::from(KILL_SIGNAL)).await
+            .await; // we ignore since the process might already be dead
+        Ok(())
     }
 
     async fn _stop_solvers(
         solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>,
         ids: &[usize],
     ) -> std::result::Result<(), Vec<Error>> {
-        // Resume first so stopped processes can receive SIGTERM
-        let _ = Self::send_signal_to_solvers(solver_to_pid.clone(), ids, RESUME_SIGNAL).await;
-        Self::send_signal_to_solvers(solver_to_pid.clone(), ids, KILL_SIGNAL).await
+        Self::send_signal_to_solvers(solver_to_pid.clone(), ids, KILL_SIGNAL).await?;
+        let _ = Self::send_signal_to_solvers(solver_to_pid.clone(), ids, RESUME_SIGNAL).await; // we ignore since the process might already be dead
+        Ok(())
     }
 
     async fn _stop_all_solvers(
         solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>,
     ) -> std::result::Result<(), Vec<Error>> {
-        // Resume first so stopped processes can receive SIGTERM
-        let _ = Self::send_signal_to_all_solvers(solver_to_pid.clone(), RESUME_SIGNAL).await;
-        Self::send_signal_to_all_solvers(solver_to_pid.clone(), KILL_SIGNAL).await
+        let ids: Vec<usize> = {
+            let map = solver_to_pid.lock().await;
+            map.keys().copied().collect()
+        };
+
+        Self::_stop_solvers(solver_to_pid.clone(), &ids).await
     }
 
     pub async fn stop_solver(&self, id: usize) -> std::result::Result<(), Error> {
@@ -473,6 +487,10 @@ impl SolverManager {
         solver_mem.sort_by_key(|(mem, _)| std::cmp::Reverse(*mem));
         solver_mem
     }
+
+    pub async fn get_best_objective(&self) -> Option<f64> {
+        *self.best_objective.read().await
+    }
 }
 
 fn cleanup_handler(solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>) {
@@ -482,13 +500,14 @@ fn cleanup_handler(solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>) {
         let solver_to_pid_guard = solver_to_pid_clone.blocking_lock();
 
         for pid in solver_to_pid_guard.values() {
-            // Resume first so stopped processes can receive kill signal
+            let _ = kill_tree::blocking::kill_tree(*pid);
+
+            // Resume the stopped processes can receive kill signal
             let resume_config = kill_tree::Config {
                 signal: String::from(RESUME_SIGNAL),
                 ..Default::default()
             };
             let _ = kill_tree::blocking::kill_tree_with_config(*pid, &resume_config);
-            let _ = kill_tree::blocking::kill_tree(*pid);
         }
 
         std::process::exit(0);
