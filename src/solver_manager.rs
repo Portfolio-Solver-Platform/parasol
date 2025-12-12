@@ -2,20 +2,20 @@ use crate::args::{Args, DebugVerbosityLevel};
 use crate::model_parser::{
     ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type, insert_objective,
 };
-use crate::scheduler::{Schedule, ScheduleElement};
-use crate::solver_output::{Output, OutputParseError, Solution, Status};
+use crate::scheduler::ScheduleElement;
+use crate::solver_output::{Output, Solution, Status};
 use crate::{mzn_to_fzn, solver_output};
 use futures::future::join_all;
 use std::collections::{HashMap, HashSet};
-use std::io::{self, ErrorKind};
+use std::io::ErrorKind;
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use sysinfo::{Pid, System};
-use tempfile::NamedTempFile;
-use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, RwLock, mpsc};
+use tokio::task::JoinHandle;
 
 const SUSPEND_SIGNAL: &str = "SIGSTOP";
 const RESUME_SIGNAL: &str = "SIGCONT";
@@ -26,9 +26,10 @@ pub enum Error {
     KillTree(kill_tree::Error),
     InvalidSolver(String),
     Io(std::io::Error),
-    OutputParseError(OutputParseError),
+    OutputParseError(solver_output::Error),
     ModelParse(ModelParseError),
     FznConversion(mzn_to_fzn::ConversionError),
+    UseOfOznBeforeCompilation,
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -50,8 +51,8 @@ impl From<kill_tree::Error> for Error {
     }
 }
 
-impl From<OutputParseError> for Error {
-    fn from(value: OutputParseError) -> Self {
+impl From<solver_output::Error> for Error {
+    fn from(value: solver_output::Error) -> Self {
         Error::OutputParseError(value)
     }
 }
@@ -72,6 +73,9 @@ impl std::fmt::Display for Error {
             Error::ModelParse(e) => write!(f, "model parse error: {:?}", e),
             Error::FznConversion(e) => {
                 write!(f, "failed to convert mzn to fzn: {e:?}")
+            }
+            Error::UseOfOznBeforeCompilation => {
+                write!(f, "ozn file was used before it was compiled")
             }
         }
     }
@@ -99,6 +103,12 @@ pub struct SolverManager {
     mzn_to_fzn: mzn_to_fzn::CachedConverter,
     best_objective: Arc<RwLock<Option<ObjectiveValue>>>,
     objective_type: ObjectiveType,
+}
+
+struct PipeCommand {
+    pub left: Child,
+    pub right: Child,
+    pub pipe: JoinHandle<std::io::Result<u64>>,
 }
 
 impl SolverManager {
@@ -144,7 +154,6 @@ impl SolverManager {
                             *guard = Some(s.objective);
                         }
                         println!("{}", s.solution.trim_end());
-                        println!("{}", solver_output::dzn::SOLUTION_TERMINATOR);
                     }
                 }
                 Msg::Status(status) => {
@@ -162,17 +171,68 @@ impl SolverManager {
         std::process::exit(0);
     }
 
+    async fn get_fzn_command(
+        &self,
+        fzn_path: &Path,
+        solver_name: &str,
+        cores: usize,
+    ) -> Result<Command> {
+        let mut cmd = Command::new("minizinc");
+        cmd.arg("--solver").arg(solver_name);
+        cmd.arg(fzn_path);
+
+        cmd.arg("-i");
+
+        // if self.args.output_objective { // TODO make this an option to the output we print since it is in the rules i think
+        //     cmd.arg("--output-objective");
+        // }
+
+        // if self.args.ignore_search {  // TODO maybe also this? This option however gives some errors for some solvers
+        //     cmd.arg("-f");
+        // }
+        // cmd.arg("-f");
+
+        cmd.arg("-p").arg(cores.to_string());
+
+        Ok(cmd)
+    }
+
+    async fn get_ozn_command(&self) -> Result<Command> {
+        let mut cmd = Command::new("minizinc");
+        cmd.arg("--ozn-file");
+
+        let mut error = None;
+        self.mzn_to_fzn
+            .use_ozn_file(|ozn| match ozn {
+                Some(ozn) => {
+                    cmd.arg(ozn);
+                }
+                None => {
+                    error = Some(Error::UseOfOznBeforeCompilation);
+                }
+            })
+            .await;
+
+        match error {
+            None => Ok(cmd),
+            Some(error) => Err(error),
+        }
+    }
+
     async fn start_solver(
         &self,
         elem: &ScheduleElement,
         objective: Option<ObjectiveValue>,
     ) -> Result<()> {
+        let solver_name = &elem.info.name;
+        let cores = elem.info.cores;
+
         let fzn_original_path = self
             .mzn_to_fzn
-            .convert(&self.args.model, self.args.data.as_deref(), &elem.info.name)
+            .convert(&self.args.model, self.args.data.as_deref(), solver_name)
             .await?;
 
-        let (final_fzn_path, fzn_guard) = if let Some(obj) = objective {
+        let (fzn_final_path, fzn_guard) = if let Some(obj) = objective {
             if let Ok(new_temp_file) =
                 insert_objective(&fzn_original_path, &self.objective_type, obj)
             {
@@ -184,50 +244,42 @@ impl SolverManager {
             (fzn_original_path, None)
         };
 
-        let mut cmd = Command::new("minizinc");
-        cmd.arg("--solver").arg(&elem.info.name);
-        cmd.arg(final_fzn_path);
-
-        cmd.arg("-i");
-        cmd.arg("--json-stream");
-        cmd.arg("--output-mode").arg("json");
-        cmd.arg("--output-objective");
-
-        // if self.args.output_objective { // TODO make this an option to the output we print since it is in the rules i think
-        //     cmd.arg("--output-objective");
-        // }
-
-        // if self.args.ignore_search {  // TODO maybe also this? This option however gives some errors for some solvers
-        //     cmd.arg("-f");
-        // }
-        // cmd.arg("-f");
-
-        cmd.arg("-p").arg(elem.info.cores.to_string());
-
+        let mut fzn_cmd = self
+            .get_fzn_command(&fzn_final_path, solver_name, cores)
+            .await?;
         #[cfg(unix)]
-        cmd.process_group(0); // let OS give it a group process id
+        fzn_cmd.process_group(0); // let OS give it a group process id
+        fzn_cmd.stderr(Stdio::piped());
 
-        cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::piped());
+        let mut ozn_cmd = self.get_ozn_command().await?;
+        ozn_cmd.stdout(Stdio::piped());
+        ozn_cmd.stderr(Stdio::piped());
 
-        let mut child = cmd.spawn()?;
-        let pid = child.id().expect("Child has no PID");
+        let PipeCommand {
+            left: mut fzn,
+            right: mut ozn,
+            pipe,
+        } = pipe(fzn_cmd, ozn_cmd).await?;
+
+        let pid = fzn.id().expect("Child has no PID");
         {
             let mut map = self.solver_to_pid.lock().await;
             map.insert(elem.id, pid);
         }
 
-        let stdout = child.stdout.take().expect("Failed stdout");
-        let stderr = child.stderr.take().expect("Failed stderr");
+        let ozn_stdout = ozn.stdout.take().expect("Failed to take ozn stdout");
+        let ozn_stderr = ozn.stderr.take().expect("Failed to take ozn stderr");
+        let fzn_stderr = fzn.stderr.take().expect("Failed to take fzt stderr");
 
         let tx_clone = self.tx.clone();
         let verbosity = self.args.debug_verbosity;
         tokio::spawn(async move {
-            Self::handle_solver_stdout(stdout, tx_clone, verbosity).await;
+            Self::handle_solver_stdout(ozn_stdout, pipe, tx_clone, verbosity).await;
         });
 
         let verbosity_stderr = self.args.debug_verbosity;
-        tokio::spawn(async move { Self::handle_solver_stderr(stderr, verbosity_stderr).await });
+        tokio::spawn(async move { Self::handle_solver_stderr(fzn_stderr, verbosity_stderr).await });
+        tokio::spawn(async move { Self::handle_solver_stderr(ozn_stderr, verbosity_stderr).await });
 
         let solver_to_pid_clone = self.solver_to_pid.clone();
         let solver_name = elem.info.name.clone();
@@ -236,7 +288,7 @@ impl SolverManager {
 
         tokio::spawn(async move {
             let _keep_alive = fzn_guard;
-            match child.wait().await {
+            match fzn.wait().await {
                 Ok(status) if !status.success() => {
                     if verbosity_wait >= DebugVerbosityLevel::Info {
                         eprintln!("Solver '{}' exited with status: {}", solver_name, status);
@@ -258,43 +310,50 @@ impl SolverManager {
 
     async fn handle_solver_stdout(
         stdout: tokio::process::ChildStdout,
+        pipe: JoinHandle<std::io::Result<u64>>,
         tx: tokio::sync::mpsc::UnboundedSender<Msg>,
         verbosity: DebugVerbosityLevel,
     ) {
         let reader = BufReader::new(stdout);
         let mut lines = reader.lines();
+        let mut parser = solver_output::Parser::new();
 
-        loop {
-            match lines.next_line().await {
-                Ok(Some(line)) => {
-                    let output = match Output::parse(&line, verbosity) {
-                        Ok(o) => o,
-                        Err(e) => {
-                            if verbosity >= DebugVerbosityLevel::Error {
-                                eprintln!("Error parsing solver output: {:?}", e);
-                            }
-                            continue;
-                        }
-                    };
-                    let msg = match output {
-                        Output::Ignore => continue,
-                        Output::Solution(solution) => Msg::Solution(solution),
-                        Output::Status(status) => Msg::Status(status),
-                    };
-
-                    if let Err(e) = tx.send(msg) {
-                        if verbosity >= DebugVerbosityLevel::Error {
-                            eprintln!("Could not send message, receiver dropped: {}", e);
-                        }
-                        break;
-                    }
-                }
-                Ok(None) => break, // EOF
+        while let Ok(Some(line)) = lines.next_line().await.map_err(|err| {
+            if verbosity >= DebugVerbosityLevel::Error {
+                eprintln!("Error reading solver stdout: {err}");
+            }
+        }) {
+            let output = match parser.next_line(&line) {
+                Ok(o) => o,
                 Err(e) => {
                     if verbosity >= DebugVerbosityLevel::Error {
-                        eprintln!("Error reading solver stdout: {}", e);
+                        eprintln!("Error parsing solver output: {e}");
                     }
-                    break;
+                    continue;
+                }
+            };
+            let Some(output) = output else {
+                continue;
+            };
+
+            let msg = match output {
+                Output::Solution(solution) => Msg::Solution(solution),
+                Output::Status(status) => Msg::Status(status),
+            };
+
+            if let Err(e) = tx.send(msg) {
+                if verbosity >= DebugVerbosityLevel::Error {
+                    eprintln!("Could not send message, receiver dropped: {}", e);
+                }
+                break;
+            }
+        }
+
+        match pipe.await {
+            Ok(_) => {}
+            Err(e) => {
+                if verbosity >= DebugVerbosityLevel::Error {
+                    eprintln!("Error piping from fzn to ozn: {e}");
                 }
             }
         }
@@ -539,4 +598,21 @@ fn cleanup_handler(solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>) {
         std::process::exit(0);
     })
     .expect("Error setting Ctrl-C handler");
+}
+
+async fn pipe(mut left: Command, mut right: Command) -> Result<PipeCommand> {
+    let mut left_child = left.stdout(Stdio::piped()).spawn()?;
+    let mut right_child = right.stdin(Stdio::piped()).spawn()?;
+
+    let mut left_stdout = left_child.stdout.take().expect("left stdout not captured");
+    let mut right_stdin = right_child.stdin.take().expect("right stdin not captured");
+
+    let pipe_task =
+        tokio::spawn(async move { tokio::io::copy(&mut left_stdout, &mut right_stdin).await });
+
+    Ok(PipeCommand {
+        left: left_child,
+        right: right_child,
+        pipe: pipe_task,
+    })
 }
