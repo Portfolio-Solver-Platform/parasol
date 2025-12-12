@@ -1,9 +1,12 @@
 use std::ffi::OsStr;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
-
+use tempfile::NamedTempFile;
 use tokio::process::Command;
+
+pub type ObjectiveValue = i64;
 
 #[derive(Debug)]
 pub enum ModelParseError {
@@ -46,7 +49,7 @@ pub enum ObjectiveType {
 }
 
 impl ObjectiveType {
-    pub fn is_better(&self, old: Option<f64>, new: f64) -> bool {
+    pub fn is_better(&self, old: Option<ObjectiveValue>, new: ObjectiveValue) -> bool {
         match (self, old) {
             (_, None) => true,
             (Self::Maximize, Some(val)) => val < new,
@@ -59,8 +62,8 @@ impl ObjectiveType {
 pub fn insert_objective(
     fzn_path: &PathBuf,
     objective_type: &ObjectiveType,
-    objective: f64,
-) -> Result<PathBuf, ()> {
+    objective: ObjectiveValue,
+) -> Result<NamedTempFile, ()> {
     // TODO: Optimise: don't read the entire file, but only read from the end.
     let content = fs::read_to_string(fzn_path).map_err(|_| ())?;
     let content = content.trim();
@@ -84,29 +87,35 @@ pub fn insert_objective(
     lines.insert(lines.len() - 1, &objective_constraint);
 
     let new_content = lines.join("\n");
-    let file_stem = fzn_path
-        .file_stem()
-        .unwrap_or_else(|| OsStr::new(""))
-        .to_str()
-        .ok_or(())?;
-    let new_file_path: PathBuf = fzn_path.with_file_name(format!("{file_stem}_{objective}.fzn"));
-    fs::write(&new_file_path, new_content).map_err(|_| ())?;
+    // let file_stem = fzn_path
+    //     .file_stem()
+    //     .unwrap_or_else(|| OsStr::new(""))
+    //     .to_str()
+    //     .ok_or(())?;
+    // let new_file_path: PathBuf = fzn_path.with_file_name(format!("{file_stem}_{objective}.fzn"));
+    let mut file = tempfile::Builder::new()
+        .suffix(".fzn")
+        .tempfile()
+        .map_err(|_| ())?;
+    write!(file, "{new_content}").map_err(|_| ())?;
+    file.flush().map_err(|_| ())?;
+    // fs::write(&new_file_path, new_content).map_err(|_| ())?;
 
-    Ok(new_file_path)
+    Ok(file)
 }
 
 fn get_objective_constraint(
     objective_type: &ObjectiveType,
     objective_name: &str,
-    objective: f64,
+    objective: ObjectiveValue,
 ) -> Result<String, ()> {
-    fn int_lt(left: &str, right: &str) -> String {
-        format!("constraint int_lt({left}, {right});")
+    fn int_le(left: &str, right: &str) -> String {
+        format!("constraint int_le({left}, {right});")
     }
     match objective_type {
         ObjectiveType::Satisfy => Err(()),
-        ObjectiveType::Minimize => Ok(int_lt(objective_name, &objective.to_string())),
-        ObjectiveType::Maximize => Ok(int_lt(&objective.to_string(), objective_name)),
+        ObjectiveType::Minimize => Ok(int_le(objective_name, &objective.to_string())),
+        ObjectiveType::Maximize => Ok(int_le(&objective.to_string(), objective_name)),
     }
 }
 

@@ -1,14 +1,18 @@
 use crate::args::{Args, DebugVerbosityLevel};
-use crate::model_parser::{ModelParseError, ObjectiveType, get_objective_type, insert_objective};
+use crate::model_parser::{
+    ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type, insert_objective,
+};
 use crate::scheduler::{Schedule, ScheduleElement};
 use crate::solver_output::{Output, OutputParseError, Solution, Status};
 use crate::{mzn_to_fzn, solver_output};
 use futures::future::join_all;
 use std::collections::{HashMap, HashSet};
-use std::io::ErrorKind;
+use std::io::{self, ErrorKind};
 use std::process::Stdio;
 use std::sync::Arc;
 use sysinfo::{Pid, System};
+use tempfile::NamedTempFile;
+use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::{Mutex, RwLock, mpsc};
@@ -93,7 +97,8 @@ pub struct SolverManager {
     solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>,
     args: Args,
     mzn_to_fzn: mzn_to_fzn::CachedConverter,
-    best_objective: Arc<RwLock<Option<f64>>>,
+    best_objective: Arc<RwLock<Option<ObjectiveValue>>>,
+    objective_type: ObjectiveType,
 }
 
 impl SolverManager {
@@ -117,6 +122,7 @@ impl SolverManager {
             mzn_to_fzn: mzn_to_fzn::CachedConverter::new(args.debug_verbosity),
             args,
             best_objective,
+            objective_type,
         })
     }
 
@@ -124,9 +130,9 @@ impl SolverManager {
         mut rx: mpsc::UnboundedReceiver<Msg>,
         solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>,
         objective_type: ObjectiveType,
-        shared_objective: Arc<RwLock<Option<f64>>>,
+        shared_objective: Arc<RwLock<Option<ObjectiveValue>>>,
     ) {
-        let mut objective: Option<f64> = None;
+        let mut objective: Option<ObjectiveValue> = None;
 
         while let Some(output) = rx.recv().await {
             match output {
@@ -156,15 +162,27 @@ impl SolverManager {
         std::process::exit(0);
     }
 
-    async fn start_solver(&self, elem: &ScheduleElement) -> Result<()> {
-        let fzn = self
+    async fn start_solver(
+        &self,
+        elem: &ScheduleElement,
+        objective: Option<ObjectiveValue>,
+    ) -> Result<()> {
+        let fzn_original_path = self
             .mzn_to_fzn
             .convert(&self.args.model, self.args.data.as_deref(), &elem.info.name)
             .await?;
 
+        let (final_fzn_path, fzn_guard) = if let Some(obj) = objective {
+            let new_temp_file =
+                insert_objective(&fzn_original_path, &self.objective_type, obj).unwrap();
+            (new_temp_file.path().to_path_buf(), Some(new_temp_file))
+        } else {
+            (fzn_original_path, None)
+        };
+
         let mut cmd = Command::new("minizinc");
         cmd.arg("--solver").arg(&elem.info.name);
-        cmd.arg(fzn);
+        cmd.arg(final_fzn_path);
 
         cmd.arg("-i");
         cmd.arg("--json-stream");
@@ -213,6 +231,7 @@ impl SolverManager {
         let verbosity_wait = self.args.debug_verbosity;
 
         tokio::spawn(async move {
+            let _keep_alive = fzn_guard;
             match child.wait().await {
                 Ok(status) if !status.success() => {
                     if verbosity_wait >= DebugVerbosityLevel::Info {
@@ -299,8 +318,11 @@ impl SolverManager {
     pub async fn start_solvers(
         &self,
         schedule: &[ScheduleElement],
+        objective: Option<ObjectiveValue>,
     ) -> std::result::Result<(), Vec<Error>> {
-        let futures = schedule.iter().map(|elem| self.start_solver(elem));
+        let futures = schedule
+            .iter()
+            .map(|elem| self.start_solver(elem, objective));
         let results = join_all(futures).await;
         let errors: Vec<Error> = results.into_iter().filter_map(Result::err).collect();
 
@@ -488,7 +510,7 @@ impl SolverManager {
         solver_mem
     }
 
-    pub async fn get_best_objective(&self) -> Option<f64> {
+    pub async fn get_best_objective(&self) -> Option<ObjectiveValue> {
         *self.best_objective.read().await
     }
 }
