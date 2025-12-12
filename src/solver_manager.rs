@@ -6,12 +6,14 @@ use crate::{mzn_to_fzn, solver_output};
 use futures::future::join_all;
 use std::collections::{HashMap, HashSet};
 use std::io::ErrorKind;
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use sysinfo::{Pid, System};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, RwLock, mpsc};
+use tokio::task::JoinHandle;
 
 const SUSPEND_SIGNAL: &str = "SIGSTOP";
 const RESUME_SIGNAL: &str = "SIGCONT";
@@ -25,6 +27,7 @@ pub enum Error {
     OutputParseError(OutputParseError),
     ModelParse(ModelParseError),
     FznConversion(mzn_to_fzn::ConversionError),
+    UseOfOznBeforeCompilation,
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -96,6 +99,12 @@ pub struct SolverManager {
     best_objective: Arc<RwLock<Option<f64>>>,
 }
 
+struct PipeCommand {
+    pub left: Child,
+    pub right: Child,
+    pub pipe: JoinHandle<std::result::Result<u64, tokio::io::Error>>,
+}
+
 impl SolverManager {
     pub async fn new(args: Args) -> std::result::Result<Self, Error> {
         let objective_type = get_objective_type(&args.model).await?;
@@ -156,20 +165,48 @@ impl SolverManager {
         std::process::exit(0);
     }
 
-    async fn start_solver(&self, elem: &ScheduleElement) -> Result<()> {
+    async fn spawn_solve_commands(&self, solver_name: &str, cores: usize) -> Result<SolveCommand> {
         let fzn = self
             .mzn_to_fzn
-            .convert(&self.args.model, self.args.data.as_deref(), &elem.info.name)
+            .convert(&self.args.model, self.args.data.as_deref(), solver_name)
             .await?;
 
+        let mut fzn_child = self
+            .get_fzn_command(&fzn, solver_name, cores)
+            .await?
+            .stdout(Stdio::piped())
+            .spawn()?;
+
+        let mut ozn_child = self
+            .get_ozn_command()
+            .await?
+            .stdin(Stdio::piped())
+            .spawn()?;
+
+        let mut fzn_stdout = fzn_child.stdout.take().expect("fzn stdout not captured");
+        let mut ozn_stdin = ozn_child.stdin.take().expect("ozn stdin not captured");
+
+        let pipe_task =
+            tokio::spawn(async move { tokio::io::copy(&mut fzn_stdout, &mut ozn_stdin).await });
+
+        Ok(SolveCommand {
+            fzn: fzn_child,
+            ozn: ozn_child,
+            pipe: pipe_task,
+        })
+    }
+
+    async fn get_fzn_command(
+        &self,
+        fzn_path: &Path,
+        solver_name: &str,
+        cores: usize,
+    ) -> Result<Command> {
         let mut cmd = Command::new("minizinc");
-        cmd.arg("--solver").arg(&elem.info.name);
-        cmd.arg(fzn);
+        cmd.arg("--solver").arg(solver_name);
+        cmd.arg(fzn_path);
 
         cmd.arg("-i");
-        cmd.arg("--json-stream");
-        cmd.arg("--output-mode").arg("json");
-        cmd.arg("--output-objective");
 
         // if self.args.output_objective { // TODO make this an option to the output we print since it is in the rules i think
         //     cmd.arg("--output-objective");
@@ -180,15 +217,57 @@ impl SolverManager {
         // }
         // cmd.arg("-f");
 
-        cmd.arg("-p").arg(elem.info.cores.to_string());
+        cmd.arg("-p").arg(cores.to_string());
 
+        Ok(cmd)
+    }
+
+    async fn get_ozn_command(&self) -> Result<Command> {
+        let mut cmd = Command::new("minizinc");
+        cmd.arg("--ozn-file");
+
+        let mut error = None;
+        self.mzn_to_fzn
+            .use_ozn_file(|ozn| match ozn {
+                Some(ozn) => {
+                    cmd.arg(ozn);
+                }
+                None => {
+                    error = Some(Error::UseOfOznBeforeCompilation);
+                }
+            })
+            .await;
+
+        match error {
+            None => Ok(cmd),
+            Some(error) => Err(error),
+        }
+    }
+
+    async fn start_solver(&self, elem: &ScheduleElement) -> Result<()> {
+        let solver_name = &elem.info.name;
+        let cores = elem.info.cores;
+
+        let fzn = self
+            .mzn_to_fzn
+            .convert(&self.args.model, self.args.data.as_deref(), solver_name)
+            .await?;
+
+        let mut fzn_cmd = self.get_fzn_command(&fzn, solver_name, cores).await?;
         #[cfg(unix)]
-        cmd.process_group(0); // let OS give it a group process id
+        fzn_cmd.process_group(0); // let OS give it a group process id
+        fzn_cmd.stderr(Stdio::piped());
 
-        cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::piped());
+        let mut ozn_cmd = self.get_ozn_command().await?;
+        ozn_cmd.stdout(Stdio::piped());
+        ozn_cmd.stderr(Stdio::piped());
 
-        let mut child = cmd.spawn()?;
+        let PipeCommand {
+            left: fzn,
+            right: ozn,
+            pipe,
+        } = pipe(fzn_cmd, ozn_cmd).await?;
+
         let pid = child.id().expect("Child has no PID");
         {
             let mut map = self.solver_to_pid.lock().await;
@@ -240,6 +319,11 @@ impl SolverManager {
     ) {
         let reader = BufReader::new(stdout);
         let mut lines = reader.lines();
+
+        // TODO:
+        // while let Some(line) = lines.next_line().await.map_err(|err| {
+        // }) {
+        // }
 
         loop {
             match lines.next_line().await {
@@ -513,4 +597,21 @@ fn cleanup_handler(solver_to_pid: Arc<Mutex<HashMap<usize, u32>>>) {
         std::process::exit(0);
     })
     .expect("Error setting Ctrl-C handler");
+}
+
+async fn pipe(mut left: Command, mut right: Command) -> Result<PipeCommand> {
+    let mut left_child = left.stdout(Stdio::piped()).spawn()?;
+    let mut right_child = right.stdin(Stdio::piped()).spawn()?;
+
+    let mut left_stdout = left_child.stdout.take().expect("left stdout not captured");
+    let mut right_stdin = right_child.stdin.take().expect("right stdin not captured");
+
+    let pipe_task =
+        tokio::spawn(async move { tokio::io::copy(&mut left_stdout, &mut right_stdin).await });
+
+    Ok(PipeCommand {
+        left: left_child,
+        right: right_child,
+        pipe: pipe_task,
+    })
 }

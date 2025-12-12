@@ -1,12 +1,12 @@
 use crate::config::Config;
-use crate::mzn_to_fzn::convert_mzn_to_fzn;
-use crate::scheduler::{Portfolio, Schedule, Scheduler, SolverInfo};
+use crate::mzn_to_fzn::convert_mzn;
+use crate::scheduler::{Portfolio, Scheduler, SolverInfo};
 use crate::{ai::Ai, args::Args};
 use tokio::time::{Duration, sleep};
 
 const FEATURES_SOLVER: &str = "gecode";
 
-pub async fn sunny(args: Args, mut ai: impl Ai, config: Config) {
+pub async fn sunny(args: Args, ai: impl Ai, config: Config) {
     let timer_duration = Duration::from_secs(config.dynamic_schedule_interval);
     let cores = args.cores.unwrap_or(2);
     let mut scheduler = Scheduler::new(&args, &config)
@@ -15,10 +15,11 @@ pub async fn sunny(args: Args, mut ai: impl Ai, config: Config) {
     scheduler.apply(static_schedule(cores)).await.unwrap(); // TODO: Maybe do this in another thread
 
     let mut timer = sleep(timer_duration);
-    let fzn = convert_mzn_to_fzn(
+    let fzn = convert_mzn(
         &args.model,
         args.data.as_deref(),
         FEATURES_SOLVER,
+        false,
         args.debug_verbosity,
     )
     .await

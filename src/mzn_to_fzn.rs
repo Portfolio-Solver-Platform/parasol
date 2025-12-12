@@ -1,9 +1,7 @@
 use crate::args::DebugVerbosityLevel;
 use dashmap::DashMap;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::RwLock;
@@ -42,11 +40,12 @@ impl CachedConverter {
         solver_name: &str,
     ) -> Result<PathBuf, ConversionError> {
         if let Some(fzn) = self.cache.get(solver_name) {
+            // TODO: Avoid cloning by making a use_fzn_file function that implicitly converts if necessary
             return Ok(fzn.clone());
         }
 
         let output_ozn_file = !self.ozn_file_exists().await;
-        let fzn = convert_mzn_to_fzn(
+        let conversion = convert_mzn(
             model,
             data,
             solver_name,
@@ -54,9 +53,19 @@ impl CachedConverter {
             self.debug_verbosity,
         )
         .await?;
-        self.cache.insert(solver_name.to_owned(), fzn.clone());
+        self.cache
+            .insert(solver_name.to_owned(), conversion.fzn.clone());
 
-        Ok(fzn)
+        if let Some(ozn) = conversion.ozn {
+            self.set_ozn_file(ozn);
+        }
+
+        Ok(conversion.fzn)
+    }
+
+    pub async fn use_ozn_file(&self, f: impl FnOnce(Option<&Path>)) {
+        let path = self.ozn_cache.read().await;
+        f(path.as_deref());
     }
 
     async fn ozn_file_exists(&self) -> bool {
@@ -68,29 +77,33 @@ impl CachedConverter {
     }
 }
 
-pub async fn convert_mzn_to_fzn(
+pub struct Conversion {
+    pub fzn: PathBuf,
+    pub ozn: Option<PathBuf>,
+}
+
+pub async fn convert_mzn(
     model: &Path,
     data: Option<&Path>,
     solver_name: &str,
     output_ozn_file: bool,
     verbosity: DebugVerbosityLevel,
-) -> Result<PathBuf, ConversionError> {
+) -> Result<Conversion, ConversionError> {
     let fzn_file_path = get_new_model_file_name(model, solver_name);
-    let ozn_file_path = if output_ozn_file {
-        Some(get_new_ozn_file_name(model, solver_name))
-    } else {
-        None
-    };
+    let ozn_file_path = output_ozn_file.then(|| get_new_ozn_file_name(model, solver_name));
     run_mzn_to_fzn_cmd(
         model,
         data,
         solver_name,
         &fzn_file_path,
-        ozn_file_path,
+        ozn_file_path.as_deref(),
         verbosity,
     )
     .await?;
-    Ok(fzn_file_path)
+    Ok(Conversion {
+        fzn: fzn_file_path,
+        ozn: ozn_file_path,
+    })
 }
 
 fn get_new_model_file_name(model: &Path, solver_name: &str) -> PathBuf {
