@@ -32,11 +32,16 @@ pub type Portfolio = Vec<SolverInfo>;
 pub struct SolverInfo {
     pub name: String,
     pub cores: usize,
+    pub objective: Option<ObjectiveValue>,
 }
 
 impl SolverInfo {
     pub fn new(name: String, cores: usize) -> Self {
-        Self { name, cores }
+        Self {
+            name,
+            cores,
+            objective: None,
+        }
     }
 }
 

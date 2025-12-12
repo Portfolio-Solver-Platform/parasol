@@ -173,9 +173,13 @@ impl SolverManager {
             .await?;
 
         let (final_fzn_path, fzn_guard) = if let Some(obj) = objective {
-            let new_temp_file =
-                insert_objective(&fzn_original_path, &self.objective_type, obj).unwrap();
-            (new_temp_file.path().to_path_buf(), Some(new_temp_file))
+            if let Ok(new_temp_file) =
+                insert_objective(&fzn_original_path, &self.objective_type, obj)
+            {
+                (new_temp_file.path().to_path_buf(), Some(new_temp_file))
+            } else {
+                (fzn_original_path, None)
+            }
         } else {
             (fzn_original_path, None)
         };

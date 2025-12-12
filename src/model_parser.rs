@@ -87,19 +87,13 @@ pub fn insert_objective(
     lines.insert(lines.len() - 1, &objective_constraint);
 
     let new_content = lines.join("\n");
-    // let file_stem = fzn_path
-    //     .file_stem()
-    //     .unwrap_or_else(|| OsStr::new(""))
-    //     .to_str()
-    //     .ok_or(())?;
-    // let new_file_path: PathBuf = fzn_path.with_file_name(format!("{file_stem}_{objective}.fzn"));
+
     let mut file = tempfile::Builder::new()
         .suffix(".fzn")
         .tempfile()
         .map_err(|_| ())?;
     write!(file, "{new_content}").map_err(|_| ())?;
     file.flush().map_err(|_| ())?;
-    // fs::write(&new_file_path, new_content).map_err(|_| ())?;
 
     Ok(file)
 }
