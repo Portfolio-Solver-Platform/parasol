@@ -202,21 +202,20 @@ impl SolverManager {
         Ok(cmd)
     }
 
-    async fn get_ozn_command(&self) -> Result<Command> {
+    fn get_ozn_command(&self, solver_name: &str) -> Result<Command> {
         let mut cmd = Command::new("minizinc");
         cmd.arg("--ozn-file");
 
         let mut error = None;
         self.mzn_to_fzn
-            .use_ozn_file(|ozn| match ozn {
+            .use_ozn_file(solver_name, |ozn| match ozn {
                 Some(ozn) => {
                     cmd.arg(ozn);
                 }
                 None => {
                     error = Some(Error::UseOfOznBeforeCompilation);
                 }
-            })
-            .await;
+            });
 
         match error {
             None => Ok(cmd),
@@ -256,7 +255,7 @@ impl SolverManager {
         fzn_cmd.process_group(0); // let OS give it a group process id
         fzn_cmd.stderr(Stdio::piped());
 
-        let mut ozn_cmd = self.get_ozn_command().await?;
+        let mut ozn_cmd = self.get_ozn_command(solver_name)?;
         ozn_cmd.stdout(Stdio::piped());
         ozn_cmd.stderr(Stdio::piped());
 

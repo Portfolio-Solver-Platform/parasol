@@ -19,16 +19,16 @@ impl From<tokio::io::Error> for ConversionError {
 }
 
 pub struct CachedConverter {
-    cache: DashMap<String, PathBuf>,
-    ozn_cache: RwLock<Option<PathBuf>>,
+    fzn_cache: DashMap<String, PathBuf>,
+    ozn_cache: DashMap<String, PathBuf>,
     debug_verbosity: DebugVerbosityLevel,
 }
 
 impl CachedConverter {
     pub fn new(debug_verbosity: DebugVerbosityLevel) -> Self {
         Self {
-            cache: DashMap::new(),
-            ozn_cache: RwLock::new(None),
+            fzn_cache: DashMap::new(),
+            ozn_cache: DashMap::new(),
             debug_verbosity,
         }
     }
@@ -39,41 +39,31 @@ impl CachedConverter {
         data: Option<&Path>,
         solver_name: &str,
     ) -> Result<PathBuf, ConversionError> {
-        if let Some(fzn) = self.cache.get(solver_name) {
-            // TODO: Avoid cloning by making a use_fzn_file function that implicitly converts if necessary
+        if let Some(fzn) = self.fzn_cache.get(solver_name) {
             return Ok(fzn.clone());
         }
 
-        let output_ozn_file = !self.ozn_file_exists().await;
         let conversion = convert_mzn(
             model,
             data,
             solver_name,
-            output_ozn_file,
+            true,
             self.debug_verbosity,
         )
         .await?;
-        self.cache
+        self.fzn_cache
             .insert(solver_name.to_owned(), conversion.fzn.clone());
 
         if let Some(ozn) = conversion.ozn {
-            self.set_ozn_file(ozn).await;
+            self.ozn_cache.insert(solver_name.to_owned(), ozn);
         }
 
         Ok(conversion.fzn)
     }
 
-    pub async fn use_ozn_file(&self, f: impl FnOnce(Option<&Path>)) {
-        let path = self.ozn_cache.read().await;
-        f(path.as_deref());
-    }
-
-    async fn ozn_file_exists(&self) -> bool {
-        self.ozn_cache.read().await.is_some()
-    }
-
-    async fn set_ozn_file(&self, path: PathBuf) {
-        *self.ozn_cache.write().await = Some(path);
+    pub fn use_ozn_file(&self, solver_name: &str, f: impl FnOnce(Option<&Path>)) {
+        let path = self.ozn_cache.get(solver_name);
+        f(path.as_deref().map(|p| p.as_path()));
     }
 }
 
