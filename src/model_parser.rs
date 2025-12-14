@@ -87,7 +87,8 @@ pub fn insert_objective(
 
     lines.insert(lines.len() - 1, &objective_constraint);
 
-    let new_content = lines.join("\n");
+    let mut new_content = lines.join("\n"); // add back newline after trim
+    new_content.push('\n');
 
     let mut file = tempfile::Builder::new()
         .suffix(".fzn")

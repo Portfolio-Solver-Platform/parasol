@@ -15,15 +15,15 @@ pub async fn sunny(args: Args, ai: impl Ai, config: Config) {
     scheduler.apply(static_schedule(cores)).await.unwrap(); // TODO: Maybe do this in another thread
 
     let mut timer = sleep(timer_duration);
-    let fzn = convert_mzn(
-        &args.model,
-        args.data.as_deref(),
-        FEATURES_SOLVER,
-        false,
-        args.debug_verbosity,
-    )
-    .await
-    .expect("failed to initially convert .mzn to .fzn");
+    // let fzn = convert_mzn(
+    //     &args.model,
+    //     args.data.as_deref(),
+    //     FEATURES_SOLVER,
+    //     false,
+    //     args.debug_verbosity,
+    // )
+    // .await
+    // .expect("failed to initially convert .mzn to .fzn");
 
     // let features = fzn_to_features(&fzn)
     //     .await
