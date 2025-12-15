@@ -39,35 +39,12 @@ pub async fn sunny(args: Args, ai: impl Ai, config: Config) {
         //     .unwrap();
 
         scheduler.apply(static_schedule(cores)).await.unwrap();
-        // apply_schedule(&mut solver_manager, schedule).await;
-
-        // solver_manager.suspend_all_solvers().await.unwrap();
-        // solver_manager.resume_all_solvers().await.unwrap();
-
-        // solver_manager.resume_solver(1).await.unwrap();
-        // solver_manager.resume_solver(2).await.unwrap();
-        // solver_manager.resume_solver(1).await.unwrap();
-        // solver_manager.resume_solver(1).await.unwrap();
-        // solver_manager.resume_solver(1).await.unwrap();
 
         timer = sleep(timer_duration);
     }
 }
 
 fn static_schedule(cores: usize) -> Portfolio {
-    // let solvers = vec![
-    //     "picat".to_string(),
-    //     "gecode".to_string(),
-    //     "cp-sat".to_string(),
-    //     "chuffed".to_string(),
-    //     "coinbc".to_string(),
-    //     "yuck".to_string(),
-    // ];
-    // let mut schedule = vec![];
-    // for (i, solver) in solvers.into_iter().cycle().take(100).enumerate() {
-    //     schedule.push(ScheduleElement::new(i, solver, 1));
-    // }
-    // schedule
     vec![
         SolverInfo::new("coinbc".to_string(), 1),
         SolverInfo::new("gecode".to_string(), 1),

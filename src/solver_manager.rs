@@ -190,7 +190,7 @@ impl SolverManager {
         // if self.args.ignore_search {  // TODO maybe also this? This option however gives some errors for some solvers
         //     cmd.arg("-f");
         // }
-        // cmd.arg("-f");
+        cmd.arg("-f");
 
         cmd.arg("-p").arg(cores.to_string());
 
@@ -201,7 +201,6 @@ impl SolverManager {
         let mut cmd = Command::new("minizinc");
         cmd.arg("--ozn-file");
         cmd.arg(ozn_path);
-
         cmd
     }
 

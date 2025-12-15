@@ -64,7 +64,6 @@ pub fn insert_objective(
     objective_type: &ObjectiveType,
     objective: ObjectiveValue,
 ) -> Result<NamedTempFile, ()> {
-    println!("INSERTING OBJECTIVE: {objective}");
     // TODO: Optimise: don't read the entire file, but only read from the end.
     let content = fs::read_to_string(fzn_path).map_err(|_| ())?;
     let content = content.trim();

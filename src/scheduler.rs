@@ -334,14 +334,16 @@ impl Scheduler {
             if let Some(obj) = new_objective {
                 let solver_objectives = self.solver_manager.get_solver_objectives().await;
                 let objective_type = self.solver_manager.objective_type();
-                println!("solver objectives: {:?}", solver_objectives);
                 let to_restart: Vec<usize> = solver_objectives
                     .iter()
                     .filter(|(_, best)| objective_type.is_better(**best, obj))
                     .map(|(id, _)| *id)
                     .collect();
+                if state.debug_verbosity >= DebugVerbosityLevel::Info {
+                    println!("solver objectives: {:?}", solver_objectives);
+                    println!("solver to restart {:?}", to_restart);
+                }
 
-                println!("to restart {:?}", to_restart);
                 self.solver_manager.stop_solvers(&to_restart).await?;
 
                 for id in &to_restart {
@@ -353,15 +355,37 @@ impl Scheduler {
 
         let schedule = Self::assign_ids(portfolio, &mut state);
         let changes =
-            Self::categorize_schedule(schedule, &mut state, self.solver_manager.clone()).await;
+            Self::categorize_schedule(schedule.clone(), &mut state, self.solver_manager.clone())
+                .await;
         Self::apply_changes_to_state(&mut state, &changes);
-        println!("changes: {:?}", changes);
-        self.solver_manager
+        if state.debug_verbosity >= DebugVerbosityLevel::Info {
+            println!("changes: {:?}", changes);
+        }
+
+        if let Err(_) = self
+            .solver_manager
             .suspend_solvers(&changes.to_suspend)
-            .await?;
-        self.solver_manager
-            .resume_solvers(&changes.to_resume)
-            .await?;
+            .await
+        {
+            self.solver_manager
+                .stop_solvers(&changes.to_suspend)
+                .await?;
+        }
+
+        if let Err(_) = self.solver_manager.resume_solvers(&changes.to_resume).await {
+            let mut resume_elements = Vec::new();
+            for schedule_elem in &schedule {
+                for resume_id in &changes.to_resume {
+                    if &schedule_elem.id == resume_id {
+                        resume_elements.push(schedule_elem.clone());
+                    }
+                }
+            }
+            self.solver_manager
+                .start_solvers(&resume_elements, state.prev_objective)
+                .await?;
+        }
+
         self.solver_manager
             .start_solvers(&changes.to_start, state.prev_objective)
             .await
