@@ -139,7 +139,7 @@ fn get_mzn_to_fzn_cmd(
     ozn_result_path: &Path,
 ) -> Command {
     let mut cmd = Command::new("minizinc");
-
+    cmd.kill_on_drop(true);
     cmd.arg("-c");
     cmd.arg(model);
     if let Some(data) = data {

@@ -37,6 +37,7 @@ async fn run_fzn_to_feat_cmd(fzn_model: &PathBuf) -> Result<String, Error> {
 
 fn get_fzn_to_feat_cmd(fzn_model: &PathBuf) -> Command {
     let mut cmd = Command::new("mzn2feat");
+    cmd.kill_on_drop(true);
     cmd.arg("-i");
     cmd.arg(fzn_model);
 

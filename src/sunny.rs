@@ -3,13 +3,13 @@ use crate::mzn_to_fzn::convert_mzn;
 use crate::scheduler::{Portfolio, Scheduler, SolverInfo};
 use crate::{ai::Ai, args::Args};
 use tokio::time::{Duration, sleep};
-
+use tokio_util::sync::CancellationToken;
 const FEATURES_SOLVER: &str = "gecode";
 
-pub async fn sunny(args: Args, ai: impl Ai, config: Config) {
+pub async fn sunny(args: Args, ai: impl Ai, config: Config, token: CancellationToken) {
     let timer_duration = Duration::from_secs(config.dynamic_schedule_interval);
     let cores = args.cores.unwrap_or(2);
-    let mut scheduler = Scheduler::new(&args, &config)
+    let mut scheduler = Scheduler::new(&args, &config, token)
         .await
         .expect("Failed to create scheduler");
     scheduler.apply(static_schedule(cores)).await.unwrap(); // TODO: Maybe do this in another thread

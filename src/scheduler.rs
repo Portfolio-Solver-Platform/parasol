@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use sysinfo::System;
 use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Debug)]
 pub struct ScheduleElement {
@@ -73,9 +74,14 @@ fn is_over_threshold(used: f64, total: f64, threshold: f64) -> bool {
 }
 
 impl Scheduler {
-    pub async fn new(args: &Args, config: &Config) -> std::result::Result<Self, Error> {
-        let solver_manager =
-            Arc::new(SolverManager::new(args.clone(), config.solver_args.clone()).await?);
+    pub async fn new(
+        args: &Args,
+        config: &Config,
+        token: CancellationToken,
+    ) -> std::result::Result<Self, Error> {
+        let solver_manager = Arc::new(
+            SolverManager::new(args.clone(), config.solver_args.clone(), token.clone()).await?,
+        );
 
         let memory_limit = std::env::var("MEMORY_LIMIT")
             .ok()
@@ -100,7 +106,8 @@ impl Scheduler {
         let solver_manager_clone = solver_manager.clone();
         let config_clone = config.clone();
         tokio::spawn(async move {
-            Self::memory_enforcer_loop(state_clone, solver_manager_clone, config_clone).await;
+            Self::memory_enforcer_loop(state_clone, solver_manager_clone, config_clone, token)
+                .await;
         });
 
         Ok(Self {
@@ -121,16 +128,6 @@ impl Scheduler {
         } else {
             state.system.total_memory() as f64
         };
-        if state.debug_verbosity >= DebugVerbosityLevel::Info {
-            let div = (1024 * 1024) as f64;
-
-            println!(
-                "Info: Memory used by system: {} MiB, Memory Available: {} MiB, Memory threshold: {}",
-                used / div,
-                total / div,
-                total * state.config.memory_threshold / div,
-            );
-        }
         (used, total)
     }
 
@@ -241,29 +238,47 @@ impl Scheduler {
         state: Arc<Mutex<MemoryEnforcerState>>,
         solver_manager: Arc<SolverManager>,
         config: Config,
+        token: CancellationToken,
     ) {
         let mut interval =
             tokio::time::interval(Duration::from_secs(config.memory_enforcer_interval));
 
         loop {
-            interval.tick().await;
-            let mut state: tokio::sync::MutexGuard<'_, MemoryEnforcerState> = state.lock().await;
-            Self::remove_exited_solvers(&mut state, &solver_manager).await;
-            let (used, total) = Self::get_memory_usage(&mut state);
-            if !is_over_threshold(used, total, config.memory_threshold) {
-                continue;
-            }
-            let used = Self::kill_suspended_until_under_threshold(
-                &mut state,
-                &solver_manager,
-                used,
-                total,
-            )
-            .await;
+            tokio::select! {
+                _ = token.cancelled() => {
+                    return; // we are done so stop loop
+                }
+                _ = interval.tick() => {
+                    let mut state: tokio::sync::MutexGuard<'_, MemoryEnforcerState> = state.lock().await;
+                    Self::remove_exited_solvers(&mut state, &solver_manager).await;
+                    let (used, total) = Self::get_memory_usage(&mut state);
+                    if !is_over_threshold(used, total, config.memory_threshold) {
+                        continue;
+                    }
 
-            if is_over_threshold(used, total, config.memory_threshold) {
-                Self::kill_running_until_under_threshold(&mut state, &solver_manager, used, total)
+                    if state.debug_verbosity >= DebugVerbosityLevel::Info {
+                        let div = (1024 * 1024) as f64;
+                        println!(
+                            "Info: Memory used by system: {} MiB, Memory Available: {} MiB, Memory threshold: {}",
+                            used / div,
+                            total / div,
+                            total * state.config.memory_threshold / div,
+                        );
+                    }
+
+                    let used = Self::kill_suspended_until_under_threshold(
+                        &mut state,
+                        &solver_manager,
+                        used,
+                        total,
+                    )
                     .await;
+
+                    if is_over_threshold(used, total, config.memory_threshold) {
+                        Self::kill_running_until_under_threshold(&mut state, &solver_manager, used, total)
+                            .await;
+                    }
+                }
             }
         }
     }
@@ -323,13 +338,13 @@ impl Scheduler {
         let mut state = self.state.lock().await;
         let new_objective = self.solver_manager.get_best_objective().await;
 
-        if state.debug_verbosity >= DebugVerbosityLevel::Info {
-            println!(
-                "apply function objectives: old objective: {:?}, new: {:?}",
-                state.prev_objective, new_objective
-            );
-        }
         if new_objective != state.prev_objective {
+            if state.debug_verbosity >= DebugVerbosityLevel::Info {
+                println!(
+                    "apply function objectives: old objective: {:?}, new: {:?}",
+                    state.prev_objective, new_objective
+                );
+            }
             state.prev_objective = new_objective;
 
             if let Some(obj) = new_objective {
@@ -340,7 +355,8 @@ impl Scheduler {
                     .filter(|(_, best)| objective_type.is_better(**best, obj))
                     .map(|(id, _)| *id)
                     .collect();
-                if state.debug_verbosity >= DebugVerbosityLevel::Info {
+
+                if !to_restart.is_empty() && state.debug_verbosity >= DebugVerbosityLevel::Info {
                     println!("solver objectives: {:?}", solver_objectives);
                     println!("solver to restart {:?}", to_restart);
                 }
@@ -359,7 +375,12 @@ impl Scheduler {
             Self::categorize_schedule(schedule.clone(), &mut state, self.solver_manager.clone())
                 .await;
         Self::apply_changes_to_state(&mut state, &changes);
-        if state.debug_verbosity >= DebugVerbosityLevel::Info {
+
+        if state.debug_verbosity >= DebugVerbosityLevel::Info
+            && (!changes.to_start.is_empty()
+                || !changes.to_suspend.is_empty()
+                || !changes.to_resume.is_empty())
+        {
             println!("changes: {:?}", changes);
         }
 
