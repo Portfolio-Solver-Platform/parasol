@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::{
     args::{Args, DebugVerbosityLevel},
@@ -28,7 +28,12 @@ fn schedule_cores(schedule: &Portfolio) -> usize {
 }
 
 async fn get_schedule_from_file(path: &Path) -> Result<Portfolio> {
-    let contents = tokio::fs::read_to_string(path).await?;
+    let contents = tokio::fs::read_to_string(path)
+        .await
+        .map_err(|e| Error::FileError {
+            path: path.to_path_buf(),
+            source: e,
+        })?;
     parse_schedule(&contents).map_err(Into::into)
 }
 
@@ -73,39 +78,25 @@ fn default_schedule() -> Portfolio {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
-#[derive(Debug)]
+
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    IoError(tokio::io::Error),
-    ParseError(ParseError),
+    #[error("IO failed when reading file '{path}'")]
+    FileError {
+        path: PathBuf,
+        #[source]
+        source: tokio::io::Error,
+    },
+    #[error("Parsing of the static schedule failed")]
+    ParseError(#[from] ParseError),
 }
-#[derive(Debug)]
+
+#[derive(Debug, thiserror::Error)]
 pub enum ParseError {
+    #[error("Command output line does not contain a ',': '{line}'")]
     LineDoesNotContainComma { line: String },
+    #[error(
+        "Command output cores is not an unsigned integer: '{cores_str}' on the following line: {line}"
+    )]
     CoresNotANumber { line: String, cores_str: String },
-}
-
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ParseError::LineDoesNotContainComma { line } => {
-                write!(f, "Command output line does not contain a ',': '{line}'")
-            }
-            ParseError::CoresNotANumber { line, cores_str } => write!(
-                f,
-                "Command output cores is not an unsigned integer: '{cores_str}' on the following line: {line}"
-            ),
-        }
-    }
-}
-
-impl From<tokio::io::Error> for Error {
-    fn from(value: tokio::io::Error) -> Self {
-        Error::IoError(value)
-    }
-}
-
-impl From<ParseError> for Error {
-    fn from(value: ParseError) -> Self {
-        Error::ParseError(value)
-    }
 }
