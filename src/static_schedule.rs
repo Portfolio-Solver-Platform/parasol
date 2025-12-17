@@ -93,10 +93,10 @@ pub enum Error {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
-    #[error("Command output line does not contain a ',': '{line}'")]
+    #[error("Schedule line does not contain a ',': '{line}'")]
     LineDoesNotContainComma { line: String },
     #[error(
-        "Command output cores is not an unsigned integer: '{cores_str}' on the following line: {line}"
+        "A solver's cores in the schedule is not an unsigned integer: '{cores_str}' on the following line: {line}"
     )]
     CoresNotANumber { line: String, cores_str: String },
 }
