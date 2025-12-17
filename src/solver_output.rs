@@ -1,11 +1,12 @@
 use crate::args::DebugVerbosityLevel;
-use crate::model_parser::ObjectiveValue;
+use crate::model_parser::{ObjectiveType, ObjectiveValue};
 use std::fmt;
 
 #[derive(Debug)]
 pub struct Parser {
     input: String,
     objective: Option<ObjectiveValue>,
+    objective_type: ObjectiveType,
 }
 
 #[derive(Debug)]
@@ -31,7 +32,7 @@ pub const UNKNOWN_TERMINATOR: &str = "=====UNKNOWN=====";
 #[derive(Debug)]
 pub struct Solution {
     pub solution: String,
-    pub objective: ObjectiveValue,
+    pub objective: Option<ObjectiveValue>,
 }
 
 impl Status {
@@ -68,18 +69,25 @@ impl fmt::Display for Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl Parser {
-    pub fn new() -> Self {
+    pub fn new(objective_type: ObjectiveType) -> Self {
         Self {
             input: "".to_owned(),
             objective: None,
+            objective_type,
         }
     }
 
     fn to_solution(&mut self) -> Result<Solution> {
-        let objective = self
-            .objective
-            .take()
-            .ok_or(Error::SolutionMissingObjective)?;
+        let objective = match self.objective {
+            None => {
+                if self.objective_type == ObjectiveType::Satisfy {
+                    None
+                } else {
+                    return Err(Error::SolutionMissingObjective);
+                }
+            }
+            val => val,
+        };
 
         // Clear state
         self.objective = None;
@@ -109,7 +117,9 @@ impl Parser {
             Ok(Some(Output::Status(Status::Unbounded)))
         } else if line == UNKNOWN_TERMINATOR {
             Ok(Some(Output::Status(Status::Unknown)))
-        } else if line.starts_with(OBJECTIVE_PREFIX) {
+        } else if self.objective_type != ObjectiveType::Satisfy
+            && line.starts_with(OBJECTIVE_PREFIX)
+        {
             let objective_str: String = line[OBJECTIVE_PREFIX.len()..]
                 .chars()
                 .take_while(|c| *c != ';')

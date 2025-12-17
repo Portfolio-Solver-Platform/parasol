@@ -41,7 +41,7 @@ impl From<regex::Error> for ModelParseError {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ObjectiveType {
     Satisfy,
     Minimize,
