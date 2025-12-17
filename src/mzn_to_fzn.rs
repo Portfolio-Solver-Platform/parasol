@@ -1,6 +1,6 @@
 use crate::args::DebugVerbosityLevel;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
@@ -22,6 +22,7 @@ impl From<tokio::io::Error> for ConversionError {
 }
 
 pub struct CachedConverter {
+    minizinc_command: PathBuf,
     cache: RwLock<HashMap<String, Arc<Conversion>>>,
     debug_verbosity: DebugVerbosityLevel,
 }
@@ -42,8 +43,9 @@ impl Conversion {
 }
 
 impl CachedConverter {
-    pub fn new(debug_verbosity: DebugVerbosityLevel) -> Self {
+    pub fn new(minizinc_command: PathBuf, debug_verbosity: DebugVerbosityLevel) -> Self {
         Self {
+            minizinc_command,
             cache: RwLock::new(HashMap::new()),
             debug_verbosity,
         }
@@ -62,8 +64,16 @@ impl CachedConverter {
             }
         }
 
-        let conversion =
-            Arc::new(convert_mzn(model, data, solver_name, self.debug_verbosity).await?);
+        let conversion = Arc::new(
+            convert_mzn(
+                &self.minizinc_command,
+                model,
+                data,
+                solver_name,
+                self.debug_verbosity,
+            )
+            .await?,
+        );
         let mut cache = self.cache.write().await;
         cache.insert(solver_name.to_owned(), conversion.clone());
 
@@ -72,6 +82,7 @@ impl CachedConverter {
 }
 
 pub async fn convert_mzn(
+    minizinc_command: &Path,
     model: &Path,
     data: Option<&Path>,
     solver_name: &str,
@@ -87,6 +98,7 @@ pub async fn convert_mzn(
         .map_err(ConversionError::TempFile)?;
 
     run_mzn_to_fzn_cmd(
+        minizinc_command,
         model,
         data,
         solver_name,
@@ -100,6 +112,7 @@ pub async fn convert_mzn(
 }
 
 async fn run_mzn_to_fzn_cmd(
+    minizinc_command: &Path,
     model: &Path,
     data: Option<&Path>,
     solver_name: &str,
@@ -107,7 +120,14 @@ async fn run_mzn_to_fzn_cmd(
     ozn_result_path: &Path,
     verbosity: DebugVerbosityLevel,
 ) -> Result<(), ConversionError> {
-    let mut cmd = get_mzn_to_fzn_cmd(model, data, solver_name, fzn_result_path, ozn_result_path);
+    let mut cmd = get_mzn_to_fzn_cmd(
+        minizinc_command,
+        model,
+        data,
+        solver_name,
+        fzn_result_path,
+        ozn_result_path,
+    );
     cmd.stderr(Stdio::piped());
 
     let mut child = cmd.spawn()?;
@@ -132,13 +152,14 @@ async fn run_mzn_to_fzn_cmd(
 }
 
 fn get_mzn_to_fzn_cmd(
+    minizinc_command: &Path,
     model: &Path,
     data: Option<&Path>,
     solver_name: &str,
     fzn_result_path: &Path,
     ozn_result_path: &Path,
 ) -> Command {
-    let mut cmd = Command::new("minizinc");
+    let mut cmd = Command::new(minizinc_command);
     cmd.kill_on_drop(true);
     cmd.arg("-c");
     cmd.arg(model);

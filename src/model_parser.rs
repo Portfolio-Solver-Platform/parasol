@@ -106,8 +106,11 @@ fn get_objective_constraint(
     }
 }
 
-pub async fn get_objective_type(model_path: &Path) -> Result<ObjectiveType, ModelParseError> {
-    let output = run_model_interface_cmd(model_path).await?;
+pub async fn get_objective_type(
+    minizinc_command: &Path,
+    model_path: &Path,
+) -> Result<ObjectiveType, ModelParseError> {
+    let output = run_model_interface_cmd(minizinc_command, model_path).await?;
     let json: serde_json::Value =
         serde_json::from_str(&output).map_err(|_| CommandOutputError::NonJsonOutput)?;
     let serde_json::Value::Object(object) = json else {
@@ -142,8 +145,11 @@ fn parse_method_from_json_object(
     }
 }
 
-async fn run_model_interface_cmd(model_path: &Path) -> Result<String, ModelParseError> {
-    let mut cmd = get_model_interface_cmd(model_path);
+async fn run_model_interface_cmd(
+    minizinc_command: &Path,
+    model_path: &Path,
+) -> Result<String, ModelParseError> {
+    let mut cmd = get_model_interface_cmd(minizinc_command, model_path);
     let output = cmd.output().await?;
     if !output.status.success() {
         return Err(ModelParseError::CommandFailed(output.status));
@@ -152,8 +158,8 @@ async fn run_model_interface_cmd(model_path: &Path) -> Result<String, ModelParse
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-fn get_model_interface_cmd(model_path: &Path) -> Command {
-    let mut cmd = Command::new("minizinc");
+fn get_model_interface_cmd(minizinc_command: &Path, model_path: &Path) -> Command {
+    let mut cmd = Command::new(minizinc_command);
     cmd.kill_on_drop(true);
     cmd.arg(model_path);
     cmd.arg("--model-interface-only");

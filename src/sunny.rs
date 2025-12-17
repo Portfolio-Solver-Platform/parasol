@@ -17,6 +17,7 @@ pub async fn sunny(args: Args, mut ai: impl Ai, config: Config, token: Cancellat
 
     let mut timer = sleep(timer_duration);
     let conversion = convert_mzn(
+        &args.minizinc_exe,
         &args.model,
         args.data.as_deref(),
         FEATURES_SOLVER,

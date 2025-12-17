@@ -35,6 +35,10 @@ pub struct Args {
 
     #[arg(long, value_enum, default_value = "warning")]
     pub debug_verbosity: DebugVerbosityLevel,
+
+    /// The path to the minizinc executable.
+    #[arg(long, default_value = "minizinc")]
+    pub minizinc_exe: PathBuf,
 }
 
 #[derive(Debug, Clone, ValueEnum)]

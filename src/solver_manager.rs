@@ -8,7 +8,7 @@ use crate::{mzn_to_fzn, solver_output};
 use futures::future::join_all;
 use std::collections::{HashMap, HashSet};
 use std::io::ErrorKind;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use sysinfo::{Pid, System};
@@ -138,7 +138,7 @@ impl SolverManager {
         solver_args: HashMap<String, Vec<String>>,
         token: CancellationToken,
     ) -> std::result::Result<Self, Error> {
-        let objective_type = get_objective_type(&args.model).await?;
+        let objective_type = get_objective_type(&args.minizinc_exe, &args.model).await?;
         let (tx, rx) = mpsc::unbounded_channel::<Msg>();
         let solvers = Arc::new(Mutex::new(HashMap::new()));
 
@@ -153,7 +153,10 @@ impl SolverManager {
         Ok(Self {
             tx,
             solvers,
-            mzn_to_fzn: mzn_to_fzn::CachedConverter::new(args.debug_verbosity),
+            mzn_to_fzn: mzn_to_fzn::CachedConverter::new(
+                args.minizinc_exe.clone(),
+                args.debug_verbosity,
+            ),
             args,
             best_objective,
             objective_type,
@@ -194,7 +197,7 @@ impl SolverManager {
     }
 
     fn get_fzn_command(&self, fzn_path: &Path, solver_name: &str, cores: usize) -> Command {
-        let mut cmd = Command::new("minizinc");
+        let mut cmd = Command::new(&self.args.minizinc_exe);
         cmd.arg("--solver").arg(solver_name);
         cmd.arg(fzn_path);
 
@@ -211,7 +214,7 @@ impl SolverManager {
     }
 
     fn get_ozn_command(&self, ozn_path: &Path) -> Command {
-        let mut cmd = Command::new("minizinc");
+        let mut cmd = Command::new(&self.args.minizinc_exe);
         cmd.arg("--ozn-file");
         cmd.arg(ozn_path);
         cmd
