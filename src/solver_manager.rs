@@ -175,16 +175,23 @@ impl SolverManager {
 
         while let Some(output) = rx.recv().await {
             match output {
-                Msg::Solution(s) => {
-                    if objective_type.is_better(objective, s.objective) {
-                        objective = Some(s.objective);
+                Msg::Solution(Solution {
+                    solution: s,
+                    objective: Some(o),
+                }) => {
+                    if objective_type.is_better(objective, o) {
+                        objective = Some(o);
                         {
                             let mut guard = shared_objective.write().await;
-                            *guard = Some(s.objective);
+                            *guard = Some(o);
                         }
-                        println!("{}", s.solution.trim_end());
+                        println!("{}", s.trim_end());
                     }
                 }
+                Msg::Solution(Solution {
+                    solution: s,
+                    objective: None, // is satisfaction problem
+                }) => println!("{}", s.trim_end()),
                 Msg::Status(status) => {
                     if status != Status::Unknown {
                         println!("{}", status.to_dzn_string());
@@ -336,7 +343,7 @@ impl SolverManager {
     ) {
         let reader = BufReader::new(stdout);
         let mut lines = reader.lines();
-        let mut parser = solver_output::Parser::new();
+        let mut parser = solver_output::Parser::new(objective_type);
 
         let mut local_best: Option<ObjectiveValue> = {
             let map = solvers.lock().await;
@@ -363,15 +370,28 @@ impl SolverManager {
             };
 
             let msg = match output {
-                Output::Solution(solution) => {
-                    if objective_type.is_better(local_best, solution.objective) {
-                        local_best = Some(solution.objective);
+                Output::Solution(Solution {
+                    solution: s,
+                    objective: None,
+                }) => Msg::Solution(Solution {
+                    solution: s,
+                    objective: None,
+                }),
+                Output::Solution(Solution {
+                    solution: s,
+                    objective: Some(o),
+                }) => {
+                    if objective_type.is_better(local_best, o) {
+                        local_best = Some(o);
                         let mut map = solvers.lock().await;
                         if let Some(state) = map.get_mut(&solver_id) {
                             state.best_objective = local_best;
                         }
                     }
-                    Msg::Solution(solution)
+                    Msg::Solution(Solution {
+                        solution: s,
+                        objective: Some(o),
+                    })
                 }
                 Output::Status(status) => Msg::Status(status),
             };

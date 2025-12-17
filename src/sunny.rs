@@ -13,7 +13,15 @@ pub async fn sunny(args: Args, mut ai: impl Ai, config: Config, token: Cancellat
     let mut scheduler = Scheduler::new(&args, &config, token)
         .await
         .expect("Failed to create scheduler");
-    scheduler.apply(static_schedule(cores)).await.unwrap(); // TODO: Maybe do this in another thread
+
+    let schedule = static_schedule(cores);
+    if let Err(errors) = scheduler.apply(schedule.clone()).await {
+        if errors.len() == schedule.len() {
+            panic!("all solvers failed");
+        } else {
+            eprintln!("Got the following errors: {:?}", errors);
+        }
+    }
 
     let mut timer = sleep(timer_duration);
     let conversion = convert_mzn(
@@ -33,8 +41,14 @@ pub async fn sunny(args: Args, mut ai: impl Ai, config: Config, token: Cancellat
     loop {
         timer.await;
         let schedule = ai.schedule(&features, cores).unwrap();
-
-        scheduler.apply(schedule).await.unwrap();
+        // let schedule = static_schedule(cores);
+        if let Err(errors) = scheduler.apply(schedule.clone()).await {
+            if errors.len() == schedule.len() {
+                panic!("all solvers failed");
+            } else {
+                eprintln!("Got the following errors: {:?}", errors);
+            }
+        }
 
         timer = sleep(timer_duration);
     }

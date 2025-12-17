@@ -4,14 +4,28 @@
 # Usage: ./run_all_problems.sh [additional args...]
 
 PROBLEMS_DIR="../../psp/problems"
-TIMEOUT_SECONDS=10
+TIMEOUT_SECONDS=50
 SOLVER_PATH="./target/release/portfolio-solver-framework"
+
+# Detect timeout command (gtimeout on macOS, timeout on Linux)
+if command -v timeout &> /dev/null; then
+    TIMEOUT_CMD="timeout"
+elif command -v gtimeout &> /dev/null; then
+    TIMEOUT_CMD="gtimeout"
+else
+    echo "Error: Neither 'timeout' nor 'gtimeout' found."
+    echo "On macOS, install with: brew install coreutils"
+    exit 1
+fi
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
+
+# Handle Ctrl+C gracefully
+trap 'echo -e "\n${RED}Interrupted by user${NC}"; exit 130' INT
 
 # Build the solver first
 echo "Building solver in release mode..."
@@ -63,7 +77,7 @@ for problem_dir in "$PROBLEMS_DIR"/*/; do
             echo -n "  [$total_instances] $instance ... "
 
             # Run with timeout (no data file argument)
-            timeout --signal=SIGTERM ${TIMEOUT_SECONDS}s "$SOLVER_PATH" "$model_file" -p 10 --debug-verbosity quiet "$@" > /dev/null 2>&1
+            $TIMEOUT_CMD --signal=SIGTERM ${TIMEOUT_SECONDS}s "$SOLVER_PATH" "$model_file" -p 10 --debug-verbosity quiet "$@"  > /dev/null 2>&1
             exit_code=$?
 
             if [ $exit_code -eq 124 ]; then
@@ -98,7 +112,7 @@ for problem_dir in "$PROBLEMS_DIR"/*/; do
             echo -n "  [$total_instances] $instance ... "
 
             # Run with timeout
-            timeout --signal=SIGTERM ${TIMEOUT_SECONDS}s "$SOLVER_PATH" "$model_file" "$data_file" -p 10 --debug-verbosity quiet "$@" > /dev/null 2>&1
+            $TIMEOUT_CMD --signal=SIGTERM ${TIMEOUT_SECONDS}s "$SOLVER_PATH" "$model_file" "$data_file" -p 10 --debug-verbosity quiet "$@"  > /dev/null 2>&1
             exit_code=$?
 
             if [ $exit_code -eq 124 ]; then

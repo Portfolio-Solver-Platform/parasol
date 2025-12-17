@@ -79,9 +79,8 @@ impl Scheduler {
         config: &Config,
         token: CancellationToken,
     ) -> std::result::Result<Self, Error> {
-        let solver_manager = Arc::new(
-            SolverManager::new(args.clone(), config.solver_args.clone(), token.clone()).await?,
-        );
+        let solver_manager =
+            Arc::new(SolverManager::new(args.clone(), config.solver_args.clone(), token).await?);
 
         let memory_limit = std::env::var("MEMORY_LIMIT")
             .ok()
@@ -106,8 +105,7 @@ impl Scheduler {
         let solver_manager_clone = solver_manager.clone();
         let config_clone = config.clone();
         tokio::spawn(async move {
-            Self::memory_enforcer_loop(state_clone, solver_manager_clone, config_clone, token)
-                .await;
+            Self::memory_enforcer_loop(state_clone, solver_manager_clone, config_clone).await;
         });
 
         Ok(Self {
@@ -238,47 +236,40 @@ impl Scheduler {
         state: Arc<Mutex<MemoryEnforcerState>>,
         solver_manager: Arc<SolverManager>,
         config: Config,
-        token: CancellationToken,
     ) {
         let mut interval =
             tokio::time::interval(Duration::from_secs(config.memory_enforcer_interval));
 
         loop {
-            tokio::select! {
-                _ = token.cancelled() => {
-                    return; // we are done so stop loop
-                }
-                _ = interval.tick() => {
-                    let mut state: tokio::sync::MutexGuard<'_, MemoryEnforcerState> = state.lock().await;
-                    Self::remove_exited_solvers(&mut state, &solver_manager).await;
-                    let (used, total) = Self::get_memory_usage(&mut state);
-                    if !is_over_threshold(used, total, config.memory_threshold) {
-                        continue;
-                    }
+            interval.tick().await;
+            let mut state: tokio::sync::MutexGuard<'_, MemoryEnforcerState> = state.lock().await;
+            Self::remove_exited_solvers(&mut state, &solver_manager).await;
+            let (used, total) = Self::get_memory_usage(&mut state);
+            if !is_over_threshold(used, total, config.memory_threshold) {
+                continue;
+            }
 
-                    if state.debug_verbosity >= DebugVerbosityLevel::Info {
-                        let div = (1024 * 1024) as f64;
-                        println!(
-                            "Info: Memory used by system: {} MiB, Memory Available: {} MiB, Memory threshold: {}",
-                            used / div,
-                            total / div,
-                            total * state.config.memory_threshold / div,
-                        );
-                    }
+            if state.debug_verbosity >= DebugVerbosityLevel::Info {
+                let div = (1024 * 1024) as f64;
+                println!(
+                    "Info: Memory used by system: {} MiB, Memory Available: {} MiB, Memory threshold: {}",
+                    used / div,
+                    total / div,
+                    total * state.config.memory_threshold / div,
+                );
+            }
 
-                    let used = Self::kill_suspended_until_under_threshold(
-                        &mut state,
-                        &solver_manager,
-                        used,
-                        total,
-                    )
+            let used = Self::kill_suspended_until_under_threshold(
+                &mut state,
+                &solver_manager,
+                used,
+                total,
+            )
+            .await;
+
+            if is_over_threshold(used, total, config.memory_threshold) {
+                Self::kill_running_until_under_threshold(&mut state, &solver_manager, used, total)
                     .await;
-
-                    if is_over_threshold(used, total, config.memory_threshold) {
-                        Self::kill_running_until_under_threshold(&mut state, &solver_manager, used, total)
-                            .await;
-                    }
-                }
             }
         }
     }
@@ -389,12 +380,15 @@ impl Scheduler {
             .suspend_solvers(&changes.to_suspend)
             .await
         {
+            println!("fuuuuuuuuuuuuck");
             self.solver_manager
                 .stop_solvers(&changes.to_suspend)
                 .await?;
         }
 
         if let Err(_) = self.solver_manager.resume_solvers(&changes.to_resume).await {
+            println!("fuuuuuuuuuuuuck 2");
+
             let mut resume_elements = Vec::new();
             for schedule_elem in &schedule {
                 for resume_id in &changes.to_resume {
@@ -430,8 +424,9 @@ impl Scheduler {
             .collect();
 
         let mut solvers = running_solvers;
-        let mut schedule = Vec::new();
         solvers.extend(suspended_solvers);
+
+        let mut schedule = Vec::new();
         for new_info in portfolio.into_iter() {
             let mut i = 0;
 
