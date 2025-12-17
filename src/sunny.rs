@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::fzn_to_features::fzn_to_features;
 use crate::mzn_to_fzn::convert_mzn;
 use crate::scheduler::{Portfolio, Scheduler, SolverInfo};
+use crate::static_schedule::static_schedule;
 use crate::{ai::Ai, args::Args};
 use tokio::time::{Duration, sleep};
 use tokio_util::sync::CancellationToken;
@@ -14,9 +15,10 @@ pub async fn sunny(args: Args, mut ai: impl Ai, config: Config, token: Cancellat
         .await
         .expect("Failed to create scheduler");
 
-    let schedule = static_schedule(cores);
-    if let Err(errors) = scheduler.apply(schedule.clone()).await {
-        if errors.len() == schedule.len() {
+    let schedule = static_schedule(&args, cores).await.unwrap();
+    let schedule_len = schedule.len();
+    if let Err(errors) = scheduler.apply(schedule).await {
+        if errors.len() == schedule_len {
             panic!("all solvers failed");
         } else {
             eprintln!("Got the following errors: {:?}", errors);
@@ -40,10 +42,11 @@ pub async fn sunny(args: Args, mut ai: impl Ai, config: Config, token: Cancellat
 
     loop {
         timer.await;
+
         let schedule = ai.schedule(&features, cores).unwrap();
-        // let schedule = static_schedule(cores);
-        if let Err(errors) = scheduler.apply(schedule.clone()).await {
-            if errors.len() == schedule.len() {
+        let schedule_len = schedule.len();
+        if let Err(errors) = scheduler.apply(schedule).await {
+            if errors.len() == schedule_len {
                 panic!("all solvers failed");
             } else {
                 eprintln!("Got the following errors: {:?}", errors);
@@ -52,20 +55,4 @@ pub async fn sunny(args: Args, mut ai: impl Ai, config: Config, token: Cancellat
 
         timer = sleep(timer_duration);
     }
-}
-
-fn static_schedule(cores: usize) -> Portfolio {
-    vec![
-        SolverInfo::new("coinbc".to_string(), 1),
-        SolverInfo::new("gecode".to_string(), 1),
-        SolverInfo::new("picat".to_string(), 1),
-        SolverInfo::new("cp-sat".to_string(), 1),
-        SolverInfo::new("chuffed".to_string(), 1),
-        SolverInfo::new("yuck".to_string(), 1),
-        // SolverInfo::new( "xpress".to_string(), cores / 10),
-        // SolverInfo::new( "scip".to_string(), cores / 10),
-        // SolverInfo::new( "highs".to_string(), cores / 10),
-        // SolverInfo::new( "gurobi".to_string(), cores / 10),
-        // SolverInfo::new("coinbc".to_string(), cores / 2),
-    ]
 }

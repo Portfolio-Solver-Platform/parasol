@@ -4,6 +4,7 @@ use super::{Error, Features, Result};
 use crate::{
     args::DebugVerbosityLevel,
     scheduler::{Portfolio, SolverInfo},
+    static_schedule::parse_schedule,
 };
 use std::process::Command;
 
@@ -60,26 +61,7 @@ fn parse_output_as_schedule(output: Vec<u8>) -> Result<Portfolio> {
     let output = String::from_utf8(output)
         .map_err(|_| Error::Other("Failed to convert command's stdout into a string".to_owned()))?;
 
-    output
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(parse_output_line)
-        .collect()
-}
-
-fn parse_output_line(line: &str) -> Result<SolverInfo> {
-    let (solver, cores_str) = line.split_once(',').ok_or_else(|| {
-        Error::Other(format!(
-            "Command output line does not contain a ',': '{line}'"
-        ))
-    })?;
-    let cores = cores_str.parse::<usize>().map_err(|_| {
-        Error::Other(format!(
-            "Command output cores is not an unsigned integer: '{cores_str}' on the following line: {line}"
-        ))
-    })?;
-
-    Ok(SolverInfo::new(solver.to_owned(), cores))
+    parse_schedule(&output).map_err(|e| Error::Other(format!("Failed to parse as schedule: {e}")))
 }
 
 fn print_stderr(stderr: Vec<u8>) {

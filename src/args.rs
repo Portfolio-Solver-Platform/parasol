@@ -39,6 +39,12 @@ pub struct Args {
     /// The path to the minizinc executable.
     #[arg(long, default_value = "minizinc")]
     pub minizinc_exe: PathBuf,
+
+    /// The path to the static schedule file.
+    /// The file needs to be a CSV (without a header) in the format of `<solver>,<cores>`.
+    /// If not provided, a default static schedule will be used.
+    #[arg(long)]
+    pub static_schedule_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, ValueEnum)]

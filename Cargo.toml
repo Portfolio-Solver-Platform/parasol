@@ -17,3 +17,4 @@ dashmap = "6.1.0"
 tempfile = "3.23.0"
 itertools = "0.14.0"
 tokio-util = { version = "0.7", features = ["rt"] }
+thiserror = "2.0.17"

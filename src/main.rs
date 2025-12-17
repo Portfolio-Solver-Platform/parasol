@@ -7,6 +7,7 @@ mod mzn_to_fzn;
 mod scheduler;
 mod solver_manager;
 mod solver_output;
+mod static_schedule;
 mod sunny;
 
 use std::process::exit;
