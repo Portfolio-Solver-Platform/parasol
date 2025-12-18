@@ -2,6 +2,7 @@ mod ai;
 mod args;
 mod config;
 mod fzn_to_features;
+mod insert_objective;
 mod model_parser;
 mod mzn_to_fzn;
 mod scheduler;
