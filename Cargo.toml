@@ -18,3 +18,5 @@ tempfile = "3.23.0"
 itertools = "0.14.0"
 tokio-util = { version = "0.7", features = ["rt"] }
 thiserror = "2.0.17"
+async-tempfile = "0.7.0"
+uuid = { version = "1.19.0", features = ["v4", "fast-rng"] }

@@ -1,8 +1,11 @@
+use async_tempfile::TempFile;
 use std::io::Write;
 use std::path::Path;
 use std::process::ExitStatus;
 use tempfile::NamedTempFile;
+use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
+use uuid::Uuid;
 
 pub type ObjectiveValue = i64;
 
@@ -61,7 +64,7 @@ pub async fn insert_objective(
     fzn_path: &Path,
     objective_type: &ObjectiveType,
     objective: ObjectiveValue,
-) -> Result<NamedTempFile, ()> {
+) -> Result<TempFile, ()> {
     // NOTE: The FlatZinc grammar always ends with a "solve-item" and all statements end with a ';': https://docs.minizinc.dev/en/latest/fzn-spec.html#grammar
     // TODO: Optimise: don't read the entire file, but only read from the end.
     let content = tokio::fs::read_to_string(fzn_path).await.map_err(|_| ())?;
@@ -79,12 +82,16 @@ pub async fn insert_objective(
 
     let new_content = statements.join(";"); // Add back ';' after split
 
-    let mut file = tempfile::Builder::new()
-        .suffix(".fzn")
-        .tempfile()
+    let uuid = Uuid::new_v4();
+    let mut file = TempFile::new_with_name(format!("temp-{uuid}.fzn"))
+        .await
         .map_err(|_| ())?;
-    write!(file, "{new_content}").map_err(|_| ())?;
-    file.flush().map_err(|_| ())?;
+
+    file.write_all(new_content.as_bytes())
+        .await
+        .map_err(|_| ())?;
+
+    file.flush().await.map_err(|_| ())?;
 
     Ok(file)
 }
