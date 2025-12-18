@@ -18,11 +18,8 @@ pub struct ScheduleElement {
 }
 
 impl ScheduleElement {
-    pub fn new(id: usize, solver: String, cores: usize) -> Self {
-        Self {
-            id,
-            info: SolverInfo::new(solver, cores),
-        }
+    pub fn new(id: usize, info: SolverInfo) -> Self {
+        Self { id, info }
     }
 }
 
@@ -442,7 +439,7 @@ impl Scheduler {
                 id
             };
 
-            let elem = ScheduleElement { id, info: new_info };
+            let elem = ScheduleElement::new(id, new_info);
             schedule.push(elem);
         }
 
