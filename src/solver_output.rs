@@ -1,6 +1,4 @@
-use crate::args::DebugVerbosityLevel;
 use crate::model_parser::{ObjectiveType, ObjectiveValue};
-use std::fmt;
 
 #[derive(Debug)]
 pub struct Parser {
@@ -46,24 +44,14 @@ impl Status {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    JsonParsing(serde_json::Error),
+    #[error("Failed to parse JSON")]
+    JsonParsing(#[from] serde_json::Error),
+    #[error("Solution is missing objective")]
     SolutionMissingObjective,
-    Field(String),
+    #[error("Failed to parse objective")]
     ObjectiveParse,
-}
-
-impl From<serde_json::Error> for Error {
-    fn from(value: serde_json::Error) -> Self {
-        Error::JsonParsing(value)
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "failed to parse output")
-    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
