@@ -60,7 +60,7 @@ pub async fn sunny(args: Args, mut ai: impl Ai, config: Config, token: Cancellat
 
 fn handle_schedule_errors(errors: Vec<solver_manager::Error>, schedule_len: usize) {
     let errors_len = errors.len();
-    logging::error_msg!("got the following errors when applying the static schedule:");
+    logging::error_msg!("got the following errors when applying the schedule:");
     errors.into_iter().for_each(|e| logging::error!(e.into()));
 
     if errors_len == schedule_len {
