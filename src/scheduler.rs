@@ -241,7 +241,7 @@ impl Scheduler {
 
             let div = (1024 * 1024) as f64;
             logging::info!(
-                "Info: Memory used by system: {} MiB, Memory Available: {} MiB, Memory threshold: {}",
+                "Memory used by system: {} MiB, Memory Available: {} MiB, Memory threshold: {}",
                 used / div,
                 total / div,
                 total * state.config.memory_threshold / div,
