@@ -19,4 +19,5 @@ tokio-util = { version = "0.7", features = ["rt"] }
 thiserror = "2.0.17"
 async-tempfile = "0.7.0"
 uuid = { version = "1.19.0", features = ["v4", "fast-rng"] }
+anyhow = "1.0.100"
 nix = "0.30.1"

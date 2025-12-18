@@ -3,6 +3,7 @@ mod args;
 mod config;
 mod fzn_to_features;
 mod insert_objective;
+mod logging;
 mod model_parser;
 mod mzn_to_fzn;
 mod scheduler;
@@ -24,6 +25,7 @@ use tokio_util::sync::CancellationToken;
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let args = Args::parse();
+    logging::init(args.debug_verbosity);
     let config = Config::default();
     let token = CancellationToken::new();
     let token_signal = token.clone();
