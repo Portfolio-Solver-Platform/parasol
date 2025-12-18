@@ -55,7 +55,7 @@ impl Drop for SolverProcess {
 
 pub struct SolverManager {
     tx: mpsc::UnboundedSender<Msg>,
-    solvers: Arc<Mutex<HashMap<usize, SolverProcess>>>,
+    solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
     args: Args,
     mzn_to_fzn: mzn_to_fzn::CachedConverter,
     best_objective: Arc<RwLock<Option<ObjectiveValue>>>,
@@ -272,8 +272,8 @@ impl SolverManager {
         stdout: tokio::process::ChildStdout,
         pipe: JoinHandle<std::io::Result<u64>>,
         tx: tokio::sync::mpsc::UnboundedSender<Msg>,
-        solver_id: usize,
-        solvers: Arc<Mutex<HashMap<usize, SolverProcess>>>,
+        solver_id: u64,
+        solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
         objective_type: ObjectiveType,
         verbosity: DebugVerbosityLevel,
     ) {
@@ -389,8 +389,8 @@ impl SolverManager {
 
     // could probably be optimized to be able to send multiple signals to a process at a time, instead of traversing it twice
     async fn send_signal_to_solver(
-        solvers: Arc<Mutex<HashMap<usize, SolverProcess>>>,
-        id: usize,
+        solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
+        id: u64,
         signal: Signal,
     ) -> std::result::Result<(), Error> {
         let pid = {
@@ -409,8 +409,8 @@ impl SolverManager {
     }
 
     async fn send_signal_to_solvers(
-        solvers: Arc<Mutex<HashMap<usize, SolverProcess>>>,
-        ids: &[usize],
+        solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
+        ids: &[u64],
         signal: Signal,
     ) -> std::result::Result<(), Vec<Error>> {
         let futures = ids
@@ -427,18 +427,18 @@ impl SolverManager {
     }
 
     async fn send_signal_to_all_solvers(
-        solvers: Arc<Mutex<HashMap<usize, SolverProcess>>>,
+        solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
         signal: Signal,
     ) -> std::result::Result<(), Vec<Error>> {
-        let ids: Vec<usize> = { solvers.lock().await.keys().cloned().collect() };
+        let ids: Vec<u64> = { solvers.lock().await.keys().cloned().collect() };
         Self::send_signal_to_solvers(solvers.clone(), &ids, signal).await
     }
 
-    pub async fn suspend_solver(&self, id: usize) -> std::result::Result<(), Error> {
+    pub async fn suspend_solver(&self, id: u64) -> std::result::Result<(), Error> {
         Self::send_signal_to_solver(self.solvers.clone(), id, Signal::SIGSTOP).await
     }
 
-    pub async fn suspend_solvers(&self, ids: &[usize]) -> std::result::Result<(), Vec<Error>> {
+    pub async fn suspend_solvers(&self, ids: &[u64]) -> std::result::Result<(), Vec<Error>> {
         Self::send_signal_to_solvers(self.solvers.clone(), ids, Signal::SIGSTOP).await
     }
 
@@ -446,11 +446,11 @@ impl SolverManager {
         Self::send_signal_to_all_solvers(self.solvers.clone(), Signal::SIGSTOP).await
     }
 
-    pub async fn resume_solver(&self, id: usize) -> std::result::Result<(), Error> {
+    pub async fn resume_solver(&self, id: u64) -> std::result::Result<(), Error> {
         Self::send_signal_to_solver(self.solvers.clone(), id, Signal::SIGCONT).await
     }
 
-    pub async fn resume_solvers(&self, ids: &[usize]) -> std::result::Result<(), Vec<Error>> {
+    pub async fn resume_solvers(&self, ids: &[u64]) -> std::result::Result<(), Vec<Error>> {
         Self::send_signal_to_solvers(self.solvers.clone(), ids, Signal::SIGCONT).await
     }
 
@@ -459,25 +459,25 @@ impl SolverManager {
     }
 
     async fn _stop_solver(
-        solvers: Arc<Mutex<HashMap<usize, SolverProcess>>>,
-        id: usize,
+        solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
+        id: u64,
     ) -> std::result::Result<(), Error> {
         Self::send_signal_to_solver(solvers.clone(), id, Signal::SIGCONT).await?; // Resume first in case it's suspended
         Self::send_signal_to_solver(solvers.clone(), id, Signal::SIGTERM).await
     }
 
     async fn _stop_solvers(
-        solvers: Arc<Mutex<HashMap<usize, SolverProcess>>>,
-        ids: &[usize],
+        solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
+        ids: &[u64],
     ) -> std::result::Result<(), Vec<Error>> {
         Self::send_signal_to_solvers(solvers.clone(), ids, Signal::SIGCONT).await?; // Resume first in case suspended
         Self::send_signal_to_solvers(solvers.clone(), ids, Signal::SIGTERM).await
     }
 
     async fn _stop_all_solvers(
-        solvers: Arc<Mutex<HashMap<usize, SolverProcess>>>,
+        solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
     ) -> std::result::Result<(), Vec<Error>> {
-        let ids: Vec<usize> = {
+        let ids: Vec<u64> = {
             let map = solvers.lock().await;
             map.keys().copied().collect()
         };
@@ -485,11 +485,11 @@ impl SolverManager {
         Self::_stop_solvers(solvers.clone(), &ids).await
     }
 
-    pub async fn stop_solver(&self, id: usize) -> std::result::Result<(), Error> {
+    pub async fn stop_solver(&self, id: u64) -> std::result::Result<(), Error> {
         Self::_stop_solver(self.solvers.clone(), id).await
     }
 
-    pub async fn stop_solvers(&self, ids: &[usize]) -> std::result::Result<(), Vec<Error>> {
+    pub async fn stop_solvers(&self, ids: &[u64]) -> std::result::Result<(), Vec<Error>> {
         Self::_stop_solvers(self.solvers.clone(), ids).await
     }
 
@@ -516,14 +516,14 @@ impl SolverManager {
         total_memory
     }
 
-    pub async fn active_solver_ids(&self) -> HashSet<usize> {
+    pub async fn active_solver_ids(&self) -> HashSet<u64> {
         self.solvers.lock().await.keys().copied().collect()
     }
 
-    pub async fn solvers_sorted_by_mem(&self, ids: &[usize], system: &System) -> Vec<(u64, usize)> {
-        let solvers: Vec<(u32, usize)> = {
+    pub async fn solvers_sorted_by_mem(&self, ids: &[u64], system: &System) -> Vec<(u64, u64)> {
+        let solvers: Vec<(u32, u64)> = {
             let map = self.solvers.lock().await;
-            let mut solvers: Vec<(u32, usize)> = Vec::new();
+            let mut solvers: Vec<(u32, u64)> = Vec::new();
             for id in ids {
                 match map.get(id) {
                     Some(state) => solvers.push((state.pid, *id)),

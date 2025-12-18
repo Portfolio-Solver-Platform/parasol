@@ -9,7 +9,7 @@ pub async fn insert_objective(
     fzn_path: &Path,
     objective_type: &ObjectiveType,
     objective: ObjectiveValue,
-) -> std::result::Result<TempFile, Error> {
+) -> Result<TempFile> {
     // NOTE: The FlatZinc grammar always ends with a "solve-item" and all statements end with a ';': https://docs.minizinc.dev/en/latest/fzn-spec.html#grammar
     let mut file = File::open(fzn_path)
         .await

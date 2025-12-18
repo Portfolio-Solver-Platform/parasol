@@ -13,12 +13,12 @@ use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Debug)]
 pub struct ScheduleElement {
-    pub id: usize,
+    pub id: u64,
     pub info: SolverInfo,
 }
 
 impl ScheduleElement {
-    pub fn new(id: usize, info: SolverInfo) -> Self {
+    pub fn new(id: u64, info: SolverInfo) -> Self {
         Self { id, info }
     }
 }
@@ -46,16 +46,16 @@ impl SolverInfo {
 #[derive(Debug)]
 struct ScheduleChanges {
     to_start: Schedule,
-    to_suspend: Vec<usize>,
-    to_resume: Vec<usize>,
+    to_suspend: Vec<u64>,
+    to_resume: Vec<u64>,
 }
 
 struct MemoryEnforcerState {
-    running_solvers: HashMap<usize, SolverInfo>,
-    suspended_solvers: HashMap<usize, SolverInfo>,
+    running_solvers: HashMap<u64, SolverInfo>,
+    suspended_solvers: HashMap<u64, SolverInfo>,
     system: System,
     memory_limit: u64, // In bytes (0 = use system total)
-    next_solver_id: usize,
+    next_solver_id: u64,
     prev_objective: Option<ObjectiveValue>,
     config: Config,
     debug_verbosity: DebugVerbosityLevel,
@@ -132,7 +132,7 @@ impl Scheduler {
         mut used_memory: f64,
         total_memory: f64,
     ) -> f64 {
-        let ids: Vec<usize> = state.suspended_solvers.keys().copied().collect();
+        let ids: Vec<u64> = state.suspended_solvers.keys().copied().collect();
         let mut sorted = solver_manager
             .solvers_sorted_by_mem(&ids, &state.system)
             .await;
@@ -159,7 +159,7 @@ impl Scheduler {
         mut used_memory: f64,
         total_memory: f64,
     ) -> f64 {
-        let ids: Vec<usize> = state.running_solvers.keys().copied().collect();
+        let ids: Vec<u64> = state.running_solvers.keys().copied().collect();
         let total_cores: usize = state
             .running_solvers
             .iter()
@@ -338,7 +338,7 @@ impl Scheduler {
             if let Some(obj) = new_objective {
                 let solver_objectives = self.solver_manager.get_solver_objectives().await;
                 let objective_type = self.solver_manager.objective_type();
-                let to_restart: Vec<usize> = solver_objectives
+                let to_restart: Vec<u64> = solver_objectives
                     .iter()
                     .filter(|(_, best)| objective_type.is_better(**best, obj))
                     .map(|(id, _)| *id)
@@ -408,13 +408,13 @@ impl Scheduler {
         portfolio: Portfolio,
         state: &mut tokio::sync::MutexGuard<'_, MemoryEnforcerState>,
     ) -> Schedule {
-        let running_solvers: Vec<(usize, SolverInfo)> = state
+        let running_solvers: Vec<(u64, SolverInfo)> = state
             .running_solvers
             .iter()
             .map(|(k, v)| (*k, v.clone()))
             .collect();
 
-        let suspended_solvers: Vec<(usize, SolverInfo)> = state
+        let suspended_solvers: Vec<(u64, SolverInfo)> = state
             .suspended_solvers
             .iter()
             .map(|(k, v)| (*k, v.clone()))
