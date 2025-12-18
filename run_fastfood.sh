@@ -1,12 +1,8 @@
 #!/bin/bash
 
-# Run all fast-food problem instances
-# Usage: ./run_fastfood.sh [additional args...]
-
 PROBLEM_DIR="../../psp/problems/fast-food"
 MODEL_FILE="$PROBLEM_DIR/fastfood.mzn"
 
-# Get all .dzn files (data files)
 DATA_FILES=("$PROBLEM_DIR"/ff*.dzn)
 
 echo "Running ${#DATA_FILES[@]} fast-food problem instances..."

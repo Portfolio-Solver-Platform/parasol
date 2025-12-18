@@ -8,9 +8,8 @@ clap = { version = "4.5.53", features = ["derive"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 ctrlc = { version = "3.5.1", features = ["termination"]}
-kill_tree = { version = "0.2.4", features = ["tokio"] }
 futures = "0.3.31"
-tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread", "process", "io-util", "sync"] }
+tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread", "process", "io-util", "sync", "time"] }
 regex = "1.12.2"
 sysinfo = "0.37.2"
 dashmap = "6.1.0"
@@ -21,3 +20,4 @@ thiserror = "2.0.17"
 async-tempfile = "0.7.0"
 uuid = { version = "1.19.0", features = ["v4", "fast-rng"] }
 anyhow = "1.0.100"
+nix = "0.30.1"

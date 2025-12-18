@@ -20,8 +20,7 @@ impl Ai for SimpleAi {
     fn schedule(&mut self, _features: &Features, cores: usize) -> Result<Portfolio> {
         Ok(vec![
             SolverInfo::new("gecode".to_string(), cores / 2),
-            // ScheduleElement::new(2, "coinbc".to_string(), cores / 2),
-            // ScheduleElement::new(3, "coingbc".to_string(), cores / 2),
+            SolverInfo::new("coinbc".to_string(), cores / 2 - 1),
         ])
     }
 }
