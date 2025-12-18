@@ -70,7 +70,7 @@ for problem_dir in "$PROBLEMS_DIR"/*/; do
         echo -e "${CYAN}Command: $SOLVER_PATH $model_file -p 10 --debug-verbosity error${NC}"
         echo
 
-        $TIMEOUT_CMD --signal=SIGTERM ${TIMEOUT_SECONDS}s "$SOLVER_PATH" "$model_file" -p 10 --debug-verbosity error "$@"
+        $TIMEOUT_CMD --signal=SIGTERM ${TIMEOUT_SECONDS}s "$SOLVER_PATH" "$model_file" -p 10 --debug-verbosity quiet "$@" 
         exit_code=$?
 
         echo
@@ -92,7 +92,7 @@ for problem_dir in "$PROBLEMS_DIR"/*/; do
         echo -e "${CYAN}Command: $SOLVER_PATH $model_file $data_file -p 10 --debug-verbosity error${NC}"
         echo
 
-        $TIMEOUT_CMD --signal=SIGTERM ${TIMEOUT_SECONDS}s "$SOLVER_PATH" "$model_file" "$data_file" -p 10 --debug-verbosity error "$@"
+        $TIMEOUT_CMD --signal=SIGTERM ${TIMEOUT_SECONDS}s "$SOLVER_PATH" "$model_file" "$data_file" -p 10 --debug-verbosity quiet "$@" 
         exit_code=$?
 
         echo

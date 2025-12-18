@@ -656,6 +656,7 @@ dependencies = [
  "futures",
  "itertools 0.14.0",
  "kill_tree",
+ "nix 0.30.1",
  "regex",
  "serde",
  "serde_json",

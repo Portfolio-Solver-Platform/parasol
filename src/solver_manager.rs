@@ -5,6 +5,8 @@ use crate::scheduler::ScheduleElement;
 use crate::solver_output::{Output, Solution, Status};
 use crate::{mzn_to_fzn, solver_output};
 use futures::future::join_all;
+use nix::sys::signal::{self, Signal};
+use nix::unistd;
 use std::collections::{HashMap, HashSet};
 use std::io::ErrorKind;
 use std::path::Path;
@@ -16,7 +18,6 @@ use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-
 const SUSPEND_SIGNAL: &str = "SIGSTOP";
 const RESUME_SIGNAL: &str = "SIGCONT";
 const KILL_SIGNAL: &str = "SIGTERM";
@@ -52,13 +53,9 @@ struct SolverProcess {
 impl Drop for SolverProcess {
     fn drop(&mut self) {
         let pid = self.pid;
-
-        let resume_config = kill_tree::Config {
-            signal: String::from(crate::solver_manager::RESUME_SIGNAL),
-            ..Default::default()
-        };
-        let _ = kill_tree::blocking::kill_tree_with_config(pid, &resume_config);
-        let _ = kill_tree::blocking::kill_tree(pid);
+        let pid = unistd::Pid::from_raw(-(pid as i32));
+        let _ = signal::kill(pid, Signal::SIGCONT);
+        let _ = signal::kill(pid, Signal::SIGTERM);
     }
 }
 
