@@ -1,7 +1,5 @@
-use std::ffi::OsStr;
-use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitStatus;
 use tempfile::NamedTempFile;
 use tokio::process::Command;
@@ -59,14 +57,14 @@ impl ObjectiveType {
     }
 }
 
-pub fn insert_objective(
+pub async fn insert_objective(
     fzn_path: &Path,
     objective_type: &ObjectiveType,
     objective: ObjectiveValue,
 ) -> Result<NamedTempFile, ()> {
     // NOTE: The FlatZinc grammar always ends with a "solve-item" and all statements end with a ';': https://docs.minizinc.dev/en/latest/fzn-spec.html#grammar
     // TODO: Optimise: don't read the entire file, but only read from the end.
-    let content = fs::read_to_string(fzn_path).map_err(|_| ())?;
+    let content = tokio::fs::read_to_string(fzn_path).await.map_err(|_| ())?;
     let mut statements: Vec<_> = content.split(';').collect();
     let solve_statement = statements.last().ok_or(())?.trim();
 

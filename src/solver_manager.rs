@@ -242,7 +242,7 @@ impl SolverManager {
 
         let (fzn_final_path, fzn_guard) = if let Some(obj) = objective {
             if let Ok(new_temp_file) =
-                insert_objective(conversion_paths.fzn(), &self.objective_type, obj)
+                insert_objective(conversion_paths.fzn(), &self.objective_type, obj).await
             {
                 (new_temp_file.path().to_path_buf(), Some(new_temp_file))
             } else {
