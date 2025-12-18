@@ -1,7 +1,9 @@
 use itertools::Itertools;
 
 use super::{Error, Features, Result};
-use crate::{args::DebugVerbosityLevel, scheduler::Portfolio, static_schedule::parse_schedule};
+use crate::{
+    args::DebugVerbosityLevel, logging, scheduler::Portfolio, static_schedule::parse_schedule,
+};
 use std::process::Command;
 
 pub struct Ai {
@@ -20,9 +22,7 @@ impl Ai {
 
 impl super::Ai for Ai {
     fn schedule(&mut self, features: &Features, cores: usize) -> Result<Portfolio> {
-        if self.verbosity >= DebugVerbosityLevel::Info {
-            println!("AI info: Using command {}", self.command_name);
-        }
+        logging::info!("AI info: Using command {}", self.command_name);
         let mut cmd = Command::new(&self.command_name);
         cmd.arg("-p").arg(cores.to_string());
         cmd.arg(features_to_arg(features));
@@ -68,7 +68,7 @@ fn print_stderr(stderr: Vec<u8>) {
     match String::from_utf8(stderr) {
         Ok(stderr) => stderr
             .lines()
-            .for_each(|line| eprintln!("AI error: {line}")),
-        Err(_) => eprintln!("AI error: Failed to convert stderr to string"),
+            .for_each(|line| logging::error_msg!("AI error: {line}")),
+        Err(_) => logging::error_msg!("AI error: Failed to convert stderr to string"),
     }
 }

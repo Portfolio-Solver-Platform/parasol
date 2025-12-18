@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     args::{Args, DebugVerbosityLevel},
+    logging,
     scheduler::{Portfolio, SolverInfo},
 };
 
@@ -14,7 +15,7 @@ pub async fn static_schedule(args: &Args, cores: usize) -> Result<Portfolio> {
     if args.debug_verbosity >= DebugVerbosityLevel::Warning {
         let schedule_cores = schedule_cores(&schedule);
         if schedule_cores != cores {
-            eprintln!(
+            logging::warning!(
                 "The static schedule cores ({schedule_cores}) does not match the framework's designated cores ({cores})"
             );
         }

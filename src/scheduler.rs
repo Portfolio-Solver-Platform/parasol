@@ -1,6 +1,7 @@
 use crate::{
     args::{Args, DebugVerbosityLevel},
     config::Config,
+    logging,
     model_parser::ObjectiveValue,
     solver_manager::{Error, SolverManager},
 };
@@ -143,9 +144,7 @@ impl Scheduler {
             let (mem, id) = sorted.remove(0);
             state.suspended_solvers.remove(&id);
             if let Err(e) = solver_manager.stop_solver(id).await {
-                if state.debug_verbosity >= DebugVerbosityLevel::Error {
-                    eprintln!("failed to stop suspended solver: {e}");
-                }
+                logging::error!(e.into());
             } else {
                 used_memory -= mem as f64;
             }
@@ -182,11 +181,9 @@ impl Scheduler {
                 Some(info) => info.cores as u64,
                 None => {
                     // should never fail since the state is locked however error logging just for safety
-                    if state.debug_verbosity >= DebugVerbosityLevel::Error {
-                        eprintln!(
-                            "Failed to get solver info. Cause of this error is probably from a logic error in the code"
-                        );
-                    }
+                    logging::error_msg!(
+                        "Failed to get solver info. Cause of this error is probably from a logic error in the code"
+                    );
                     continue;
                 }
             };
@@ -194,9 +191,7 @@ impl Scheduler {
                 // use number of cores a process has to decide if it uses more that its fair share
                 state.running_solvers.remove(&id);
                 if let Err(e) = solver_manager.stop_solver(id).await {
-                    if state.debug_verbosity >= DebugVerbosityLevel::Error {
-                        eprintln!("failed to stop running solver: {e}");
-                    }
+                    logging::error_msg!("failed to stop running solver: {e}");
                 } else {
                     used_memory -= solver_mem as f64;
                 }
@@ -210,9 +205,7 @@ impl Scheduler {
             let (mem, id) = remaining.remove(0);
             state.running_solvers.remove(&id);
             if let Err(e) = solver_manager.stop_solver(id).await {
-                if state.debug_verbosity >= DebugVerbosityLevel::Error {
-                    eprintln!("failed to stop running solver: {e}");
-                }
+                logging::error_msg!("failed to stop running solver: {e}");
             } else {
                 used_memory -= mem as f64;
             }
@@ -246,15 +239,13 @@ impl Scheduler {
                 continue;
             }
 
-            if state.debug_verbosity >= DebugVerbosityLevel::Info {
-                let div = (1024 * 1024) as f64;
-                println!(
-                    "Info: Memory used by system: {} MiB, Memory Available: {} MiB, Memory threshold: {}",
-                    used / div,
-                    total / div,
-                    total * state.config.memory_threshold / div,
-                );
-            }
+            let div = (1024 * 1024) as f64;
+            logging::info!(
+                "Info: Memory used by system: {} MiB, Memory Available: {} MiB, Memory threshold: {}",
+                used / div,
+                total / div,
+                total * state.config.memory_threshold / div,
+            );
 
             let used = Self::kill_suspended_until_under_threshold(
                 &mut state,
@@ -327,12 +318,11 @@ impl Scheduler {
         let new_objective = self.solver_manager.get_best_objective().await;
 
         if new_objective != state.prev_objective {
-            if state.debug_verbosity >= DebugVerbosityLevel::Info {
-                println!(
-                    "apply function objectives: old objective: {:?}, new: {:?}",
-                    state.prev_objective, new_objective
-                );
-            }
+            logging::info!(
+                "apply function objectives: old objective: {:?}, new: {:?}",
+                state.prev_objective,
+                new_objective
+            );
             state.prev_objective = new_objective;
 
             if let Some(obj) = new_objective {
@@ -344,9 +334,9 @@ impl Scheduler {
                     .map(|(id, _)| *id)
                     .collect();
 
-                if !to_restart.is_empty() && state.debug_verbosity >= DebugVerbosityLevel::Info {
-                    println!("solver objectives: {:?}", solver_objectives);
-                    println!("solver to restart {:?}", to_restart);
+                if !to_restart.is_empty() {
+                    logging::info!("solver objectives: {:?}", solver_objectives);
+                    logging::info!("solver to restart {:?}", to_restart);
                 }
 
                 self.solver_manager.stop_solvers(&to_restart).await?;
@@ -369,7 +359,7 @@ impl Scheduler {
                 || !changes.to_suspend.is_empty()
                 || !changes.to_resume.is_empty())
         {
-            println!("changes: {:?}", changes);
+            logging::info!("changes: {:?}", changes);
         }
 
         if let Err(_) = self
@@ -377,15 +367,12 @@ impl Scheduler {
             .suspend_solvers(&changes.to_suspend)
             .await
         {
-            println!("fuuuuuuuuuuuuck");
             self.solver_manager
                 .stop_solvers(&changes.to_suspend)
                 .await?;
         }
 
         if let Err(_) = self.solver_manager.resume_solvers(&changes.to_resume).await {
-            println!("fuuuuuuuuuuuuck 2");
-
             let mut resume_elements = Vec::new();
             for schedule_elem in &schedule {
                 for resume_id in &changes.to_resume {

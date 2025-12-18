@@ -1,4 +1,5 @@
 use crate::args::DebugVerbosityLevel;
+use crate::logging;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -136,7 +137,7 @@ async fn run_mzn_to_fzn_cmd(
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                eprintln!("MiniZinc compilation: {}", line);
+                logging::warning!("MiniZinc compilation: {}", line);
             }
         });
     }

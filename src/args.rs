@@ -1,6 +1,8 @@
 use clap::{Parser, ValueEnum};
 use std::{collections::HashMap, path::PathBuf, process::exit};
 
+use crate::logging;
+
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about)]
 pub struct Args {
@@ -74,7 +76,7 @@ pub fn parse_ai_config(config: Option<&str>) -> HashMap<String, String> {
         .split(',')
         .map(|key_value| {
             let Some((key, value)) = key_value.split_once('=') else {
-                eprintln!("Key-value pair is missing '=' in the AI configuration. The key-value: '{key_value}'");
+                logging::error_msg!("Key-value pair is missing '=' in the AI configuration. The key-value: '{key_value}'");
                 exit(1);
             };
             (key.to_owned(), value.to_owned())

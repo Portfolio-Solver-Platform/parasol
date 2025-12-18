@@ -3,7 +3,7 @@ use crate::insert_objective::insert_objective;
 use crate::model_parser::{ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type};
 use crate::scheduler::ScheduleElement;
 use crate::solver_output::{Output, Solution, Status};
-use crate::{mzn_to_fzn, solver_output};
+use crate::{logging, mzn_to_fzn, solver_output};
 use futures::future::join_all;
 use nix::sys::signal::{self, Signal};
 use nix::unistd;
@@ -238,26 +238,20 @@ impl SolverManager {
             .await;
         });
 
-        let verbosity_stderr = self.args.debug_verbosity;
-        tokio::spawn(async move { Self::handle_solver_stderr(fzn_stderr, verbosity_stderr).await });
-        tokio::spawn(async move { Self::handle_solver_stderr(ozn_stderr, verbosity_stderr).await });
+        tokio::spawn(async move { Self::handle_solver_stderr(fzn_stderr).await });
+        tokio::spawn(async move { Self::handle_solver_stderr(ozn_stderr).await });
 
         let solvers_clone = self.solvers.clone();
         let solver_name = elem.info.name.clone();
-        let verbosity_wait = self.args.debug_verbosity;
 
         tokio::spawn(async move {
             let _keep_alive = fzn_guard;
             match fzn.wait().await {
                 Ok(status) if !status.success() => {
-                    if verbosity_wait >= DebugVerbosityLevel::Info {
-                        eprintln!("Solver '{}' exited with status: {}", solver_name, status);
-                    }
+                    logging::info!("Solver '{}' exited with status: {}", solver_name, status);
                 }
                 Err(e) => {
-                    if verbosity_wait >= DebugVerbosityLevel::Error {
-                        eprintln!("Error waiting for solver '{}': {}", solver_name, e);
-                    }
+                    logging::error_msg!("Error waiting for solver '{}': {}", solver_name, e);
                 }
                 _ => {}
             }
@@ -287,16 +281,12 @@ impl SolverManager {
         };
 
         while let Ok(Some(line)) = lines.next_line().await.map_err(|err| {
-            if verbosity >= DebugVerbosityLevel::Error {
-                eprintln!("Error reading solver stdout: {err}");
-            }
+            logging::error!(HandleStdoutError::Read(err).into());
         }) {
             let output = match parser.next_line(&line) {
                 Ok(o) => o,
                 Err(e) => {
-                    if verbosity >= DebugVerbosityLevel::Error {
-                        eprintln!("Error parsing solver output: {:?}", e);
-                    }
+                    logging::error!(HandleStdoutError::Parse(e).into());
                     continue;
                 }
             };
@@ -333,9 +323,7 @@ impl SolverManager {
             };
 
             if let Err(e) = tx.send(msg) {
-                if verbosity >= DebugVerbosityLevel::Error {
-                    eprintln!("Could not send message, receiver dropped: {}", e);
-                }
+                logging::error!(HandleStdoutError::from(e).into());
                 break;
             }
         }
@@ -343,29 +331,20 @@ impl SolverManager {
         match pipe.await {
             Ok(_) => {}
             Err(e) => {
-                if verbosity >= DebugVerbosityLevel::Error {
-                    eprintln!("Error piping from fzn to ozn: {e}");
-                }
+                logging::error!(HandleStdoutError::from(e).into());
             }
         }
     }
 
-    async fn handle_solver_stderr(
-        stderr: tokio::process::ChildStderr,
-        verbosity: DebugVerbosityLevel,
-    ) {
+    async fn handle_solver_stderr(stderr: tokio::process::ChildStderr) {
         let reader = BufReader::new(stderr);
         let mut lines = reader.lines();
 
         while let Some(line) = lines.next_line().await.unwrap_or_else(|e| {
-            if verbosity >= DebugVerbosityLevel::Error {
-                eprintln!("Error reading solver stderr: {}", e);
-            }
+            logging::error_msg!("Error reading solver stderr: {}", e);
             None
         }) {
-            if verbosity >= DebugVerbosityLevel::Error {
-                eprintln!("Solver stderr: {}", line);
-            }
+            logging::error_msg!("Solver stderr: {}", line);
         }
     }
 
@@ -528,12 +507,10 @@ impl SolverManager {
                 match map.get(id) {
                     Some(state) => solvers.push((state.pid, *id)),
                     None => {
-                        if self.args.debug_verbosity >= DebugVerbosityLevel::Warning {
-                            eprintln!(
-                                "solvers_sorted_by_mem failed to extract solver pid for id {}",
-                                id
-                            );
-                        }
+                        logging::warning!(
+                            "solvers_sorted_by_mem failed to extract solver pid for id {}",
+                            id
+                        );
                     }
                 }
             }
@@ -581,4 +558,16 @@ async fn pipe(mut left: Command, mut right: Command) -> Result<PipeCommand> {
         right: right_child,
         pipe: pipe_task,
     })
+}
+
+#[derive(Debug, thiserror::Error)]
+enum HandleStdoutError {
+    #[error("failed to read solver stdout")]
+    Read(tokio::io::Error),
+    #[error("failed to parse solver stdout")]
+    Parse(solver_output::Error),
+    #[error("failed to send message")]
+    SendMessage(#[from] tokio::sync::mpsc::error::SendError<Msg>),
+    #[error("failed to pipe from fzn to ozn")]
+    Pipe(#[from] tokio::task::JoinError),
 }

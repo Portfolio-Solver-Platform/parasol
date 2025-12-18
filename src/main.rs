@@ -43,7 +43,7 @@ async fn main() {
         Ai::CommandLine => {
             let ai_config = parse_ai_config(args.ai_config.as_deref());
             let Some(command) = ai_config.get("command") else {
-                eprintln!(
+                logging::error_msg!(
                     "'command' not provided in AI configuration when basic commandline AI has been specified"
                 );
                 exit(1);
