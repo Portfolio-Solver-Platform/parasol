@@ -2,17 +2,14 @@ use crate::ai::Features;
 use std::path::Path;
 use tokio::process::Command;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("command failed: {0}")]
     CommandFailed(std::process::ExitStatus),
+    #[error("feature parsing failed on '{0}': {1}")]
     FeatureParseFailed(String, std::num::ParseFloatError),
-    Other(String),
-}
-
-impl From<tokio::io::Error> for Error {
-    fn from(value: tokio::io::Error) -> Self {
-        Self::Other("Tokio IO error".to_owned())
-    }
+    #[error("IO error")]
+    Io(#[from] tokio::io::Error),
 }
 
 pub async fn fzn_to_features(fzn_model: &Path) -> Result<Features, Error> {

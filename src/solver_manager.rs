@@ -8,7 +8,7 @@ use crate::{mzn_to_fzn, solver_output};
 use futures::future::join_all;
 use std::collections::{HashMap, HashSet};
 use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use sysinfo::{Pid, System};
@@ -31,7 +31,7 @@ pub enum Error {
     #[error("IO error")]
     Io(#[from] std::io::Error),
     #[error("failed to parse solver output")]
-    OutputParseError(#[from] solver_output::Error),
+    OutputParse(#[from] solver_output::Error),
     #[error("failed to parse model")]
     ModelParse(#[from] ModelParseError),
     #[error("failed to convert MiniZinc (mzn) to FlatZinc (fzn) format")]

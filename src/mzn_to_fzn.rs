@@ -14,14 +14,8 @@ pub enum ConversionError {
     CommandFailed(std::process::ExitStatus),
     #[error("IO error during temporary file use")]
     TempFile(std::io::Error),
-    #[error("{0}")]
-    Other(String),
-}
-
-impl From<tokio::io::Error> for ConversionError {
-    fn from(value: tokio::io::Error) -> Self {
-        Self::Other("Tokio IO error".to_owned())
-    }
+    #[error("IO error")]
+    Io(#[from] tokio::io::Error),
 }
 
 pub struct CachedConverter {

@@ -1,11 +1,7 @@
 use itertools::Itertools;
 
 use super::{Error, Features, Result};
-use crate::{
-    args::DebugVerbosityLevel,
-    scheduler::{Portfolio, SolverInfo},
-    static_schedule::parse_schedule,
-};
+use crate::{args::DebugVerbosityLevel, scheduler::Portfolio, static_schedule::parse_schedule};
 use std::process::Command;
 
 pub struct Ai {

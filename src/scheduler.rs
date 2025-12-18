@@ -1,7 +1,7 @@
 use crate::{
     args::{Args, DebugVerbosityLevel},
     config::Config,
-    model_parser::{ObjectiveType, ObjectiveValue},
+    model_parser::ObjectiveValue,
     solver_manager::{Error, SolverManager},
 };
 use std::collections::{HashMap, HashSet};

@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::fzn_to_features::fzn_to_features;
 use crate::mzn_to_fzn::convert_mzn;
-use crate::scheduler::{Portfolio, Scheduler, SolverInfo};
+use crate::scheduler::Scheduler;
 use crate::static_schedule::static_schedule;
 use crate::{ai::Ai, args::Args};
 use tokio::time::{Duration, sleep};
