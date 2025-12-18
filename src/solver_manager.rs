@@ -8,7 +8,7 @@ use crate::{mzn_to_fzn, solver_output};
 use futures::future::join_all;
 use std::collections::{HashMap, HashSet};
 use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use sysinfo::{Pid, System};
@@ -22,74 +22,22 @@ const SUSPEND_SIGNAL: &str = "SIGSTOP";
 const RESUME_SIGNAL: &str = "SIGCONT";
 const KILL_SIGNAL: &str = "SIGTERM";
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    KillTree(kill_tree::Error),
+    #[error("failed to kill process tree")]
+    KillTree(#[from] kill_tree::Error),
+    #[error("invalid solver: {0}")]
     InvalidSolver(String),
-    Io(std::io::Error),
-    OutputParseError(solver_output::Error),
-    ModelParse(ModelParseError),
-    FznConversion(mzn_to_fzn::ConversionError),
-    UseOfOznBeforeCompilation,
+    #[error("IO error")]
+    Io(#[from] std::io::Error),
+    #[error("failed to parse solver output")]
+    OutputParse(#[from] solver_output::Error),
+    #[error("failed to parse model")]
+    ModelParse(#[from] ModelParseError),
+    #[error("failed to convert MiniZinc (mzn) to FlatZinc (fzn) format")]
+    FznConversion(#[from] mzn_to_fzn::ConversionError),
 }
 pub type Result<T> = std::result::Result<T, Error>;
-
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        Error::Io(e)
-    }
-}
-
-impl From<mzn_to_fzn::ConversionError> for Error {
-    fn from(value: mzn_to_fzn::ConversionError) -> Self {
-        Self::FznConversion(value)
-    }
-}
-
-impl From<kill_tree::Error> for Error {
-    fn from(value: kill_tree::Error) -> Self {
-        Error::KillTree(value)
-    }
-}
-
-impl From<solver_output::Error> for Error {
-    fn from(value: solver_output::Error) -> Self {
-        Error::OutputParseError(value)
-    }
-}
-
-impl From<ModelParseError> for Error {
-    fn from(value: ModelParseError) -> Self {
-        Error::ModelParse(value)
-    }
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::KillTree(e) => write!(f, "failed to kill process tree: {}", e),
-            Error::InvalidSolver(msg) => write!(f, "invalid solver: {}", msg),
-            Error::Io(e) => write!(f, "IO error: {}", e),
-            Error::OutputParseError(e) => write!(f, "output parse error: {:?}", e),
-            Error::ModelParse(e) => write!(f, "model parse error: {:?}", e),
-            Error::FznConversion(e) => {
-                write!(f, "failed to convert mzn to fzn: {e:?}")
-            }
-            Error::UseOfOznBeforeCompilation => {
-                write!(f, "ozn file was used before it was compiled")
-            }
-        }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Error::Io(e) => Some(e),
-            _ => None,
-        }
-    }
-}
 
 #[derive(Debug)]
 enum Msg {

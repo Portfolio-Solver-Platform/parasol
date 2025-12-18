@@ -1,45 +1,32 @@
 use async_tempfile::TempFile;
-use std::io::Write;
 use std::path::Path;
 use std::process::ExitStatus;
-use tempfile::NamedTempFile;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use uuid::Uuid;
 
 pub type ObjectiveValue = i64;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ModelParseError {
+    #[error("failed to parse method: {0}")]
     MethodParseError(String),
-    IoError(std::io::Error),
-    RegexError(regex::Error),
+    #[error("IO failed")]
+    IoError(#[from] std::io::Error),
+    #[error("regex failed")]
+    RegexError(#[from] regex::Error),
+    #[error("command failed: {0}")]
     CommandFailed(ExitStatus),
-    CommandOutputError(CommandOutputError),
+    #[error("error occurred when parsing the command output")]
+    CommandOutputError(#[from] CommandOutputError),
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum CommandOutputError {
-    NonJsonOutput,
-    JsonIsNotObject,
-}
-
-impl From<CommandOutputError> for ModelParseError {
-    fn from(value: CommandOutputError) -> Self {
-        Self::CommandOutputError(value)
-    }
-}
-
-impl From<std::io::Error> for ModelParseError {
-    fn from(e: std::io::Error) -> Self {
-        Self::IoError(e)
-    }
-}
-
-impl From<regex::Error> for ModelParseError {
-    fn from(e: regex::Error) -> Self {
-        Self::RegexError(e)
-    }
+    #[error("Command output is not JSON: {0}")]
+    NonJsonOutput(String),
+    #[error("Parsed JSON is not an object: {0}")]
+    JsonIsNotObject(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,9 +104,9 @@ pub async fn get_objective_type(
 ) -> Result<ObjectiveType, ModelParseError> {
     let output = run_model_interface_cmd(minizinc_command, model_path).await?;
     let json: serde_json::Value =
-        serde_json::from_str(&output).map_err(|_| CommandOutputError::NonJsonOutput)?;
+        serde_json::from_str(&output).map_err(|_| CommandOutputError::NonJsonOutput(output))?;
     let serde_json::Value::Object(object) = json else {
-        return Err(CommandOutputError::JsonIsNotObject.into());
+        return Err(CommandOutputError::JsonIsNotObject(json.to_string()).into());
     };
 
     parse_method_from_json_object(object)

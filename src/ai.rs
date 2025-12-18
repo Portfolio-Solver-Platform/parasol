@@ -2,8 +2,9 @@ pub mod commandline;
 use crate::scheduler::{Portfolio, SolverInfo};
 pub type Features = Vec<f32>;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("{0}")]
     Other(String),
 }
 
@@ -16,7 +17,7 @@ pub trait Ai {
 pub struct SimpleAi {}
 
 impl Ai for SimpleAi {
-    fn schedule(&mut self, features: &Features, cores: usize) -> Result<Portfolio> {
+    fn schedule(&mut self, _features: &Features, cores: usize) -> Result<Portfolio> {
         Ok(vec![
             SolverInfo::new("gecode".to_string(), cores / 2),
             // ScheduleElement::new(2, "coinbc".to_string(), cores / 2),

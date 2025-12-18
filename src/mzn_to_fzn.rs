@@ -8,17 +8,14 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::RwLock;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ConversionError {
+    #[error("command failed: {0}")]
     CommandFailed(std::process::ExitStatus),
+    #[error("IO error during temporary file use")]
     TempFile(std::io::Error),
-    Other(String),
-}
-
-impl From<tokio::io::Error> for ConversionError {
-    fn from(value: tokio::io::Error) -> Self {
-        Self::Other("Tokio IO error".to_owned())
-    }
+    #[error("IO error")]
+    Io(#[from] tokio::io::Error),
 }
 
 pub struct CachedConverter {

@@ -18,7 +18,6 @@ use crate::config::Config;
 use crate::sunny::sunny;
 use args::Args;
 use clap::Parser;
-use futures::channel::oneshot::Cancellation;
 use tokio_util::sync::CancellationToken;
 
 #[tokio::main(flavor = "current_thread")]
