@@ -1,4 +1,5 @@
-FROM rust:1.91 AS builder
+FROM rust:1.91 AS rust
+FROM rust AS builder
 
 WORKDIR /usr/src/app
 
@@ -21,7 +22,7 @@ COPY src ./src
 RUN touch src/main.rs && cargo build --release
 
 
-FROM minizinc/mznc2025:latest
+FROM minizinc/mznc2025:latest AS base
 
 WORKDIR /app
 
@@ -31,6 +32,7 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     wget \
     git \
+    jq \
     flex \
     bison \
     libxml++2.6-dev \
@@ -40,6 +42,28 @@ RUN apt-get update && apt-get install -y \
     libegl1 \
     libfontconfig1 \
     && rm -rf /var/lib/apt/lists/*
+
+# Huub
+FROM rust AS huub
+
+# Install Huub
+RUN git clone --branch pub/CP2025 https://github.com/huub-solver/huub.git /huub
+WORKDIR /huub
+RUN cargo build --release
+
+FROM base AS solver-configs
+
+COPY ./minizinc/solvers/ /solvers/
+WORKDIR /solvers
+RUN jq '.executable = "/usr/local/bin/portfolio-solver-framework"' ./framework.msc.template > ./framework.msc
+RUN jq '.executable = "/usr/local/bin/fzn-picat"' ./picat.msc.template > picat.msc.temp
+RUN jq '.mznlib = "/opt/fzn_picat/mznlib"' picat.msc.temp > ./picat.msc
+COPY --from=huub /huub/share/minizinc/solvers/huub.msc ./huub.msc.template
+RUN jq '.executable = "/usr/local/bin/fzn-huub"' ./huub.msc.template > huub.msc.temp
+RUN jq '.mznlib = "/usr/local/share/minizinc/huub/"' ./huub.msc.temp > ./huub.msc
+
+
+FROM base
 
 # Install mzn2feat
 RUN git clone https://github.com/CP-Unibo/mzn2feat.git /opt/mzn2feat
@@ -70,14 +94,14 @@ RUN apt-get update && apt-get install -y unzip default-jre \
     && apt-get remove -y unzip && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
-# Install solver configurations
-COPY ./minizinc/solvers/ ./minizinc/solvers/
-RUN sed 's|\${EXE_PATH}|/usr/local/bin/portfolio-solver-framework|g' ./minizinc/solvers/framework.msc.template > ./minizinc/solvers/framework.msc
-RUN sed 's|\${EXE_PATH}|/usr/local/bin/fzn-picat|g' ./minizinc/solvers/picat.msc.template > ./minizinc/solvers/picat.msc
-RUN sed -i 's|\${LIB_PATH}|/opt/fzn_picat/mznlib|g' ./minizinc/solvers/picat.msc
 
-RUN cp ./minizinc/solvers/*.msc /usr/local/share/minizinc/solvers/
+# Install solver configurations
+COPY --from=solver-configs /solvers/*.msc /usr/local/share/minizinc/solvers/
+
 COPY ./solvers/picat/wrapper.sh /usr/local/bin/fzn-picat
+
+COPY --from=huub /huub/target/release/fzn-huub /usr/local/bin/fzn-huub
+COPY --from=huub /huub/share/minizinc/huub/ /usr/local/share/minizinc/huub/
 
 # Set our solver as the default
 RUN echo '{"tagDefaults": [["", "org.psp.sunny"]]}' > $HOME/.minizinc/Preferences.json
