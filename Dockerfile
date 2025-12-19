@@ -57,8 +57,7 @@ RUN wget http://picat-lang.org/download/picat394_linux64.tar.gz \
     && ln -s /opt/Picat/picat /usr/local/bin/picat \
     && rm picat394_linux64.tar.gz
 
-# Download Picat MiniZinc configuration
-RUN echo '{"id": "org.picat-lang.picat", "name": "Picat", "version": "3.9.4", "executable": "/usr/local/bin/picat", "mznlib": "", "tags": ["cp", "int"], "supportsMzn": false, "supportsFzn": true, "needsSolns2Out": true, "needsMznExecutable": false, "isGUIApplication": false}' > /opt/minizinc/share/minizinc/solvers/picat.msc
+RUN git clone https://github.com/nfzhou/fzn_picat.git /opt/fzn_picat
 
 # Install Yuck solver (requires Java)
 RUN apt-get update && apt-get install -y unzip default-jre \
@@ -73,8 +72,14 @@ RUN apt-get update && apt-get install -y unzip default-jre \
     && apt-get remove -y unzip && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
-COPY ./solver.msc.template .
-RUN sed 's|\${EXECUTABLE_PATH}|/usr/local/bin/portfolio-solver-framework|g' ./solver.msc.template > /usr/local/share/minizinc/solvers/portfolio-solver-framework.msc
+# Install solver configurations
+COPY ./minizinc/solvers/ ./minizinc/solvers/
+RUN sed 's|\${EXE_PATH}|/usr/local/bin/portfolio-solver-framework|g' ./minizinc/solvers/framework.msc.template > ./minizinc/solvers/framework.msc
+RUN sed 's|\${EXE_PATH}|/usr/local/bin/fzn-picat|g' ./minizinc/solvers/picat.msc.template > ./minizinc/solvers/picat.msc
+RUN sed -i 's|\${LIB_PATH}|/opt/fzn_picat/mznlib|g' ./minizinc/solvers/picat.msc
+
+RUN cp ./minizinc/solvers/*.msc /usr/local/share/minizinc/solvers/
+COPY ./solvers/picat/wrapper.sh /usr/local/bin/fzn-picat
 
 # Set our solver as the default
 RUN echo '{"tagDefaults": [["", "org.psp.sunny"]]}' > $HOME/.minizinc/Preferences.json

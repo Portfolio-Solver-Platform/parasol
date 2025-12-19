@@ -1,0 +1,17 @@
+{
+  "id": "org.picat-lang.picat",
+  "name": "Picat SAT",
+  "description": "Picat SAT solving engine",
+  "version": "3.9.4",
+  "executable": "${EXE_PATH}",
+  "mznlib": "${LIB_PATH}",
+  "tags": ["sat", "int"],
+  "stdFlags": ["-a", "-f", "-n", "-p"],
+  "extraFlags": [],
+  "supportsMzn": false,
+  "supportsFzn": true,
+  "needsSolns2Out": true,
+  "needsMznExecutable": false,
+  "needsStdlibDir": false,
+  "isGUIApplication": false
+}
