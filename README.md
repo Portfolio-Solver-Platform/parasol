@@ -4,7 +4,12 @@
 
 Use `cargo build --release`. This will place the executable in `./target/release/portfolio-solver-framework`.
 
-We also have a Dockerfile where you can find the installation instructions; however, it currently only includes a limited number of solvers, and Picat is not functioning properly in it.
+We also have a Dockerfile that installs it and sets it as the default `minizinc` solver.
+Example usage:
+```bash
+docker build -t framework:latest . \
+&& docker run  -v /my/path/to/problems:/problems framework minizinc /problems/accap/accap.mzn /problems/accap/accap_instance3.dzn
+```
 
 ## Usage
 

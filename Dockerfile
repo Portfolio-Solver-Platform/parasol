@@ -82,6 +82,7 @@ RUN jq '.mznlib = "/opt/yuck/mzn/lib/"' ./yuck.msc.temp > ./yuck.msc
 FROM base
 
 # Install mzn2feat
+# TODO: Move it into its own image (to improve caching)
 RUN git clone https://github.com/CP-Unibo/mzn2feat.git /opt/mzn2feat
 
 RUN cd /opt/mzn2feat && bash install --no-xcsp
@@ -90,6 +91,7 @@ RUN ln -s /opt/mzn2feat/bin/mzn2feat /usr/local/bin/mzn2feat \
     && ln -s /opt/mzn2feat/bin/fzn2feat /usr/local/bin/fzn2feat
 
 # Install Picat solver
+# TODO: Move it into its own image (to improve caching)
 RUN wget http://picat-lang.org/download/picat394_linux64.tar.gz \
     && tar -xzf picat394_linux64.tar.gz -C /opt \
     && ln -s /opt/Picat/picat /usr/local/bin/picat \
@@ -112,4 +114,3 @@ RUN echo '{"tagDefaults": [["", "org.psp.sunny"]]}' > $HOME/.minizinc/Preference
 
 COPY --from=builder /usr/src/app/target/release/portfolio-solver-framework /usr/local/bin/portfolio-solver-framework
 
-ENTRYPOINT ["portfolio-solver-framework"]
