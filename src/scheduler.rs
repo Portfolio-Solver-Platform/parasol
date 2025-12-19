@@ -34,6 +34,20 @@ pub struct SolverInfo {
     pub objective: Option<ObjectiveValue>,
 }
 
+impl std::fmt::Display for SolverInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "name({}),cores({}),objective({})",
+            self.name,
+            self.cores,
+            self.objective
+                .map(|x| x.to_string())
+                .unwrap_or("None".to_owned())
+        )
+    }
+}
+
 impl SolverInfo {
     pub fn new(name: String, cores: usize) -> Self {
         Self {

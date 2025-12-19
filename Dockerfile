@@ -1,58 +1,66 @@
-FROM minizinc/mznc2025:latest AS nix
+FROM rust:1.91 AS builder
+
+WORKDIR /usr/src/app
+
+# Copy dependency manifests first (changes rarely)
+COPY Cargo.toml Cargo.lock ./
+
+# Create dummy main.rs to build dependencies
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+
+# Build dependencies (this layer is cached unless Cargo.toml changes)
+RUN cargo build --release
+
+# Remove dummy artifacts
+RUN rm -rf src
+
+# Now copy actual source code (changes frequently)
+COPY src ./src
+
+# Build only your code (dependencies are cached!)
+RUN touch src/main.rs && cargo build --release
+
+
+FROM minizinc/mznc2025:latest
 
 WORKDIR /app
 
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    curl \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Nix
-ENV NIX_INSTALLER_VERSION="v3.13.2"
-RUN curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix/tag/${NIX_INSTALLER_VERSION} | sh -s -- install linux --init none --no-confirm --extra-conf "filter-syscalls = false"
-ENV PATH="${PATH}:/nix/var/nix/profiles/default/bin"
-
-# Install Nix dependencies
-COPY ./flake.nix ./flake.lock ./
-COPY ./nix/ ./nix/
-COPY ./rust-toolchain.toml ./
-
-RUN nix develop
-
-FROM nix AS builder
-
-COPY Cargo.toml Cargo.lock ./
-
-# Cache dependencies
-# Create dummy main.rs
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN nix develop -c cargo build --release
-# Remove dummy artifacts
-RUN rm -rf src target/release/portfolio-solver-framework target/release/deps/portfolio_solver_framework*
-
-# Build src
-COPY src ./src
-RUN nix develop -c cargo build --release
-
-
-FROM nix
-
-# Insert Picat MiniZinc configuration
-RUN mkdir -p /opt/minizinc/share/minizinc/solvers/
-RUN echo '{"id": "org.picat-lang.picat", "name": "Picat", "version": "3.9.4", "executable": "/usr/local/bin/picat", "mznlib": "", "tags": ["cp", "int"], "supportsMzn": false, "supportsFzn": true, "needsSolns2Out": true, "needsMznExecutable": false, "isGUIApplication": false}' > /opt/minizinc/share/minizinc/solvers/picat.msc
-
-# Install Yuck solver (requires Java)
-RUN apt-get update && apt-get install -y \
-    xz-utils \
     libssl-dev \
     wget \
     git \
+    flex \
+    bison \
+    libxml++2.6-dev \
     build-essential \
     libgl1 \
     libglu1-mesa \
     libegl1 \
     libfontconfig1 \
     && rm -rf /var/lib/apt/lists/*
+
+# Install mzn2feat
+RUN git clone https://github.com/CP-Unibo/mzn2feat.git /opt/mzn2feat
+
+RUN cd /opt/mzn2feat && bash install --no-xcsp
+
+RUN ln -s /opt/mzn2feat/bin/mzn2feat /usr/local/bin/mzn2feat \
+    && ln -s /opt/mzn2feat/bin/fzn2feat /usr/local/bin/fzn2feat
+
+RUN mkdir -p /opt/minizinc/share/minizinc/solvers/
+
+# Install Picat solver
+RUN wget http://picat-lang.org/download/picat394_linux64.tar.gz \
+    && tar -xzf picat394_linux64.tar.gz -C /opt \
+    && ln -s /opt/Picat/picat /usr/local/bin/picat \
+    && rm picat394_linux64.tar.gz
+
+# Download Picat MiniZinc configuration
+RUN echo '{"id": "org.picat-lang.picat", "name": "Picat", "version": "3.9.4", "executable": "/usr/local/bin/picat", "mznlib": "", "tags": ["cp", "int"], "supportsMzn": false, "supportsFzn": true, "needsSolns2Out": true, "needsMznExecutable": false, "isGUIApplication": false}' > /opt/minizinc/share/minizinc/solvers/picat.msc
+
+# Install Yuck solver (requires Java)
 RUN apt-get update && apt-get install -y unzip default-jre \
     && wget https://github.com/informarte/yuck/releases/download/20251106/yuck-20251106.zip \
     && unzip yuck-20251106.zip -d /opt \
@@ -65,15 +73,14 @@ RUN apt-get update && apt-get install -y unzip default-jre \
     && apt-get remove -y unzip && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/portfolio-solver-framework /usr/local/bin/portfolio-solver-framework
+COPY ./solver.msc.template .
+RUN sed 's|\${EXECUTABLE_PATH}|/usr/local/bin/portfolio-solver-framework|g' ./solver.msc.template > /usr/local/share/minizinc/solvers/portfolio-solver-framework.msc
 
-# Create a small startup script which has the `nix develop` environment baked into it.
-#   This is done to avoid running `nix develop -c` in the entrypoint.
-#   Avoiding this is important because `nix develop` evaluates the
-#   flake derivation every time it runs which is slow.
-RUN echo '#!/bin/bash' > /entrypoint.sh && \
-    nix print-dev-env >> /entrypoint.sh && \
-    echo 'exec "$@"' >> /entrypoint.sh && \
-    chmod +x /entrypoint.sh
+# Set our solver as the default
+RUN echo '{"tagDefaults": [["", "org.psp.sunny"]]}' > $HOME/.minizinc/Preferences.json
 
-ENTRYPOINT [ "/entrypoint.sh", "portfolio-solver-framework" ]
+COPY --from=builder /usr/src/app/target/release/portfolio-solver-framework /usr/local/bin/portfolio-solver-framework
+
+
+
+ENTRYPOINT ["portfolio-solver-framework"]
