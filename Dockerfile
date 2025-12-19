@@ -49,8 +49,6 @@ RUN cd /opt/mzn2feat && bash install --no-xcsp
 RUN ln -s /opt/mzn2feat/bin/mzn2feat /usr/local/bin/mzn2feat \
     && ln -s /opt/mzn2feat/bin/fzn2feat /usr/local/bin/fzn2feat
 
-RUN mkdir -p /opt/minizinc/share/minizinc/solvers/
-
 # Install Picat solver
 RUN wget http://picat-lang.org/download/picat394_linux64.tar.gz \
     && tar -xzf picat394_linux64.tar.gz -C /opt \
@@ -65,9 +63,9 @@ RUN apt-get update && apt-get install -y unzip default-jre \
     && unzip yuck-20251106.zip -d /opt \
     && mv /opt/yuck-20251106 /opt/yuck \
     && chmod +x /opt/yuck/bin/yuck \
-    && cp /opt/yuck/mzn/yuck.msc /opt/minizinc/share/minizinc/solvers/ \
-    && sed -i 's|"executable": "../bin/yuck"|"executable": "/opt/yuck/bin/yuck"|' /opt/minizinc/share/minizinc/solvers/yuck.msc \
-    && sed -i 's|"mznlib": "lib"|"mznlib": "/opt/yuck/mzn/lib"|' /opt/minizinc/share/minizinc/solvers/yuck.msc \
+    && cp /opt/yuck/mzn/yuck.msc /usr/local/share/minizinc/solvers/ \
+    && sed -i 's|"executable": "../bin/yuck"|"executable": "/opt/yuck/bin/yuck"|' /usr/local/share/minizinc/solvers/yuck.msc \
+    && sed -i 's|"mznlib": "lib"|"mznlib": "/opt/yuck/mzn/lib"|' /usr/local/share/minizinc/solvers/yuck.msc \
     && rm yuck-20251106.zip \
     && apt-get remove -y unzip && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
