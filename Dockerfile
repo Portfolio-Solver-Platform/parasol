@@ -31,6 +31,8 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl-dev \
     wget \
+    default-jre \
+    unzip \
     git \
     jq \
     flex \
@@ -51,6 +53,17 @@ RUN git clone --branch pub/CP2025 https://github.com/huub-solver/huub.git /huub
 WORKDIR /huub
 RUN cargo build --release
 
+FROM base AS yuck
+
+# Install Yuck solver (requires Java)
+RUN wget https://github.com/informarte/yuck/releases/download/20251106/yuck-20251106.zip \
+    && unzip yuck-20251106.zip -d /opt \
+    && mv /opt/yuck-20251106 /opt/yuck \
+    && chmod +x /opt/yuck/bin/yuck \
+    && rm yuck-20251106.zip \
+    && apt-get remove -y unzip
+
+
 FROM base AS solver-configs
 
 COPY ./minizinc/solvers/ /solvers/
@@ -61,6 +74,9 @@ RUN jq '.mznlib = "/opt/fzn_picat/mznlib"' picat.msc.temp > ./picat.msc
 COPY --from=huub /huub/share/minizinc/solvers/huub.msc ./huub.msc.template
 RUN jq '.executable = "/usr/local/bin/fzn-huub"' ./huub.msc.template > huub.msc.temp
 RUN jq '.mznlib = "/usr/local/share/minizinc/huub/"' ./huub.msc.temp > ./huub.msc
+COPY --from=yuck /opt/yuck/mzn/yuck.msc ./yuck.msc.template
+RUN jq '.executable = "/opt/yuck/bin/yuck"' ./yuck.msc.template > yuck.msc.temp
+RUN jq '.mznlib = "/opt/yuck/mzn/lib/"' ./yuck.msc.temp > ./yuck.msc
 
 
 FROM base
@@ -81,20 +97,6 @@ RUN wget http://picat-lang.org/download/picat394_linux64.tar.gz \
 
 RUN git clone https://github.com/nfzhou/fzn_picat.git /opt/fzn_picat
 
-# Install Yuck solver (requires Java)
-RUN apt-get update && apt-get install -y unzip default-jre \
-    && wget https://github.com/informarte/yuck/releases/download/20251106/yuck-20251106.zip \
-    && unzip yuck-20251106.zip -d /opt \
-    && mv /opt/yuck-20251106 /opt/yuck \
-    && chmod +x /opt/yuck/bin/yuck \
-    && cp /opt/yuck/mzn/yuck.msc /usr/local/share/minizinc/solvers/ \
-    && sed -i 's|"executable": "../bin/yuck"|"executable": "/opt/yuck/bin/yuck"|' /usr/local/share/minizinc/solvers/yuck.msc \
-    && sed -i 's|"mznlib": "lib"|"mznlib": "/opt/yuck/mzn/lib"|' /usr/local/share/minizinc/solvers/yuck.msc \
-    && rm yuck-20251106.zip \
-    && apt-get remove -y unzip && apt-get autoremove -y \
-    && rm -rf /var/lib/apt/lists/*
-
-
 # Install solver configurations
 COPY --from=solver-configs /solvers/*.msc /usr/local/share/minizinc/solvers/
 
@@ -103,11 +105,11 @@ COPY ./solvers/picat/wrapper.sh /usr/local/bin/fzn-picat
 COPY --from=huub /huub/target/release/fzn-huub /usr/local/bin/fzn-huub
 COPY --from=huub /huub/share/minizinc/huub/ /usr/local/share/minizinc/huub/
 
+COPY --from=yuck /opt/yuck/ /opt/yuck/
+
 # Set our solver as the default
 RUN echo '{"tagDefaults": [["", "org.psp.sunny"]]}' > $HOME/.minizinc/Preferences.json
 
 COPY --from=builder /usr/src/app/target/release/portfolio-solver-framework /usr/local/bin/portfolio-solver-framework
-
-
 
 ENTRYPOINT ["portfolio-solver-framework"]
