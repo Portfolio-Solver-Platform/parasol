@@ -65,11 +65,11 @@ fn parse_schedule_line(line: &str) -> std::result::Result<SolverInfo, ParseError
 fn default_schedule() -> Portfolio {
     vec![
         SolverInfo::new("coinbc".to_string(), 1),
-        // SolverInfo::new("gecode".to_string(), 1),
-        // SolverInfo::new("picat".to_string(), 1),
-        // SolverInfo::new("cp-sat".to_string(), 1),
-        // SolverInfo::new("chuffed".to_string(), 1),
-        // SolverInfo::new("yuck".to_string(), 1),
+        SolverInfo::new("gecode".to_string(), 1),
+        SolverInfo::new("picat".to_string(), 1),
+        SolverInfo::new("cp-sat".to_string(), 1),
+        SolverInfo::new("chuffed".to_string(), 1),
+        SolverInfo::new("yuck".to_string(), 1),
         // SolverInfo::new( "xpress".to_string(), cores / 10),
         // SolverInfo::new( "scip".to_string(), cores / 10),
         // SolverInfo::new( "highs".to_string(), cores / 10),
