@@ -1,5 +1,6 @@
 use crate::model_parser::{ObjectiveType, ObjectiveValue};
 use async_tempfile::TempFile;
+use serde_json::json;
 use std::path::{Path, PathBuf};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
@@ -95,6 +96,43 @@ pub async fn insert_objective(
     Ok(temp_file)
 }
 
+pub async fn insert_objective_json(
+    json_path: &Path,
+    objective_type: &ObjectiveType,
+    objective: ObjectiveValue,
+) -> Result<TempFile> {
+    let mut file = File::open(json_path)
+        .await
+        .map_err(|e| Error::ReadFznFile(json_path.to_path_buf(), e))?;
+
+    let mut content = String::new();
+    file.read_to_string(&mut content).await?;
+    if content.trim().is_empty() {
+        return Err(Error::NoStatements(String::new()));
+    }
+
+    let objective_name = get_objective_name_from_json(objective_type, &content)?;
+
+    let mut json: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| Error::JsonParse(e))?;
+
+    let constraint = get_objective_constraint_json_value(objective_type, &objective_name, objective)?;
+
+    let constraints = json
+        .get_mut("constraints")
+        .ok_or(Error::JsonConstraintsNotFound)?;
+    let serde_json::Value::Array(constraints) = constraints else {
+        return Err(Error::JsonConstraintsNotFound);
+    };
+    constraints.push(constraint);
+
+    let uuid = Uuid::new_v4();
+    let mut temp_file = TempFile::new_with_name(format!("temp-{uuid}.fzn.json")).await?;
+    temp_file.write_all(content.as_bytes()).await?;
+    temp_file.flush().await?;
+    Ok(temp_file)
+}
+
 fn get_objective_constraint(
     objective_type: &ObjectiveType,
     objective_name: &str,
@@ -110,12 +148,73 @@ fn get_objective_constraint(
     }
 }
 
+fn get_objective_constraint_json(
+    objective_type: &ObjectiveType,
+    objective_name: &str,
+    objective: ObjectiveValue,
+) -> Result<String> {
+    let (left, right) = match objective_type {
+        ObjectiveType::Satisfy => return Err(Error::GetObjectiveOnSatisfyType),
+        ObjectiveType::Minimize => (json!(objective_name), json!(objective)),
+        ObjectiveType::Maximize => (json!(objective), json!(objective_name)),
+    };
+    let constraint = json!({"id": "int_le", "args": [left, right]});
+    Ok(format!("\n{}", constraint.to_string()))
+}
+
+fn get_objective_constraint_json_value(
+    objective_type: &ObjectiveType,
+    objective_name: &str,
+    objective: ObjectiveValue,
+) -> Result<serde_json::Value> {
+    let (left, right) = match objective_type {
+        ObjectiveType::Satisfy => return Err(Error::GetObjectiveOnSatisfyType),
+        ObjectiveType::Minimize => (json!(objective_name), json!(objective)),
+        ObjectiveType::Maximize => (json!(objective), json!(objective_name)),
+    };
+    Ok(json!({"id": "int_le", "args": [left, right]}))
+}
+
+fn get_objective_name_from_json(
+    objective_type: &ObjectiveType,
+    content: &str,
+) -> Result<String> {
+    if matches!(objective_type, ObjectiveType::Satisfy) {
+        return Err(Error::GetObjectiveOnSatisfyType);
+    }
+
+    let json: serde_json::Value =
+        serde_json::from_str(content).map_err(|e| Error::JsonParse(e))?;
+
+    let solve = json
+        .get("solve")
+        .or_else(|| json.get("Solve"))
+        .ok_or(Error::JsonObjectiveNotFound)?;
+
+    let objective = solve
+        .get("objective")
+        .or_else(|| solve.get("objective_name"))
+        .or_else(|| solve.get("objectiveName"))
+        .ok_or(Error::JsonObjectiveNotFound)?;
+
+    objective
+        .as_str()
+        .map(|s| s.to_owned())
+        .ok_or(Error::JsonObjectiveNotFound)
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Failed to read FlatZinc file: {0}")]
     ReadFznFile(PathBuf, #[source] tokio::io::Error),
     #[error("FlatZinc contains no statements: {0}")]
     NoStatements(String),
+    #[error("Failed to find JSON constraints array")]
+    JsonConstraintsNotFound,
+    #[error("Failed to parse JSON: {0}")]
+    JsonParse(#[from] serde_json::Error),
+    #[error("Failed to find objective name in JSON")]
+    JsonObjectiveNotFound,
     #[error("the last statement is not a solve statement: {0}")]
     LastStatementNotSolve(String),
     #[error("split returned an empty iterator (should be impossible)")]

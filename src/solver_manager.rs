@@ -1,4 +1,5 @@
 use crate::args::{Args, DebugVerbosityLevel};
+use crate::insert_objective::insert_objective_json;
 use crate::insert_objective::insert_objective;
 use crate::model_parser::{ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type};
 use crate::msc_discovery::SolverMetadata;
@@ -149,6 +150,7 @@ impl SolverManager {
         fzn_path: &Path,
         solver_name: &str,
         cores: usize,
+        free_search: bool,
         metadata: &SolverMetadata,
     ) -> Result<Command> {
         let mut cmd = if metadata.input_type == "FZN" {
@@ -163,6 +165,10 @@ impl SolverManager {
             cmd.arg("--solver").arg(solver_name);
         }
         cmd.arg(fzn_path);
+
+        if free_search {
+            cmd.arg("-f");
+        }
 
         // Apply solver-specific arguments from config
         if let Some(args) = self.solver_args.get(solver_name) {
@@ -188,6 +194,7 @@ impl SolverManager {
         &self,
         elem: &ScheduleElement,
         objective: Option<ObjectiveValue>,
+        portfolio_total_cores: usize,
     ) -> Result<()> {
         let solver_name = &elem.info.name;
         let cores = elem.info.cores;
@@ -224,6 +231,13 @@ impl SolverManager {
                     }
                     Err(_) => (conversion_paths.fzn().to_path_buf(), None),
                 }
+            } else if metadata.input_type.as_str() == "JSON" {
+                match insert_objective_json(conversion_paths.fzn(), &self.objective_type, obj).await {
+                    Ok(new_temp_file) => {
+                        (new_temp_file.file_path().to_path_buf(), Some(new_temp_file))
+                    }
+                    Err(_) => (conversion_paths.fzn().to_path_buf(), None),
+                }
             } else {
                 (conversion_paths.fzn().to_path_buf(), None)
             }
@@ -231,8 +245,9 @@ impl SolverManager {
             (conversion_paths.fzn().to_path_buf(), None)
         };
 
+        let free_search = portfolio_total_cores > 1;
         let mut fzn_cmd = self
-            .get_fzn_command(&fzn_final_path, solver_name, cores, &metadata)
+            .get_fzn_command(&fzn_final_path, solver_name, cores, free_search, &metadata)
             .unwrap();
         #[cfg(unix)]
         fzn_cmd.process_group(0); // let OS give it a group process id
@@ -398,9 +413,10 @@ impl SolverManager {
         schedule: &[ScheduleElement],
         objective: Option<ObjectiveValue>,
     ) -> std::result::Result<(), Vec<Error>> {
+        let portfolio_total_cores: usize = schedule.iter().map(|elem| elem.info.cores).sum();
         let futures = schedule
             .iter()
-            .map(|elem| self.start_solver(elem, objective));
+            .map(|elem| self.start_solver(elem, objective, portfolio_total_cores));
         let results = join_all(futures).await;
         let errors: Vec<Error> = results.into_iter().filter_map(Result::err).collect();
 
