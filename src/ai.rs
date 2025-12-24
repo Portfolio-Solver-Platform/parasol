@@ -19,8 +19,8 @@ pub struct SimpleAi {}
 impl Ai for SimpleAi {
     fn schedule(&mut self, _features: &Features, cores: usize) -> Result<Portfolio> {
         Ok(vec![
-            SolverInfo::new("gecode".to_string(), cores / 2),
-            SolverInfo::new("coinbc".to_string(), cores / 2 - 1),
+            SolverInfo::new("gecode".to_string(), 1),
+            // SolverInfo::new("coinbc".to_string(), 1),
         ])
     }
 }

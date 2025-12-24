@@ -41,7 +41,7 @@
             packages = [
               rustToolchain
               mzn2feat
-
+              pkgs.util-linux
               pkgs.rustup
               pkgs.cargo-audit
               minizinc

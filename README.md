@@ -10,6 +10,7 @@ We also have a Dockerfile where you can find the installation instructions; howe
 
 ### Prerequisites
 
+- You are on a Unix system
 - You need to have `minizinc` installed
 
 ### Running It

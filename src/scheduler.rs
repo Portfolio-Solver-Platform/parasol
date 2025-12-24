@@ -377,15 +377,12 @@ impl Scheduler {
             .suspend_solvers(&changes.to_suspend)
             .await
         {
-            println!("fuuuuuuuuuuuuck");
             self.solver_manager
                 .stop_solvers(&changes.to_suspend)
                 .await?;
         }
 
         if let Err(_) = self.solver_manager.resume_solvers(&changes.to_resume).await {
-            println!("fuuuuuuuuuuuuck 2");
-
             let mut resume_elements = Vec::new();
             for schedule_elem in &schedule {
                 for resume_id in &changes.to_resume {

@@ -45,6 +45,10 @@ pub struct Args {
     /// If not provided, a default static schedule will be used.
     #[arg(long)]
     pub static_schedule_path: Option<PathBuf>,
+
+    /// Pin solver processes to specific CPU cores
+    #[arg(long)]
+    pub pin_cores: bool,
 }
 
 #[derive(Debug, Clone, ValueEnum)]

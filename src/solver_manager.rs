@@ -6,12 +6,13 @@ use crate::solver_output::{Output, Solution, Status};
 use crate::{mzn_to_fzn, solver_output};
 use futures::future::join_all;
 
+use nix::errno::Errno;
 #[cfg(target_os = "linux")]
 use nix::sched::{CpuSet, sched_setaffinity};
 
 use nix::sys::signal::{self, Signal};
 use nix::unistd;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::os::unix;
 use std::path::Path;
 use std::process::Stdio;
@@ -35,6 +36,10 @@ pub enum Error {
     ModelParse(#[from] ModelParseError),
     #[error("failed to convert MiniZinc (mzn) to FlatZinc (fzn) format")]
     FznConversion(#[from] mzn_to_fzn::ConversionError),
+    #[error("failed to retrieve system cores")]
+    CPUCoresRetrieval(String),
+    #[error("could not set solver to a specific core")]
+    SolverSetCoreAffinity(#[from] Errno),
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -52,8 +57,13 @@ struct SolverProcess {
 impl Drop for SolverProcess {
     fn drop(&mut self) {
         let pid = self.pid;
+        let resume_config = kill_tree::Config {
+            signal: String::from("SIGCONT"),
+            ..Default::default()
+        };
+        let _ = kill_tree::blocking::kill_tree_with_config(pid, &resume_config);
         let pid = unistd::Pid::from_raw(-(pid as i32));
-        let _ = signal::kill(pid, Signal::SIGCONT);
+
         let _ = signal::kill(pid, Signal::SIGTERM);
     }
 }
@@ -66,6 +76,7 @@ pub struct SolverManager {
     best_objective: Arc<RwLock<Option<ObjectiveValue>>>,
     objective_type: ObjectiveType,
     solver_args: HashMap<String, Vec<String>>,
+    available_cores: Arc<Mutex<BTreeSet<usize>>>, // assume that smallest ids is fastest cores, hence we use btreeset to sort the core id's
 }
 
 struct PipeCommand {
@@ -91,6 +102,16 @@ impl SolverManager {
         tokio::spawn(async move {
             Self::receiver(rx, objective_type, shared_objective, token_clone).await
         });
+        let mut cores = BTreeSet::new();
+        if let Some(core_ids) = core_affinity::get_core_ids() {
+            for core in core_ids {
+                cores.insert(core.id);
+            }
+        } else {
+            return Err(Error::CPUCoresRetrieval(
+                "Could not retrieve system cores".to_string(),
+            ));
+        }
 
         Ok(Self {
             tx,
@@ -103,6 +124,7 @@ impl SolverManager {
             best_objective,
             objective_type,
             solver_args,
+            available_cores: Arc::new(Mutex::new(cores)),
         })
     }
 
@@ -144,7 +166,28 @@ impl SolverManager {
         }
     }
 
-    fn get_fzn_command(&self, fzn_path: &Path, solver_name: &str, cores: usize) -> Command {
+    fn get_fzn_command(
+        &self,
+        fzn_path: &Path,
+        solver_name: &str,
+        cores: usize,
+        _allocated_cores: &[usize],
+    ) -> Command {
+        // Taskset approach (commented out, using sched_setaffinity instead)
+        // let mut cmd = if !allocated_cores.is_empty() {
+        //     let core_list = allocated_cores
+        //         .iter()
+        //         .map(|c| c.to_string())
+        //         .collect::<Vec<_>>()
+        //         .join(",");
+        //     let mut taskset_cmd = Command::new("taskset");
+        //     taskset_cmd.arg("-c").arg(core_list);
+        //     taskset_cmd.arg(&self.args.minizinc_exe);
+        //     taskset_cmd
+        // } else {
+        //     Command::new(&self.args.minizinc_exe)
+        // };
+
         let mut cmd = Command::new(&self.args.minizinc_exe);
         cmd.arg("--solver").arg(solver_name);
         cmd.arg(fzn_path);
@@ -193,7 +236,27 @@ impl SolverManager {
             (conversion_paths.fzn().to_path_buf(), None)
         };
 
-        let mut fzn_cmd = self.get_fzn_command(&fzn_final_path, solver_name, cores);
+        // Taskset approach: allocate cores before building the command
+        // let mut allocated_cores: Vec<usize> = Vec::new();
+        // #[cfg(target_os = "linux")]
+        // {
+        //     let mut available_cores_guard = self.available_cores.lock().await;
+        //     for _ in 0..cores {
+        //         if let Some(val) = available_cores_guard.pop_first() {
+        //             allocated_cores.push(val);
+        //         } else {
+        //             // Return already-allocated cores before erroring
+        //             for c in &allocated_cores {
+        //                 available_cores_guard.insert(*c);
+        //             }
+        //             return Err(Error::CPUCoresRetrieval(
+        //                 "Schedule contained more cores than there was available".to_string(),
+        //             ));
+        //         }
+        //     }
+        // }
+
+        let mut fzn_cmd = self.get_fzn_command(&fzn_final_path, solver_name, cores, &[]);
         #[cfg(unix)]
         fzn_cmd.process_group(0); // let OS give it a group process id
         fzn_cmd.stderr(Stdio::piped());
@@ -209,13 +272,34 @@ impl SolverManager {
         } = pipe(fzn_cmd, ozn_cmd).await?;
 
         let pid = fzn.id().expect("Child has no PID");
+        let mut allocated_cores: Vec<usize> = Vec::new();
         #[cfg(target_os = "linux")]
-        {
+        if self.args.pin_cores {
             let mut cpu_set = CpuSet::new();
+            {
+                let mut available_cores_guard = self.available_cores.lock().await;
+                for _ in 0..cores {
+                    if let Some(val) = available_cores_guard.pop_first() {
+                        if let Err(e) = cpu_set.set(val) {
+                            for c in &allocated_cores {
+                                available_cores_guard.insert(*c);
+                            }
+                            return Err(e.into());
+                        }
+                        allocated_cores.push(val);
+                    } else {
+                        for c in &allocated_cores {
+                            available_cores_guard.insert(*c);
+                        }
 
-            cpu_set.set(0).unwrap();
+                        return Err(Error::CPUCoresRetrieval(
+                            "Schedule contained more cores than there was available".to_string(),
+                        ));
+                    }
+                }
+            }
 
-            if let Err(e) = sched_setaffinity(pid, &cpu_set) {
+            if let Err(e) = sched_setaffinity(unistd::Pid::from_raw(pid as i32), &cpu_set) {
                 eprintln!(
                     "Warning: Failed to set affinity (process might have exited): {}",
                     e
@@ -263,6 +347,7 @@ impl SolverManager {
         let solvers_clone = self.solvers.clone();
         let solver_name = elem.info.name.clone();
         let verbosity_wait = self.args.debug_verbosity;
+        let available_cores_clone = self.available_cores.clone();
 
         tokio::spawn(async move {
             let _keep_alive = fzn_guard;
@@ -279,6 +364,14 @@ impl SolverManager {
                 }
                 _ => {}
             }
+
+            {
+                let mut cores_guard = available_cores_clone.lock().await;
+                for core_id in allocated_cores {
+                    cores_guard.insert(core_id);
+                }
+            }
+
             let mut map = solvers_clone.lock().await;
             map.remove(&solver_id);
         });
@@ -419,9 +512,17 @@ impl SolverManager {
             }
         };
 
-        // Convert to negative PID to signal the entire process group
-        let pid = unistd::Pid::from_raw(-(pid as i32));
-        let _ = signal::kill(pid, signal);
+        // kill tree sometimes (but rarely) when killing the process group so we use signal::kill instead. However signal::kill cant send signals to all children in the group so we still use kill_tree to achieve this
+        if signal != Signal::SIGTERM {
+            let resume_config = kill_tree::Config {
+                signal: String::from(signal.as_str()),
+                ..Default::default()
+            };
+            let _ = kill_tree::tokio::kill_tree_with_config(pid, &resume_config).await;
+        } else {
+            let pid = unistd::Pid::from_raw(-(pid as i32));
+            let _ = signal::kill(pid, signal);
+        }
 
         Ok(())
     }

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PROBLEMS_DIR="../../psp/problems"
-TIMEOUT_SECONDS=50
+TIMEOUT_SECONDS=15
 SOLVER_PATH="./target/release/portfolio-solver-framework"
 
 if command -v timeout &> /dev/null; then

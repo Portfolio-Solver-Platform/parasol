@@ -26,6 +26,15 @@ use tokio_util::sync::CancellationToken;
 async fn main() {
     let args = Args::parse();
     logging::init(args.debug_verbosity);
+
+    // // Pin the framework to the first core when --pin-cores is enabled
+    // if args.pin_cores {
+    //     if let Some(core_ids) = core_affinity::get_core_ids() {
+    //         if let Some(first_core) = core_ids.first() {
+    //             core_affinity::set_for_current(*first_core);
+    //         }
+    //     }
+    // }
     let config = Config::default();
     let token = CancellationToken::new();
     let token_signal = token.clone();
