@@ -1,7 +1,7 @@
 use crate::args::{Args, DebugVerbosityLevel};
 use crate::insert_objective::insert_objective;
 use crate::model_parser::{ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type};
-use crate::process_tree::{collect_descendants, get_process_tree_memory, send_signal_to_tree};
+use crate::process_tree::{get_process_tree_memory, send_signal_to_tree};
 use crate::scheduler::ScheduleElement;
 use crate::solver_output::{Output, Solution, Status};
 use crate::{mzn_to_fzn, solver_output};
@@ -18,7 +18,7 @@ use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
-use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
+use sysinfo::System;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, RwLock, mpsc};
@@ -58,37 +58,8 @@ struct SolverProcess {
 
 impl Drop for SolverProcess {
     fn drop(&mut self) {
-        let pid = self.pid;
-        let mut all_descendants: HashSet<Pid> = HashSet::new();
-
-        let system = System::new_with_specifics(
-            RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()),
-        );
-        let mut descendants = Vec::new();
-        collect_descendants(&system, Pid::from_u32(pid), &mut descendants);
-        all_descendants.extend(descendants);
-
-        send_signal_to_tree(pid, Signal::SIGCONT);
-
-        let gpid = unistd::Pid::from_raw(-(pid as i32));
-        let _ = signal::kill(gpid, Signal::SIGTERM);
-
-        std::thread::sleep(std::time::Duration::from_millis(10));
-
-        let system = System::new_with_specifics(
-            RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()),
-        );
-        let mut descendants = Vec::new();
-        collect_descendants(&system, Pid::from_u32(pid), &mut descendants);
-        all_descendants.extend(descendants);
-
-        for child_pid in &all_descendants {
-            let _ = signal::kill(
-                unistd::Pid::from_raw(child_pid.as_u32() as i32),
-                Signal::SIGKILL,
-            );
-        }
-        let _ = signal::kill(unistd::Pid::from_raw(pid as i32), Signal::SIGKILL);
+        let gpid = unistd::Pid::from_raw(-(self.pid as i32));
+        let _ = signal::kill(gpid, Signal::SIGKILL);
     }
 }
 
@@ -602,9 +573,7 @@ impl SolverManager {
         solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
         ids: &[u64],
     ) -> std::result::Result<(), Vec<Error>> {
-        let futures = ids
-            .iter()
-            .map(|id| Self::kill_solver(solvers.clone(), *id));
+        let futures = ids.iter().map(|id| Self::kill_solver(solvers.clone(), *id));
         let results = join_all(futures).await;
         let errors: Vec<Error> = results.into_iter().filter_map(|res| res.err()).collect();
 
@@ -699,38 +668,15 @@ impl SolverManager {
             }
         };
 
-        let mut all_descendants: HashSet<Pid> = HashSet::new();
-
-        let system = System::new_with_specifics(
-            RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()),
-        );
-        let mut descendants = Vec::new();
-        collect_descendants(&system, Pid::from_u32(pid), &mut descendants);
-        all_descendants.extend(descendants);
-
-        send_signal_to_tree(pid, Signal::SIGCONT);
-
         let gpid = unistd::Pid::from_raw(-(pid as i32));
-        let _ = signal::kill(gpid, Signal::SIGTERM);
 
-        tokio::spawn(async move {
-            sleep(Duration::from_millis(100)).await;
+        // send_signal_to_tree(pid, Signal::SIGCONT);
+        let _ = signal::kill(gpid, Signal::SIGKILL);
 
-            let system = System::new_with_specifics(
-                RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()),
-            );
-            let mut descendants = Vec::new();
-            collect_descendants(&system, Pid::from_u32(pid), &mut descendants);
-            all_descendants.extend(descendants);
-
-            for child_pid in &all_descendants {
-                let _ = signal::kill(
-                    unistd::Pid::from_raw(child_pid.as_u32() as i32),
-                    Signal::SIGKILL,
-                );
-            }
-            let _ = signal::kill(unistd::Pid::from_raw(pid as i32), Signal::SIGKILL);
-        });
+        // tokio::spawn(async move {
+        //     sleep(Duration::from_millis(100)).await;
+        //     let _ = signal::kill(gpid, Signal::SIGKILL);
+        // });
 
         Ok(())
     }
