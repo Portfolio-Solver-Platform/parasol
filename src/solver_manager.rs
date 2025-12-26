@@ -17,13 +17,11 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
-use std::time::Duration;
 use sysinfo::System;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::task::JoinHandle;
-use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, thiserror::Error)]
@@ -59,7 +57,7 @@ struct SolverProcess {
 impl Drop for SolverProcess {
     fn drop(&mut self) {
         let gpid = unistd::Pid::from_raw(-(self.pid as i32));
-        let _ = signal::kill(gpid, Signal::SIGKILL);
+        let _ = signal::kill(gpid, Signal::SIGTERM);
     }
 }
 
@@ -669,14 +667,7 @@ impl SolverManager {
         };
 
         let gpid = unistd::Pid::from_raw(-(pid as i32));
-
-        // send_signal_to_tree(pid, Signal::SIGCONT);
-        let _ = signal::kill(gpid, Signal::SIGKILL);
-
-        // tokio::spawn(async move {
-        //     sleep(Duration::from_millis(100)).await;
-        //     let _ = signal::kill(gpid, Signal::SIGKILL);
-        // });
+        let _ = signal::kill(gpid, Signal::SIGTERM);
 
         Ok(())
     }
