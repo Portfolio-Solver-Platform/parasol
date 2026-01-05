@@ -35,8 +35,8 @@ pub async fn recursive_force_kill(root_pid: u32) -> Result<()> {
         collect_descendants(&system, target, &mut pids_to_kill);
     }
 
-    let duration = Duration::from_secs(2);
-    sleep(duration).await;
+    // let duration = Duration::from_secs(2);
+    // sleep(duration).await;
 
     let system = System::new_with_specifics(
         RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),
