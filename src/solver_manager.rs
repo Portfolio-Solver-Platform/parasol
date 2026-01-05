@@ -52,15 +52,17 @@ enum Msg {
 struct SolverProcess {
     pid: u32,
     best_objective: Option<ObjectiveValue>,
-    name: String,
 }
 
 impl Drop for SolverProcess {
     fn drop(&mut self) {
-        // let gpid = unistd::Pid::from_raw(-(self.pid as i32));
-        // let _ = signal::kill(gpid, Signal::SIGTERM);
-        // let _ = signal::kill(gpid, Signal::SIGCONT);
-        let _ = crate::process_tree::recursive_force_kill(self.pid, &self.name);
+        let gpid = unistd::Pid::from_raw(-(self.pid as i32));
+        let _ = signal::kill(gpid, Signal::SIGTERM);
+        let _ = signal::kill(gpid, Signal::SIGCONT);
+        let pid_clone = self.pid;
+        tokio::spawn(async move {
+            let _ = crate::process_tree::recursive_force_kill(pid_clone);
+        });
     }
 }
 
@@ -232,12 +234,6 @@ impl SolverManager {
             (conversion_paths.fzn().to_path_buf(), None)
         };
 
-        let exe_path = Path::new(&self.args.minizinc_exe);
-        let exe_name = exe_path
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| "lol".to_string());
-
         // Taskset approach: allocate cores before building the command
         // let mut allocated_cores: Vec<usize> = Vec::new();
         // #[cfg(target_os = "linux")]
@@ -316,7 +312,6 @@ impl SolverManager {
                 SolverProcess {
                     pid,
                     best_objective: objective,
-                    name: exe_name,
                 },
             );
         }
@@ -642,14 +637,8 @@ impl SolverManager {
 
     async fn kill_solver(solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>, id: u64) -> Result<()> {
         let mut map = solvers.lock().await;
-        if let Some(solver) = map.remove(&id) {
-            let pid = solver.pid;
-            let name = solver.name.clone();
-            // tokio::spawn(async move {
-            //     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            //     let _ = crate::process_tree::recursive_force_kill(pid, &name); // we tried to kill, but if it failed we ignore
-            // });
-        } else {
+        // let RAII clean up the solver. look in drop function.
+        if let None = map.remove(&id) {
             return Err(Error::InvalidSolver(format!("Solver {id} not running")));
         }
 
