@@ -7,7 +7,7 @@ use crate::{ai::Ai, args::Args};
 use crate::{logging, solver_manager};
 use tokio::time::{Duration, sleep};
 use tokio_util::sync::CancellationToken;
-const FEATURES_SOLVER: &str = "coinbc";
+const FEATURES_SOLVER: &str = "gecode";
 
 pub async fn sunny(args: Args, mut ai: impl Ai, config: Config, token: CancellationToken) {
     let timer_duration = Duration::from_secs(config.dynamic_schedule_interval);
