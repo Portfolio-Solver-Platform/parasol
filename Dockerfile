@@ -69,6 +69,8 @@ RUN jq '.mznlib = "/usr/local/share/minizinc/huub/"' ./huub.msc.temp > ./huub.ms
 COPY --from=yuck /opt/yuck/mzn/yuck.msc ./yuck.msc.template
 RUN jq '.executable = "/opt/yuck/bin/yuck"' ./yuck.msc.template > yuck.msc.temp
 RUN jq '.mznlib = "/opt/yuck/mzn/lib/"' ./yuck.msc.temp > ./yuck.msc
+# Gecode should only be used for compilation, not actually run, so don't correct its executable path
+RUN cp ./gecode.msc.template ./gecode.msc
 
 
 FROM base

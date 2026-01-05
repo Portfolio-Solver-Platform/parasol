@@ -1,0 +1,8 @@
+{
+  "id": "org.gecode.gecode",
+  "name": "Gecode",
+  "version": "6.2.0",
+  "executable": "${EXE_PATH}",
+  "tags": ["cp", "int", "float", "set", "restart"],
+  "stdFlags": ["-a", "-n", "-s", "-r", "-f", "-p"]
+}
