@@ -9,7 +9,7 @@ use crate::{
 pub async fn static_schedule(args: &Args, cores: usize) -> Result<Portfolio> {
     let schedule = match args.static_schedule_path.as_ref() {
         Some(path) => get_schedule_from_file(path).await?,
-        None => default_schedule(),
+        None => default_schedule(cores),
     };
 
     if args.debug_verbosity >= DebugVerbosityLevel::Warning {
@@ -62,20 +62,8 @@ fn parse_schedule_line(line: &str) -> std::result::Result<SolverInfo, ParseError
     Ok(SolverInfo::new(solver.to_owned(), cores))
 }
 
-fn default_schedule() -> Portfolio {
-    vec![
-        SolverInfo::new("coinbc".to_string(), 1),
-        SolverInfo::new("gecode".to_string(), 1),
-        SolverInfo::new("picat".to_string(), 1),
-        SolverInfo::new("cp-sat".to_string(), 1),
-        SolverInfo::new("chuffed".to_string(), 1),
-        SolverInfo::new("yuck".to_string(), 1),
-        // SolverInfo::new( "xpress".to_string(), cores / 10),
-        // SolverInfo::new( "scip".to_string(), cores / 10),
-        // SolverInfo::new( "highs".to_string(), cores / 10),
-        // SolverInfo::new( "gurobi".to_string(), cores / 10),
-        // SolverInfo::new("coinbc".to_string(), cores / 2),
-    ]
+fn default_schedule(cores: usize) -> Portfolio {
+    vec![SolverInfo::new("cp-sat".to_string(), cores)]
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
