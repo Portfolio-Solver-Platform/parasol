@@ -57,10 +57,10 @@ struct SolverProcess {
 
 impl Drop for SolverProcess {
     fn drop(&mut self) {
-        let gpid = unistd::Pid::from_raw(-(self.pid as i32));
-        let _ = signal::kill(gpid, Signal::SIGTERM);
-        let _ = signal::kill(gpid, Signal::SIGCONT);
-        // let _ = crate::process_tree::recursive_force_kill(self.pid, &self.name);
+        // let gpid = unistd::Pid::from_raw(-(self.pid as i32));
+        // let _ = signal::kill(gpid, Signal::SIGTERM);
+        // let _ = signal::kill(gpid, Signal::SIGCONT);
+        let _ = crate::process_tree::recursive_force_kill(self.pid, &self.name);
     }
 }
 
@@ -645,10 +645,10 @@ impl SolverManager {
         if let Some(solver) = map.remove(&id) {
             let pid = solver.pid;
             let name = solver.name.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                let _ = crate::process_tree::recursive_force_kill(pid, &name); // we tried to kill, but if it failed we ignore
-            });
+            // tokio::spawn(async move {
+            //     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            //     let _ = crate::process_tree::recursive_force_kill(pid, &name); // we tried to kill, but if it failed we ignore
+            // });
         } else {
             return Err(Error::InvalidSolver(format!("Solver {id} not running")));
         }
