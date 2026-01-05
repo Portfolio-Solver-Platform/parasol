@@ -61,7 +61,7 @@ impl Drop for SolverProcess {
         let _ = signal::kill(gpid, Signal::SIGCONT);
         let pid_clone = self.pid;
         tokio::spawn(async move {
-            let _ = crate::process_tree::recursive_force_kill(pid_clone);
+            let _ = crate::process_tree::recursive_force_kill(pid_clone).await;
         });
     }
 }

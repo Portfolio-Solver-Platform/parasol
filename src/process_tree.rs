@@ -18,13 +18,12 @@ pub async fn recursive_force_kill(root_pid: u32) -> Result<()> {
     );
 
     let mut pids_to_kill = HashSet::new();
-
     if let Some(target_pgid_raw) = get_process_pgid(root_pid) {
         let target_pgid = target_pgid_raw as u32;
 
-        for (pid, process) in system.processes() {
-            if let Some(pgid) = process.group_id() {
-                if *pgid == target_pgid {
+        for (pid, _process) in system.processes() {
+            if let Some(proc_pgid) = get_process_pgid(pid.as_u32()) {
+                if proc_pgid as u32 == target_pgid {
                     pids_to_kill.insert(*pid);
                 }
             }
