@@ -68,6 +68,24 @@ RUN wget https://github.com/google/or-tools/releases/download/v9.14/or-tools_amd
      | jq '.mznlib = "/opt/or-tools/share/minizinc/cp-sat"' > cp-sat.msc.temp \
     && mv cp-sat.msc.temp /opt/or-tools/share/minizinc/solvers/cp-sat.msc
 
+FROM base AS choco
+
+RUN wget https://github.com/chocoteam/choco-solver/archive/refs/tags/v4.10.18.tar.gz -O choco.tar.gz \
+    && wget https://github.com/chocoteam/choco-solver/releases/download/v4.10.18/choco-solver-4.10.18-light.jar -O choco.jar \
+    && tar -xzvf choco.tar.gz \
+    && rm choco.tar.gz \
+    && mv choco-solver-4.10.18 /choco \
+    && mkdir -p /opt/choco/bin \
+    && mv choco.jar /opt/choco/bin \
+    && mv /choco/parsers/src/main/minizinc/fzn-choco.py /opt/choco/bin \
+    && mv /choco/parsers/src/main/minizinc/fzn-choco.sh /opt/choco/bin \
+    && mkdir -p /opt/choco/share/minizinc/solvers \
+    && mv /choco/parsers/src/main/minizinc/mzn_lib /opt/choco/share/minizinc/choco_lib \
+    && jq '.executable = "/opt/choco/bin/fzn-choco.sh"' /choco/parsers/src/main/minizinc/choco.msc \
+     | jq '.mznlib = "/opt/choco/share/minizinc/choco_lib"' > /opt/choco/share/minizinc/solvers/choco.msc \
+    && sed -i 's&JAR_FILE=.*&JAR_FILE="/opt/choco/bin/choco.jar"&g' /opt/choco/bin/fzn-choco.py \
+    && rm -rf /choco
+
 FROM base AS solver-configs
 
 COPY ./minizinc/solvers/ /solvers/
@@ -82,9 +100,9 @@ COPY --from=yuck /opt/yuck/mzn/yuck.msc ./yuck.msc.template
 RUN jq '.executable = "/opt/yuck/bin/yuck"' ./yuck.msc.template > yuck.msc.temp
 RUN jq '.mznlib = "/opt/yuck/mzn/lib/"' ./yuck.msc.temp > ./yuck.msc
 COPY --from=or-tools /opt/or-tools/share/minizinc/solvers/* .
+COPY --from=choco /opt/choco/share/minizinc/solvers/* .
 # Gecode should only be used for compilation, not actually run, so don't correct its executable path
 RUN cp ./gecode.msc.template ./gecode.msc
-
 
 FROM base
 
@@ -118,6 +136,8 @@ COPY --from=huub /huub/share/minizinc/huub/ /usr/local/share/minizinc/huub/
 COPY --from=yuck /opt/yuck/ /opt/yuck/
 
 COPY --from=or-tools /opt/or-tools/ /opt/or-tools/
+
+COPY --from=choco /opt/choco/ /opt/choco/
 
 # Set our solver as the default
 RUN echo '{"tagDefaults": [["", "org.psp.sunny"]]}' > $HOME/.minizinc/Preferences.json
