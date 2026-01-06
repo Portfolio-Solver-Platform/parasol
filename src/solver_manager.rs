@@ -110,10 +110,7 @@ impl SolverManager {
         Ok(Self {
             tx,
             solvers,
-            mzn_to_fzn: mzn_to_fzn::CachedConverter::new(
-                args.minizinc_exe.clone(),
-                args.debug_verbosity,
-            ),
+            mzn_to_fzn: mzn_to_fzn::CachedConverter::new(args.clone()),
             args,
             best_objective,
             objective_type,
@@ -209,7 +206,7 @@ impl SolverManager {
 
         let conversion_paths = self
             .mzn_to_fzn
-            .convert(&self.args.model, self.args.data.as_deref(), solver_name)
+            .convert(solver_name)
             .await?;
 
         let (fzn_final_path, fzn_guard) = if let Some(obj) = objective {

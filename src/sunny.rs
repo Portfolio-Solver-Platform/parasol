@@ -49,15 +49,9 @@ async fn sunny_inner(
 
     let mut timer = sleep(timer_duration);
 
-    let conversion = convert_mzn(
-        &args.minizinc_exe,
-        &args.model,
-        args.data.as_deref(),
-        FEATURES_SOLVER,
-        args.debug_verbosity,
-    )
-    .await
-    .map_err(|e| logging::error!(e.into()))?;
+    let conversion = convert_mzn(args, FEATURES_SOLVER)
+        .await
+        .map_err(|e| logging::error!(e.into()))?;
 
     let features = fzn_to_features(conversion.fzn())
         .await

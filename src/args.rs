@@ -1,5 +1,5 @@
 use clap::{Parser, ValueEnum};
-use std::{collections::HashMap, path::PathBuf, process::exit};
+use std::{collections::HashMap, fmt, path::PathBuf, process::exit};
 
 use crate::logging;
 
@@ -64,6 +64,14 @@ pub enum Ai {
 #[derive(Debug, Clone, ValueEnum)]
 pub enum OutputMode {
     Dzn,
+}
+
+impl fmt::Display for OutputMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OutputMode::Dzn => write!(f, "dzn"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]

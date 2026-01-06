@@ -72,7 +72,7 @@ async fn main() {
     };
 
     if result.is_err() {
-        logging::error_msg!("Portofolio solver failed, falling back to backup solver");
+        logging::error_msg!("Portfolio solver failed, falling back to backup solver");
         run_backup_solver(&args, cores).await;
     }
 }

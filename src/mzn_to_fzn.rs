@@ -1,7 +1,7 @@
-use crate::args::DebugVerbosityLevel;
+use crate::args::Args;
 use crate::logging;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
@@ -20,9 +20,8 @@ pub enum ConversionError {
 }
 
 pub struct CachedConverter {
-    minizinc_command: PathBuf,
+    args: Args,
     cache: RwLock<HashMap<String, Arc<Conversion>>>,
-    debug_verbosity: DebugVerbosityLevel,
 }
 
 pub struct Conversion {
@@ -41,20 +40,14 @@ impl Conversion {
 }
 
 impl CachedConverter {
-    pub fn new(minizinc_command: PathBuf, debug_verbosity: DebugVerbosityLevel) -> Self {
+    pub fn new(args: Args) -> Self {
         Self {
-            minizinc_command,
+            args,
             cache: RwLock::new(HashMap::new()),
-            debug_verbosity,
         }
     }
 
-    pub async fn convert(
-        &self,
-        model: &Path,
-        data: Option<&Path>,
-        solver_name: &str,
-    ) -> Result<Arc<Conversion>, ConversionError> {
+    pub async fn convert(&self, solver_name: &str) -> Result<Arc<Conversion>, ConversionError> {
         {
             let cache = self.cache.read().await;
             if let Some(conversion) = cache.get(solver_name) {
@@ -62,16 +55,7 @@ impl CachedConverter {
             }
         }
 
-        let conversion = Arc::new(
-            convert_mzn(
-                &self.minizinc_command,
-                model,
-                data,
-                solver_name,
-                self.debug_verbosity,
-            )
-            .await?,
-        );
+        let conversion = Arc::new(convert_mzn(&self.args, solver_name).await?);
         let mut cache = self.cache.write().await;
         cache.insert(solver_name.to_owned(), conversion.clone());
 
@@ -79,13 +63,7 @@ impl CachedConverter {
     }
 }
 
-pub async fn convert_mzn(
-    minizinc_command: &Path,
-    model: &Path,
-    data: Option<&Path>,
-    solver_name: &str,
-    verbosity: DebugVerbosityLevel,
-) -> Result<Conversion, ConversionError> {
+pub async fn convert_mzn(args: &Args, solver_name: &str) -> Result<Conversion, ConversionError> {
     let fzn_file = tempfile::Builder::new()
         .suffix(".fzn")
         .tempfile()
@@ -95,42 +73,23 @@ pub async fn convert_mzn(
         .tempfile()
         .map_err(ConversionError::TempFile)?;
 
-    run_mzn_to_fzn_cmd(
-        minizinc_command,
-        model,
-        data,
-        solver_name,
-        fzn_file.path(),
-        ozn_file.path(),
-        verbosity,
-    )
-    .await?;
+    run_mzn_to_fzn_cmd(args, solver_name, fzn_file.path(), ozn_file.path()).await?;
 
     Ok(Conversion { fzn_file, ozn_file })
 }
 
 async fn run_mzn_to_fzn_cmd(
-    minizinc_command: &Path,
-    model: &Path,
-    data: Option<&Path>,
+    args: &Args,
     solver_name: &str,
     fzn_result_path: &Path,
     ozn_result_path: &Path,
-    verbosity: DebugVerbosityLevel,
 ) -> Result<(), ConversionError> {
-    let mut cmd = get_mzn_to_fzn_cmd(
-        minizinc_command,
-        model,
-        data,
-        solver_name,
-        fzn_result_path,
-        ozn_result_path,
-    );
+    let mut cmd = get_mzn_to_fzn_cmd(args, solver_name, fzn_result_path, ozn_result_path);
     cmd.stderr(Stdio::piped());
 
     let mut child = cmd.spawn()?;
 
-    if verbosity >= DebugVerbosityLevel::Warning
+    if args.debug_verbosity >= crate::args::DebugVerbosityLevel::Warning
         && let Some(stderr) = child.stderr.take()
     {
         tokio::spawn(async move {
@@ -150,25 +109,29 @@ async fn run_mzn_to_fzn_cmd(
 }
 
 fn get_mzn_to_fzn_cmd(
-    minizinc_command: &Path,
-    model: &Path,
-    data: Option<&Path>,
+    args: &Args,
     solver_name: &str,
     fzn_result_path: &Path,
     ozn_result_path: &Path,
 ) -> Command {
-    let mut cmd = Command::new(minizinc_command);
+    let mut cmd = Command::new(&args.minizinc_exe);
     cmd.kill_on_drop(true);
     #[cfg(unix)]
     cmd.process_group(0);
     cmd.arg("-c");
-    cmd.arg(model);
-    if let Some(data) = data {
+    cmd.arg(&args.model);
+    if let Some(data) = &args.data {
         cmd.arg(data);
     }
     cmd.args(["--solver", solver_name]);
     cmd.arg("-o").arg(fzn_result_path);
-    cmd.args(["--output-objective", "--output-mode", "dzn"]);
+    cmd.arg("--output-objective");
+    if let Some(output_mode) = &args.output_mode {
+        cmd.arg("--output-mode");
+        cmd.arg(output_mode.to_string());
+    } else {
+        cmd.args(["--output-mode", "dzn"]);
+    }
 
     cmd.arg("--ozn");
     cmd.arg(ozn_result_path);
