@@ -31,6 +31,7 @@ pub fn recursive_force_kill(root_pid: u32) -> Result<()> {
         }
     }
 
+    // Collect descendants immediately before processes disappear
     let current_targets: Vec<Pid> = pids_to_kill.iter().cloned().collect();
     for target in current_targets {
         collect_descendants(&system, target, &mut pids_to_kill);
@@ -50,8 +51,46 @@ pub fn recursive_force_kill(root_pid: u32) -> Result<()> {
     for pid in &pids_to_kill {
         let _ = signal::kill(unistd::Pid::from_raw(pid.as_u32() as i32), Signal::SIGKILL);
     }
+    if !pids_to_kill.contains(&Pid::from_u32(root_pid)) {
+        let _ = signal::kill(unistd::Pid::from_raw(root_pid as i32), Signal::SIGKILL);
+    }
 
-    let _ = signal::kill(unistd::Pid::from_raw(root_pid as i32), Signal::SIGKILL);
+    Ok(())
+}
+
+pub fn send_signals_to_process_tree(pid: u32, signals: Vec<Signal>) -> Result<()> {
+    let system = System::new_with_specifics(
+        RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()),
+    );
+    let mut pids_to_kill = HashSet::new();
+
+    if let Some(target_pgid_raw) = get_process_pgid(pid) {
+        let target_pgid = target_pgid_raw as u32;
+
+        for (pid, _process) in system.processes() {
+            if let Some(proc_pgid) = get_process_pgid(pid.as_u32()) {
+                if proc_pgid as u32 == target_pgid {
+                    pids_to_kill.insert(*pid);
+                }
+            }
+        }
+    }
+    let current_targets: Vec<Pid> = pids_to_kill.iter().cloned().collect();
+    for target in current_targets {
+        collect_descendants(&system, target, &mut pids_to_kill);
+    }
+
+    // Errors are ignored as signals often fail (e.g. process do not exist)
+    for pid in &pids_to_kill {
+        for signal in signals.iter() {
+            let _ = signal::kill(unistd::Pid::from_raw(pid.as_u32() as i32), *signal);
+        }
+    }
+    if !pids_to_kill.contains(&Pid::from_u32(pid)) {
+        for signal in signals {
+            let _ = signal::kill(unistd::Pid::from_raw(pid as i32), signal);
+        }
+    }
 
     Ok(())
 }

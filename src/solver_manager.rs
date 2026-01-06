@@ -2,7 +2,7 @@ use crate::args::Args;
 use crate::insert_objective::insert_objective;
 use crate::model_parser::{ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type};
 use crate::process_tree::{
-    collect_descendants, get_process_pgid, get_process_tree_memory, recursive_force_kill,
+    get_process_tree_memory, recursive_force_kill, send_signals_to_process_tree,
 };
 use crate::scheduler::ScheduleElement;
 use crate::solver_output::{Output, Solution, Status};
@@ -11,14 +11,13 @@ use futures::future::join_all;
 use nix::errno::Errno;
 #[cfg(target_os = "linux")]
 use nix::sched::{CpuSet, sched_setaffinity};
-use nix::sys::signal::{self, Signal};
+use nix::sys::signal::Signal;
 use nix::unistd;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
-use std::time::Duration;
-use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
+use sysinfo::System;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, RwLock, mpsc};
@@ -57,10 +56,7 @@ struct SolverProcess {
 
 impl Drop for SolverProcess {
     fn drop(&mut self) {
-        let _ = SolverManager::send_signals_to_solver_inner(
-            self.pid,
-            vec![Signal::SIGTERM, Signal::SIGCONT],
-        );
+        let _ = send_signals_to_process_tree(self.pid, vec![Signal::SIGTERM, Signal::SIGCONT]);
         let pid_clone = self.pid;
 
         std::thread::spawn(move || {
@@ -477,41 +473,8 @@ impl SolverManager {
             Some(state) => state.pid,
             None => return Err(Error::InvalidSolver(format!("Solver {id} not running"))),
         };
-        Self::send_signals_to_solver_inner(pid, signals)
-    }
-
-    fn send_signals_to_solver_inner(pid: u32, signals: Vec<Signal>) -> Result<()> {
-        let system = System::new_with_specifics(
-            RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()),
-        );
-        let mut pids_to_kill = HashSet::new();
-
-        if let Some(target_pgid_raw) = get_process_pgid(pid) {
-            let target_pgid = target_pgid_raw as u32;
-
-            for (pid, _process) in system.processes() {
-                if let Some(proc_pgid) = get_process_pgid(pid.as_u32()) {
-                    if proc_pgid as u32 == target_pgid {
-                        pids_to_kill.insert(*pid);
-                    }
-                }
-            }
-        }
-        let current_targets: Vec<Pid> = pids_to_kill.iter().cloned().collect();
-        for target in current_targets {
-            collect_descendants(&system, target, &mut pids_to_kill);
-        }
-
-        for pid in &pids_to_kill {
-            for signal in signals.iter() {
-                let _ = signal::kill(unistd::Pid::from_raw(pid.as_u32() as i32), *signal);
-            }
-        }
-        for signal in signals {
-            let _ = signal::kill(unistd::Pid::from_raw(pid as i32), signal);
-        }
-
-        Ok(())
+        send_signals_to_process_tree(pid, signals)
+            .map_err(|e| Error::InvalidSolver(format!("Failed to send signals: {}", e)))
     }
 
     async fn send_signals_to_solvers(
