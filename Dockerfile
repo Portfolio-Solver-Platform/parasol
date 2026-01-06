@@ -1,4 +1,8 @@
 FROM rust:1.91 AS rust
+RUN apt-get update && apt-get install -y \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
+
 FROM rust AS builder
 
 WORKDIR /usr/src/app
@@ -41,7 +45,7 @@ RUN apt-get update && apt-get install -y \
 
 FROM rust AS huub
 
-RUN git clone --branch pub/CP2025 https://github.com/huub-solver/huub.git /huub
+RUN git clone --depth 1 --branch pub/CP2025 https://github.com/huub-solver/huub.git /huub
 WORKDIR /huub
 RUN cargo build --release
 
@@ -86,6 +90,26 @@ RUN wget https://github.com/chocoteam/choco-solver/archive/refs/tags/v4.10.18.ta
     && sed -i 's&JAR_FILE=.*&JAR_FILE="/opt/choco/bin/choco.jar"&g' /opt/choco/bin/fzn-choco.py \
     && rm -rf /choco
 
+FROM rust AS pumpkin
+
+# Version 0.2.2
+RUN wget https://github.com/ConSol-Lab/Pumpkin/archive/62b2f09f4b28d0065e4a274d7346f34598b44898.tar.gz -O pumpkin.tar.gz \
+    && tar -xzvf pumpkin.tar.gz \
+    && rm pumpkin.tar.gz \
+    && mv Pumpkin-62b2f09f4b28d0065e4a274d7346f34598b44898 /pumpkin
+WORKDIR /pumpkin
+RUN cargo build --release -p pumpkin-solver
+COPY ./minizinc/solvers/pumpkin.msc.template /pumpkin.msc.template
+RUN mkdir -p /opt/pumpkin/bin \
+    && mv /pumpkin/target/release/pumpkin-solver /opt/pumpkin/bin \
+    && mkdir -p /opt/pumpkin/share/minizinc/solvers \
+    && mv /pumpkin/minizinc/lib /opt/pumpkin/share/minizinc/pumpkin_lib \
+    # We can't use the .msc file from the repository because it is currently not valid JSON
+    && jq '.executable = "/opt/pumpkin/bin/pumpkin-solver"' /pumpkin.msc.template \
+     | jq '.mznlib = "/opt/pumpkin/share/minizinc/pumpkin_lib"' > /opt/pumpkin/share/minizinc/solvers/pumpkin.msc \
+    && rm -rf /pumpkin
+
+
 FROM base AS solver-configs
 
 COPY ./minizinc/solvers/ /solvers/
@@ -101,6 +125,7 @@ RUN jq '.executable = "/opt/yuck/bin/yuck"' ./yuck.msc.template > yuck.msc.temp
 RUN jq '.mznlib = "/opt/yuck/mzn/lib/"' ./yuck.msc.temp > ./yuck.msc
 COPY --from=or-tools /opt/or-tools/share/minizinc/solvers/* .
 COPY --from=choco /opt/choco/share/minizinc/solvers/* .
+COPY --from=pumpkin /opt/pumpkin/share/minizinc/solvers/* .
 # Gecode should only be used for compilation, not actually run, so don't correct its executable path
 RUN cp ./gecode.msc.template ./gecode.msc
 
@@ -134,10 +159,9 @@ COPY --from=huub /huub/target/release/fzn-huub /usr/local/bin/fzn-huub
 COPY --from=huub /huub/share/minizinc/huub/ /usr/local/share/minizinc/huub/
 
 COPY --from=yuck /opt/yuck/ /opt/yuck/
-
 COPY --from=or-tools /opt/or-tools/ /opt/or-tools/
-
 COPY --from=choco /opt/choco/ /opt/choco/
+COPY --from=pumpkin /opt/pumpkin/ /opt/pumpkin/
 
 # Set our solver as the default
 RUN echo '{"tagDefaults": [["", "org.psp.sunny"]]}' > $HOME/.minizinc/Preferences.json
