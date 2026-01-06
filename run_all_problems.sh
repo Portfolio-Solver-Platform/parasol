@@ -61,7 +61,7 @@ for problem_dir in "$PROBLEMS_DIR"/*/; do
 
             echo -n "  [$total_instances] $instance ... "
 
-            $TIMEOUT_CMD --signal=SIGTERM ${TIMEOUT_SECONDS}s "$SOLVER_PATH" "$model_file" -p 10 --debug-verbosity quiet "$@"  > /dev/null 2>&1
+            $TIMEOUT_CMD --signal=SIGTERM ${TIMEOUT_SECONDS}s "$SOLVER_PATH" "$model_file" -p 6 --debug-verbosity quiet "$@"  > /dev/null 2>&1
             exit_code=$?
 
             if [ $exit_code -eq 124 ]; then
@@ -91,7 +91,7 @@ for problem_dir in "$PROBLEMS_DIR"/*/; do
 
             echo -n "  [$total_instances] $instance ... "
 
-            $TIMEOUT_CMD --signal=SIGTERM ${TIMEOUT_SECONDS}s "$SOLVER_PATH" "$model_file" "$data_file" -p 10 --debug-verbosity quiet "$@"  > /dev/null 2>&1
+            $TIMEOUT_CMD --signal=SIGTERM ${TIMEOUT_SECONDS}s "$SOLVER_PATH" "$model_file" "$data_file" -p 6 --debug-verbosity quiet "$@"  > /dev/null 2>&1
             exit_code=$?
 
             if [ $exit_code -eq 124 ]; then
