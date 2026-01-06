@@ -1,7 +1,7 @@
 {
     "name": "Pumpkin",
     "id": "nl.tudelft.algorithmics.pumpkin",
-    "version": "0.1",
+    "version": "0.2.2",
     "executable": "${EXE_PATH}",
     "mznlib": "${LIB_PATH}",
     "stdFlags": ["-v", "-f", "-r", "-t", "-s", "-a"],

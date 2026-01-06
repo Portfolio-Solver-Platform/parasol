@@ -92,7 +92,11 @@ RUN wget https://github.com/chocoteam/choco-solver/archive/refs/tags/v4.10.18.ta
 
 FROM rust AS pumpkin
 
-RUN git clone --depth 1 --branch pumpkin-solver-v0.2.2 https://github.com/ConSol-Lab/Pumpkin.git /pumpkin
+# Version 0.2.2
+RUN wget https://github.com/ConSol-Lab/Pumpkin/archive/62b2f09f4b28d0065e4a274d7346f34598b44898.tar.gz -O pumpkin.tar.gz \
+    && tar -xzvf pumpkin.tar.gz \
+    && rm pumpkin.tar.gz \
+    && mv Pumpkin-62b2f09f4b28d0065e4a274d7346f34598b44898 /pumpkin
 WORKDIR /pumpkin
 RUN cargo build --release -p pumpkin-solver
 COPY ./minizinc/solvers/pumpkin.msc.template /pumpkin.msc.template
