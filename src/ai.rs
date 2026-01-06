@@ -24,7 +24,8 @@ impl Ai for SimpleAi {
             SolverInfo::new("cp-sat".to_string(), 1),
             SolverInfo::new("yuck".to_string(), 1),
             SolverInfo::new("highs".to_string(), 1),
-            SolverInfo::new("choco".to_string(), cores),
+            SolverInfo::new("choco".to_string(), 1),
+            SolverInfo::new("pumpkin".to_string(), 1),
         ])
     }
 }
