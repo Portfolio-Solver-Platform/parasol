@@ -1,4 +1,4 @@
-use crate::args::{Args, DebugVerbosityLevel};
+use crate::args::Args;
 use crate::insert_objective::insert_objective;
 use crate::model_parser::{ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type};
 use crate::process_tree::get_process_tree_memory;
@@ -182,6 +182,8 @@ impl SolverManager {
             for arg in args {
                 cmd.arg(arg);
             }
+        } else {
+            logging::error_msg!("Solver '{solver_name}' does not have an arguments configuration");
         }
 
         cmd.arg("-p").arg(cores.to_string());

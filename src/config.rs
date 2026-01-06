@@ -25,6 +25,10 @@ impl Config {
         solver_args.insert("coinbc".to_string(), default_args.clone());
         solver_args.insert("cp-sat".to_string(), default_args.clone());
         solver_args.insert("yuck".to_string(), default_args.clone());
+        solver_args.insert("huub".to_string(), default_args.clone());
+        solver_args.insert("choco".to_string(), default_args.clone());
+        solver_args.insert("pumpkin".to_string(), default_args.clone());
+        solver_args.insert("highs".to_string(), default_args.clone());
 
         // Picat doesn't support -i flag
         let mut picat_args = vec!["-a".to_string()];
