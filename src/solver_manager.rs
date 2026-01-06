@@ -1,4 +1,4 @@
-use crate::args::{Args, DebugVerbosityLevel};
+use crate::args::Args;
 use crate::insert_objective::insert_objective;
 use crate::model_parser::{ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type};
 use crate::process_tree::{
@@ -189,6 +189,8 @@ impl SolverManager {
             for arg in args {
                 cmd.arg(arg);
             }
+        } else {
+            logging::error_msg!("Solver '{solver_name}' does not have an arguments configuration");
         }
 
         cmd.arg("-p").arg(cores.to_string());
@@ -210,8 +212,10 @@ impl SolverManager {
     ) -> Result<()> {
         let solver_name = &elem.info.name;
         let cores = elem.info.cores;
-
-        let conversion_paths = self.mzn_to_fzn.convert(solver_name).await?;
+        let conversion_paths = self
+            .mzn_to_fzn
+            .convert(solver_name)
+            .await?;
 
         let (fzn_final_path, fzn_guard) = if let Some(obj) = objective {
             if let Ok(new_temp_file) =
