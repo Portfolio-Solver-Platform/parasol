@@ -1,5 +1,6 @@
 mod ai;
 mod args;
+mod backup_solvers;
 mod config;
 mod fzn_to_features;
 mod insert_objective;
@@ -17,6 +18,7 @@ use std::process::exit;
 
 use crate::ai::SimpleAi;
 use crate::args::{Ai, parse_ai_config};
+use crate::backup_solvers::run_backup_solver;
 use crate::config::Config;
 use crate::sunny::sunny;
 use args::Args;
@@ -36,7 +38,7 @@ async fn main() {
     //         }
     //     }
     // }
-    let config = Config::default();
+    let config = Config::new(&args);
     let token = CancellationToken::new();
     let token_signal = token.clone();
 
@@ -45,10 +47,12 @@ async fn main() {
     })
     .expect("Error setting Ctrl-C handler");
 
-    match args.ai {
+    let cores = args.cores.unwrap_or(2);
+
+    let result = match args.ai {
         Ai::Simple => tokio::select! {
-            _ = sunny(args, SimpleAi {}, config, token.clone()) => {},
-            _ = token.cancelled() => {}
+            result = sunny(&args, SimpleAi {}, config, token.clone()) => result,
+            _ = token.cancelled() => Ok(())
         },
         Ai::CommandLine => {
             let ai_config = parse_ai_config(args.ai_config.as_deref());
@@ -61,9 +65,14 @@ async fn main() {
 
             let ai = crate::ai::commandline::Ai::new(command.clone(), args.debug_verbosity);
             tokio::select! {
-                _ = sunny(args, ai, config, token.clone()) => {},
-                _ = token.cancelled() => {}
+                result = sunny(&args, ai, config, token.clone()) => result,
+                _ = token.cancelled() => Ok(())
             }
         }
+    };
+
+    if result.is_err() {
+        logging::error_msg!("Portofolio solver failed, falling back to backup solver");
+        run_backup_solver(&args, cores).await;
     }
 }

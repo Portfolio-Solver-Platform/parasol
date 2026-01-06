@@ -160,13 +160,7 @@ impl SolverManager {
         }
     }
 
-    fn get_fzn_command(
-        &self,
-        fzn_path: &Path,
-        solver_name: &str,
-        cores: usize,
-        _allocated_cores: &[usize],
-    ) -> Command {
+    fn get_fzn_command(&self, fzn_path: &Path, solver_name: &str, cores: usize) -> Command {
         // Taskset approach (commented out, using sched_setaffinity instead)
         // let mut cmd = if !allocated_cores.is_empty() {
         //     let core_list = allocated_cores
@@ -250,7 +244,7 @@ impl SolverManager {
         //     }
         // }
 
-        let mut fzn_cmd = self.get_fzn_command(&fzn_final_path, solver_name, cores, &[]);
+        let mut fzn_cmd = self.get_fzn_command(&fzn_final_path, solver_name, cores);
         #[cfg(unix)]
         fzn_cmd.process_group(0); // let OS give it a group process id
         fzn_cmd.stderr(Stdio::piped());
@@ -320,7 +314,6 @@ impl SolverManager {
         let solvers_clone_stdout = self.solvers.clone();
         let solver_id = elem.id;
         let objective_type = self.objective_type;
-        let verbosity = self.args.debug_verbosity;
         tokio::spawn(async move {
             Self::handle_solver_stdout(
                 ozn_stdout,
@@ -329,7 +322,6 @@ impl SolverManager {
                 solver_id,
                 solvers_clone_stdout,
                 objective_type,
-                verbosity,
             )
             .await;
         });
@@ -339,7 +331,6 @@ impl SolverManager {
 
         let solvers_clone = self.solvers.clone();
         let solver_name = elem.info.name.clone();
-        let verbosity_wait = self.args.debug_verbosity;
         let available_cores_clone = self.available_cores.clone();
 
         tokio::spawn(async move {
@@ -375,7 +366,6 @@ impl SolverManager {
         solver_id: u64,
         solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
         objective_type: ObjectiveType,
-        verbosity: DebugVerbosityLevel,
     ) {
         let reader = BufReader::new(stdout);
         let mut lines = reader.lines();

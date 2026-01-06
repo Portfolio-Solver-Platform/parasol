@@ -9,24 +9,46 @@ use tokio::time::{Duration, sleep};
 use tokio_util::sync::CancellationToken;
 const FEATURES_SOLVER: &str = "gecode";
 
-pub async fn sunny(args: Args, mut ai: impl Ai, config: Config, token: CancellationToken) {
+pub async fn sunny(
+    args: &Args,
+    ai: impl Ai,
+    config: Config,
+    token: CancellationToken,
+) -> Result<(), ()> {
+    let mut scheduler = Scheduler::new(args, &config, token)
+        .await
+        .map_err(|e| logging::error!(e.into()))?;
+
+    let result = sunny_inner(args, ai, &config, &mut scheduler).await;
+
+    let _ = scheduler.solver_manager.stop_all_solvers().await;
+    result
+}
+
+async fn sunny_inner(
+    args: &Args,
+    mut ai: impl Ai,
+    config: &Config,
+    scheduler: &mut Scheduler,
+) -> Result<(), ()> {
     let timer_duration = Duration::from_secs(config.dynamic_schedule_interval);
     let cores = args.cores.unwrap_or(2);
-    let mut scheduler = Scheduler::new(&args, &config, token)
-        .await
-        .map_err(|e| logging::error!(e.into()))
-        .expect("Failed to create scheduler");
 
-    let schedule = static_schedule(&args, cores)
+    let schedule = static_schedule(args, cores)
         .await
-        .map_err(|e| logging::error!(e.into()))
-        .unwrap();
+        .map_err(|e| logging::error!(e.into()))?;
+
     let schedule_len = schedule.len();
     if let Err(errors) = scheduler.apply(schedule).await {
-        handle_schedule_errors(errors, schedule_len);
+        let errorlen = errors.len();
+        handle_schedule_errors(errors);
+        if errorlen == schedule_len {
+            return Err(());
+        }
     }
 
     let mut timer = sleep(timer_duration);
+
     let conversion = convert_mzn(
         &args.minizinc_exe,
         &args.model,
@@ -35,46 +57,32 @@ pub async fn sunny(args: Args, mut ai: impl Ai, config: Config, token: Cancellat
         args.debug_verbosity,
     )
     .await
-    .map_err(|e| logging::error!(e.into()))
-    .expect("failed to initially convert .mzn to .fzn");
+    .map_err(|e| logging::error!(e.into()))?;
 
     let features = fzn_to_features(conversion.fzn())
         .await
-        .map_err(|e| logging::error!(e.into()))
-        .expect("if we fail to get features, we can't run the AI and thus can't recover");
+        .map_err(|e| logging::error!(e.into()))?;
 
     loop {
         timer.await;
         let schedule = ai
             .schedule(&features, cores)
-            .map_err(|e| logging::error!(e.into()))
-            .unwrap();
-        let schedule_len = schedule.len();
-        if let Err(errors) = scheduler.apply(schedule).await {
-            handle_schedule_errors(errors, schedule_len);
-        }
+            .map_err(|e| logging::error!(e.into()))?;
 
-        timer = sleep(timer_duration);
-        timer.await;
-        let schedule = static_schedule(&args, cores)
-            .await
-            .map_err(|e| logging::error!(e.into()))
-            .unwrap();
         let schedule_len = schedule.len();
         if let Err(errors) = scheduler.apply(schedule).await {
-            handle_schedule_errors(errors, schedule_len);
+            let errorlen = errors.len();
+            handle_schedule_errors(errors);
+            if errorlen == schedule_len {
+                return Err(());
+            }
         }
 
         timer = sleep(timer_duration);
     }
 }
 
-fn handle_schedule_errors(errors: Vec<solver_manager::Error>, schedule_len: usize) {
-    let errors_len = errors.len();
+fn handle_schedule_errors(errors: Vec<solver_manager::Error>) {
     logging::error_msg!("got the following errors when applying the schedule:");
     errors.into_iter().for_each(|e| logging::error!(e.into()));
-
-    if errors_len == schedule_len {
-        panic!("all solvers failed");
-    }
 }
