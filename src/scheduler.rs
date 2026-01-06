@@ -376,17 +376,19 @@ impl Scheduler {
             logging::info!("changes: {:?}", changes);
         }
 
-        if let Err(_) = self
+        if let Err(e) = self
             .solver_manager
             .suspend_solvers(&changes.to_suspend)
             .await
         {
+            logging::error_msg!("failed to suspend solvers: {:?}", e);
             self.solver_manager
                 .stop_solvers(&changes.to_suspend)
                 .await?;
         }
 
-        if let Err(_) = self.solver_manager.resume_solvers(&changes.to_resume).await {
+        if let Err(e) = self.solver_manager.resume_solvers(&changes.to_resume).await {
+            logging::error_msg!("Failed to resume solvers: {e:?}");
             let mut resume_elements = Vec::new();
             for schedule_elem in &schedule {
                 for resume_id in &changes.to_resume {

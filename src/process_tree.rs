@@ -1,7 +1,9 @@
 use nix::sys::signal::{self, Signal};
 use nix::unistd;
 use std::collections::HashSet;
+use std::time::Duration;
 use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
+use tokio::time::sleep;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -11,7 +13,8 @@ pub enum Error {
     KillSolver(String),
 }
 
-pub async fn recursive_force_kill(root_pid: u32) -> Result<()> {
+/// This function in intended to be called from a new thread from the actual program.
+pub fn recursive_force_kill(root_pid: u32) -> Result<()> {
     let system = System::new_with_specifics(
         RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),
     );
@@ -34,8 +37,7 @@ pub async fn recursive_force_kill(root_pid: u32) -> Result<()> {
         collect_descendants(&system, target, &mut pids_to_kill);
     }
 
-    // let duration = Duration::from_secs(2);
-    // sleep(duration).await;
+    std::thread::sleep(Duration::from_secs(2));
 
     let system = System::new_with_specifics(
         RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),

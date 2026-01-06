@@ -1,7 +1,7 @@
 use crate::args::{Args, DebugVerbosityLevel};
 use crate::insert_objective::insert_objective;
 use crate::model_parser::{ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type};
-use crate::process_tree::get_process_tree_memory;
+use crate::process_tree::{get_process_tree_memory, recursive_force_kill};
 use crate::scheduler::ScheduleElement;
 use crate::solver_output::{Output, Solution, Status};
 use crate::{logging, mzn_to_fzn, solver_output};
@@ -17,6 +17,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::Duration;
 use sysinfo::System;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
@@ -60,8 +61,11 @@ impl Drop for SolverProcess {
         let _ = signal::kill(gpid, Signal::SIGTERM);
         let _ = signal::kill(gpid, Signal::SIGCONT);
         let pid_clone = self.pid;
-        tokio::spawn(async move {
-            let _ = crate::process_tree::recursive_force_kill(pid_clone).await;
+        // tokio::spawn(async move {
+        //     let _ = crate::process_tree::recursive_force_kill(pid_clone).await;
+        // });
+        std::thread::spawn(move || {
+            let _ = recursive_force_kill(pid_clone);
         });
     }
 }
@@ -208,10 +212,7 @@ impl SolverManager {
         let solver_name = &elem.info.name;
         let cores = elem.info.cores;
 
-        let conversion_paths = self
-            .mzn_to_fzn
-            .convert(solver_name)
-            .await?;
+        let conversion_paths = self.mzn_to_fzn.convert(solver_name).await?;
 
         let (fzn_final_path, fzn_guard) = if let Some(obj) = objective {
             if let Ok(new_temp_file) =
@@ -463,7 +464,7 @@ impl SolverManager {
         }
     }
 
-    // could probably be optimized to be able to send multiple signals to a process at a time, instead of traversing it twice
+    // could be optimized to be able to send multiple signals to a process at a time, instead of traversing it twice
     async fn send_signal_to_solver(
         solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
         id: u64,
@@ -474,10 +475,15 @@ impl SolverManager {
             Some(state) => state.pid,
             None => return Err(Error::InvalidSolver(format!("Solver {id} not running"))),
         };
+        dbg!(signal, id);
         let gpid = unistd::Pid::from_raw(-(pid as i32));
-        let _ = signal::kill(gpid, signal);
-
-        Ok(())
+        match signal::kill(gpid, signal) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                eprintln!("Failed to send signal {:?} to solver {} (pid: {}, gpid: {}): {}", signal, id, pid, -(pid as i32), e);
+                Err(Error::InvalidSolver(format!("Failed to send signal to solver {id}: {e}")))
+            }
+        }
     }
 
     async fn send_signal_to_solvers(
@@ -625,7 +631,7 @@ impl SolverManager {
     async fn kill_solver(solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>, id: u64) -> Result<()> {
         let mut map = solvers.lock().await;
         // let RAII clean up the solver. look in drop function.
-        if let None = map.remove(&id) {
+        if map.remove(&id).is_none() {
             return Err(Error::InvalidSolver(format!("Solver {id} not running")));
         }
 
