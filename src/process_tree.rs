@@ -15,7 +15,7 @@ pub enum Error {
 /// This function in intended to be called from a new thread from the actual program.
 pub fn recursive_force_kill(root_pid: u32) -> Result<()> {
     let system = System::new_with_specifics(
-        RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),
+        RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()),
     );
 
     let mut pids_to_kill = HashSet::new();
@@ -39,7 +39,7 @@ pub fn recursive_force_kill(root_pid: u32) -> Result<()> {
     std::thread::sleep(Duration::from_secs(2));
 
     let system = System::new_with_specifics(
-        RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),
+        RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()),
     );
 
     let current_targets: Vec<Pid> = pids_to_kill.iter().cloned().collect();

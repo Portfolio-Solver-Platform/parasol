@@ -57,7 +57,7 @@ struct SolverProcess {
 
 impl Drop for SolverProcess {
     fn drop(&mut self) {
-        let _ = SolverManager::send_singnal_to_solver_inner(
+        let _ = SolverManager::send_signals_to_solver_inner(
             self.pid,
             vec![Signal::SIGTERM, Signal::SIGCONT],
         );
@@ -477,12 +477,12 @@ impl SolverManager {
             Some(state) => state.pid,
             None => return Err(Error::InvalidSolver(format!("Solver {id} not running"))),
         };
-        Self::send_singnal_to_solver_inner(pid, signals)
+        Self::send_signals_to_solver_inner(pid, signals)
     }
 
-    fn send_singnal_to_solver_inner(pid: u32, signals: Vec<Signal>) -> Result<()> {
+    fn send_signals_to_solver_inner(pid: u32, signals: Vec<Signal>) -> Result<()> {
         let system = System::new_with_specifics(
-            RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),
+            RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()),
         );
         let mut pids_to_kill = HashSet::new();
 
@@ -507,7 +507,6 @@ impl SolverManager {
                 let _ = signal::kill(unistd::Pid::from_raw(pid.as_u32() as i32), *signal);
             }
         }
-        // let gpid = unistd::Pid::from_raw(-(pid as i32));
         for signal in signals {
             let _ = signal::kill(unistd::Pid::from_raw(pid as i32), signal);
         }
