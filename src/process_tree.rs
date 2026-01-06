@@ -2,7 +2,6 @@ use nix::sys::signal::{self, Signal};
 use nix::unistd;
 use std::collections::HashSet;
 use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
-use tokio::time::{Duration, sleep};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -75,23 +74,6 @@ pub fn get_process_pgid(pid: u32) -> Option<i32> {
     }
 }
 
-pub fn get_pids_in_group(target_pgid: u32) -> Vec<u32> {
-    let mut system = System::new_with_specifics(
-        RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),
-    );
-
-    let mut group_members = Vec::new();
-
-    for (pid, process) in system.processes() {
-        if let Some(gid) = process.group_id() {
-            if *gid == target_pgid {
-                group_members.push(pid.as_u32());
-            }
-        }
-    }
-
-    group_members
-}
 pub fn get_process_tree_memory(system: &System, root_pid: u32) -> u64 {
     let root_pid = Pid::from_u32(root_pid);
     let mut total_memory = 0u64;
