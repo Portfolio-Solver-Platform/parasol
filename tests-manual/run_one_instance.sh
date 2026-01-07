@@ -44,7 +44,7 @@ for problem_dir in "$PROBLEMS_DIR"/*/; do
     while IFS= read -r -d $'\0' file; do
         data_files+=("$file")
     done < <(find "$problem_dir" -maxdepth 1 \( -name "*.dzn" -o -name "*.json" \) -print0 2>/dev/null)
-
+   
     echo -e "${YELLOW}========================================${NC}"
     echo -e "${YELLOW}Problem: $problem_name${NC}"
     echo -e "${YELLOW}========================================${NC}"

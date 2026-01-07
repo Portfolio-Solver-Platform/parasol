@@ -6,7 +6,7 @@ use tokio::process::Command;
 pub enum Error {
     #[error("Command failed")]
     CommandFailed,
-    #[error("IO error")]
+    #[error("IO error while running backup solver: {0}")]
     Io(#[from] std::io::Error),
 }
 pub type Result<T> = std::result::Result<T, Error>;
