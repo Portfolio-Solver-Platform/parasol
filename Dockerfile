@@ -18,7 +18,7 @@ FROM builder AS ci
 
 RUN cargo install cargo-audit --locked
 
-FROM rust as rust-base
+FROM rust AS rust-base
 
 RUN apt-get update && apt-get install -y \
     jq \
