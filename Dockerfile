@@ -10,13 +10,13 @@ WORKDIR /usr/src/app
 # Build dependencies only (so they are cached)
 COPY Cargo.toml Cargo.lock ./
 # Dummy main file
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release
-RUN rm -rf src
+RUN mkdir src && echo "fn main() {}" > src/main.rs \
+    && cargo build --release \
+    && rm -rf src
 
 # Now copy and build the actual source code
 COPY src ./src
-RUN touch src/main.rs && cargo build --release
+RUN cargo build --release
 
 
 FROM minizinc/mznc2025:latest AS base
