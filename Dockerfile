@@ -1,8 +1,4 @@
 FROM rust:1.91 AS rust
-RUN apt-get update && apt-get install -y \
-    jq \
-    && rm -rf /var/lib/apt/lists/*
-
 FROM rust AS builder
 
 WORKDIR /usr/src/app
@@ -21,6 +17,12 @@ RUN cargo build --release --locked
 FROM builder AS ci
 
 RUN cargo install cargo-audit --locked
+
+FROM rust as rust-base
+
+RUN apt-get update && apt-get install -y \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
 
 
 FROM minizinc/mznc2025:latest AS base
@@ -94,7 +96,7 @@ RUN wget https://github.com/chocoteam/choco-solver/archive/refs/tags/v4.10.18.ta
     && sed -i 's&JAR_FILE=.*&JAR_FILE="/opt/choco/bin/choco.jar"&g' /opt/choco/bin/fzn-choco.py \
     && rm -rf /choco
 
-FROM rust AS pumpkin
+FROM rust-base AS pumpkin
 
 # Version 0.2.2
 RUN wget https://github.com/ConSol-Lab/Pumpkin/archive/62b2f09f4b28d0065e4a274d7346f34598b44898.tar.gz -O pumpkin.tar.gz \
@@ -103,12 +105,12 @@ RUN wget https://github.com/ConSol-Lab/Pumpkin/archive/62b2f09f4b28d0065e4a274d7
     && mv Pumpkin-62b2f09f4b28d0065e4a274d7346f34598b44898 /pumpkin
 WORKDIR /pumpkin
 RUN cargo build --release -p pumpkin-solver
+# We can't use the .msc file from the repository because it is currently not valid JSON
 COPY ./minizinc/solvers/pumpkin.msc.template /pumpkin.msc.template
 RUN mkdir -p /opt/pumpkin/bin \
     && mv /pumpkin/target/release/pumpkin-solver /opt/pumpkin/bin \
     && mkdir -p /opt/pumpkin/share/minizinc/solvers \
     && mv /pumpkin/minizinc/lib /opt/pumpkin/share/minizinc/pumpkin_lib \
-    # We can't use the .msc file from the repository because it is currently not valid JSON
     && jq '.executable = "/opt/pumpkin/bin/pumpkin-solver"' /pumpkin.msc.template \
      | jq '.mznlib = "/opt/pumpkin/share/minizinc/pumpkin_lib"' > /opt/pumpkin/share/minizinc/solvers/pumpkin.msc \
     && rm -rf /pumpkin
