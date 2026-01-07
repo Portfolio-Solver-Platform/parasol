@@ -14,18 +14,14 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs \
 COPY src ./src
 RUN cargo build --release --locked
 
-FROM builder AS ci
-
-FROM rust AS rust-base
-
-RUN apt-get update && apt-get install -y \
-    jq \
-    && rm -rf /var/lib/apt/lists/*
-
-
 FROM minizinc/mznc2025:latest AS base
 
 WORKDIR /app
+
+# Fix paths for cargo
+ENV CARGO_HOME=/usr/local/cargo
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -35,6 +31,7 @@ RUN apt-get update && apt-get install -y \
     default-jre \
     unzip \
     git \
+    curl \
     jq \
     flex \
     bison \
@@ -44,10 +41,12 @@ RUN apt-get update && apt-get install -y \
     libglu1-mesa \
     libegl1 \
     libfontconfig1 \
+    # Install rustup
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    # Cleanup
     && rm -rf /var/lib/apt/lists/*
 
-
-FROM rust AS huub
+FROM base AS huub
 
 RUN git clone --depth 1 --branch pub/CP2025 https://github.com/huub-solver/huub.git /huub
 WORKDIR /huub
@@ -94,7 +93,7 @@ RUN wget https://github.com/chocoteam/choco-solver/archive/refs/tags/v4.10.18.ta
     && sed -i 's&JAR_FILE=.*&JAR_FILE="/opt/choco/bin/choco.jar"&g' /opt/choco/bin/fzn-choco.py \
     && rm -rf /choco
 
-FROM rust-base AS pumpkin
+FROM base AS pumpkin
 
 # Version 0.2.2
 RUN wget https://github.com/ConSol-Lab/Pumpkin/archive/62b2f09f4b28d0065e4a274d7346f34598b44898.tar.gz -O pumpkin.tar.gz \
@@ -172,7 +171,10 @@ RUN echo '{"tagDefaults": [["", "org.psp.sunny"]]}' > $HOME/.minizinc/Preference
 
 COPY --from=builder /usr/src/app/target/release/portfolio-solver-framework /usr/local/bin/portfolio-solver-framework
 
+FROM builder AS ci
+
 FROM final AS ci-integration
 
+COPY Cargo.toml Cargo.lock ./
 COPY ./tests ./tests
 
