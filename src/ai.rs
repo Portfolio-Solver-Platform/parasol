@@ -18,14 +18,14 @@ pub struct SimpleAi {}
 
 impl Ai for SimpleAi {
     fn schedule(&mut self, _features: &Features, cores: usize) -> Result<Portfolio> {
-        Ok(vec![
-            SolverInfo::new("coinbc".to_string(), 1),
-            SolverInfo::new("picat".to_string(), 1),
-            SolverInfo::new("cp-sat".to_string(), 1),
-            SolverInfo::new("yuck".to_string(), 1),
-            SolverInfo::new("highs".to_string(), 1),
-            SolverInfo::new("choco".to_string(), 1),
-            SolverInfo::new("pumpkin".to_string(), 1),
-        ])
+        let solvers = [
+            "coinbc", "picat", "cp-sat", "yuck", "highs", "choco", "pumpkin",
+        ];
+
+        Ok(solvers
+            .iter()
+            .take(cores)
+            .map(|solver| SolverInfo::new(solver.to_string(), 1))
+            .collect())
     }
 }

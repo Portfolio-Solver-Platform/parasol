@@ -11,7 +11,6 @@ pub enum Error {
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// returns if it succesfully ran the backup solver
 pub async fn run_backup_solver(args: &Args, cores: usize) -> Result<()> {
     let config = Config::new(args);
     let mut cmd = Command::new(&args.minizinc_exe);

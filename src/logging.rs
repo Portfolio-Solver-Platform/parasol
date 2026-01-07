@@ -74,6 +74,7 @@ pub(crate) use error_msg;
 pub(crate) use info;
 pub(crate) use warning;
 
+#[allow(dead_code)]
 pub(crate) const LEVEL_QUIET: u8 = 0;
 pub(crate) const LEVEL_ERROR: u8 = 1;
 pub(crate) const LEVEL_WARNING: u8 = 2;

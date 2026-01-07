@@ -208,10 +208,7 @@ impl SolverManager {
     ) -> Result<()> {
         let solver_name = &elem.info.name;
         let cores = elem.info.cores;
-        let conversion_paths = self
-            .mzn_to_fzn
-            .convert(solver_name)
-            .await?;
+        let conversion_paths = self.mzn_to_fzn.convert(solver_name).await?;
 
         let (fzn_final_path, fzn_guard) = if let Some(obj) = objective {
             if let Ok(new_temp_file) =
@@ -495,6 +492,7 @@ impl SolverManager {
         }
     }
 
+    #[allow(dead_code)]
     async fn send_signals_to_all_solvers(
         solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
         signals: Vec<Signal>,
@@ -503,6 +501,7 @@ impl SolverManager {
         Self::send_signals_to_solvers(solvers.clone(), &ids, signals).await
     }
 
+    #[allow(dead_code)]
     pub async fn suspend_solver(&self, id: u64) -> std::result::Result<(), Error> {
         Self::send_signals_to_solver(self.solvers.clone(), id, vec![Signal::SIGSTOP]).await
     }
@@ -511,10 +510,12 @@ impl SolverManager {
         Self::send_signals_to_solvers(self.solvers.clone(), ids, vec![Signal::SIGSTOP]).await
     }
 
+    #[allow(dead_code)]
     pub async fn suspend_all_solvers(&self) -> std::result::Result<(), Vec<Error>> {
         Self::send_signals_to_all_solvers(self.solvers.clone(), vec![Signal::SIGSTOP]).await
     }
 
+    #[allow(dead_code)]
     pub async fn resume_solver(&self, id: u64) -> std::result::Result<(), Error> {
         Self::send_signals_to_solver(self.solvers.clone(), id, vec![Signal::SIGCONT]).await
     }
@@ -523,6 +524,7 @@ impl SolverManager {
         Self::send_signals_to_solvers(self.solvers.clone(), ids, vec![Signal::SIGCONT]).await
     }
 
+    #[allow(dead_code)]
     pub async fn resume_all_solvers(&self) -> std::result::Result<(), Vec<Error>> {
         Self::send_signals_to_all_solvers(self.solvers.clone(), vec![Signal::SIGCONT]).await
     }
