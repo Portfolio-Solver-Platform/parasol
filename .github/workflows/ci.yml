@@ -25,5 +25,7 @@ jobs:
       run: cargo test --verbose
     - name: Linting
       run: cargo clippy --verbose -- -D warnings
+    - name: Install cargo-audit
+      run: cargo install cargo-audit
     - name: Audit
       run: cargo audit
