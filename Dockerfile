@@ -16,10 +16,6 @@ RUN cargo build --release --locked
 
 FROM builder AS ci
 
-FROM final AS ci-integration
-
-COPY ./tests ./tests
-
 FROM rust AS rust-base
 
 RUN apt-get update && apt-get install -y \
@@ -175,4 +171,8 @@ COPY --from=pumpkin /opt/pumpkin/ /opt/pumpkin/
 RUN echo '{"tagDefaults": [["", "org.psp.sunny"]]}' > $HOME/.minizinc/Preferences.json
 
 COPY --from=builder /usr/src/app/target/release/portfolio-solver-framework /usr/local/bin/portfolio-solver-framework
+
+FROM final AS ci-integration
+
+COPY ./tests ./tests
 

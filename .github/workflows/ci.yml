@@ -16,7 +16,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Check formatting
-      run: cargo fmt --all --locked -- --check
+      run: cargo fmt --all -- --check
 
   lint:
     runs-on: ubuntu-latest
