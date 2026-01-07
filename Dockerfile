@@ -11,12 +11,16 @@ WORKDIR /usr/src/app
 COPY Cargo.toml Cargo.lock ./
 # Dummy main file
 RUN mkdir src && echo "fn main() {}" > src/main.rs \
-    && cargo build --release \
+    && cargo build --release --locked \
     && rm -rf src
 
 # Now copy and build the actual source code
 COPY src ./src
-RUN cargo build --release
+RUN cargo build --release --locked
+
+FROM builder as ci
+
+RUN cargo install cargo-audit --locked
 
 
 FROM minizinc/mznc2025:latest AS base
