@@ -176,5 +176,6 @@ FROM builder AS ci
 FROM final AS ci-integration
 
 COPY Cargo.toml Cargo.lock ./
+COPY ./src ./src
 COPY ./tests ./tests
 
