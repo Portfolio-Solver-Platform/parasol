@@ -38,4 +38,4 @@ jobs:
     - name: Audit
       run: docker run -t framework:latest cargo audit
     - name: Tests
-      run: docker run -t framework:latest cargo test --verbose --locked
+      run: docker run -t framework:latest cargo test --release --verbose --locked
