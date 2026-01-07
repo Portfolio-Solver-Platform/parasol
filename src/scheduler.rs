@@ -173,11 +173,7 @@ impl Scheduler {
         total_memory: f64,
     ) -> f64 {
         let ids: Vec<u64> = state.running_solvers.keys().copied().collect();
-        let total_cores: usize = state
-            .running_solvers
-            .iter()
-            .map(|(_, info)| info.cores)
-            .sum();
+        let total_cores: usize = state.running_solvers.values().map(|info| info.cores).sum();
         if total_cores == 0 {
             return used_memory;
         }

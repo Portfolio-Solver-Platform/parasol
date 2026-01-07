@@ -65,7 +65,7 @@ impl Parser {
         }
     }
 
-    fn to_solution(&mut self) -> Result<Solution> {
+    fn take_solution(&mut self) -> Result<Solution> {
         let objective = match self.objective {
             None => {
                 if self.objective_type == ObjectiveType::Satisfy {
@@ -96,7 +96,7 @@ impl Parser {
         self.input += "\n";
 
         if line == SOLUTION_TERMINATOR {
-            Ok(Some(Output::Solution(self.to_solution()?)))
+            Ok(Some(Output::Solution(self.take_solution()?)))
         } else if line == DONE_TERMINATOR {
             Ok(Some(Output::Status(Status::OptimalSolution)))
         } else if line == UNSATISFIABLE_TERMINATOR {

@@ -7,10 +7,7 @@ use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("invalid solver: {0}")]
-    KillSolver(String),
-}
+pub enum Error {}
 
 /// This function in intended to be called from a new thread from the actual program.
 pub fn recursive_force_kill(root_pid: u32) -> Result<()> {
@@ -22,11 +19,11 @@ pub fn recursive_force_kill(root_pid: u32) -> Result<()> {
     if let Some(target_pgid_raw) = get_process_pgid(root_pid) {
         let target_pgid = target_pgid_raw as u32;
 
-        for (pid, _process) in system.processes() {
-            if let Some(proc_pgid) = get_process_pgid(pid.as_u32()) {
-                if proc_pgid as u32 == target_pgid {
-                    pids_to_kill.insert(*pid);
-                }
+        for pid in system.processes().keys() {
+            if let Some(proc_pgid) = get_process_pgid(pid.as_u32())
+                && proc_pgid as u32 == target_pgid
+            {
+                pids_to_kill.insert(*pid);
             }
         }
     }
@@ -67,11 +64,11 @@ pub fn send_signals_to_process_tree(pid: u32, signals: Vec<Signal>) -> Result<()
     if let Some(target_pgid_raw) = get_process_pgid(pid) {
         let target_pgid = target_pgid_raw as u32;
 
-        for (pid, _process) in system.processes() {
-            if let Some(proc_pgid) = get_process_pgid(pid.as_u32()) {
-                if proc_pgid as u32 == target_pgid {
-                    pids_to_kill.insert(*pid);
-                }
+        for pid in system.processes().keys() {
+            if let Some(proc_pgid) = get_process_pgid(pid.as_u32())
+                && proc_pgid as u32 == target_pgid
+            {
+                pids_to_kill.insert(*pid);
             }
         }
     }
