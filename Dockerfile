@@ -1,8 +1,4 @@
 FROM rust:1.91 AS rust
-RUN apt-get update && apt-get install -y \
-    jq \
-    && rm -rf /var/lib/apt/lists/*
-
 FROM rust AS builder
 
 WORKDIR /usr/src/app
@@ -18,14 +14,14 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs \
 COPY src ./src
 RUN cargo build --release --locked
 
-FROM builder AS ci
-
-RUN cargo install cargo-audit --locked
-
-
 FROM minizinc/mznc2025:latest AS base
 
 WORKDIR /app
+
+# Fix paths for cargo
+ENV CARGO_HOME=/usr/local/cargo
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -35,6 +31,7 @@ RUN apt-get update && apt-get install -y \
     default-jre \
     unzip \
     git \
+    curl \
     jq \
     flex \
     bison \
@@ -44,10 +41,12 @@ RUN apt-get update && apt-get install -y \
     libglu1-mesa \
     libegl1 \
     libfontconfig1 \
+    # Install rustup
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    # Cleanup
     && rm -rf /var/lib/apt/lists/*
 
-
-FROM rust AS huub
+FROM base AS huub
 
 RUN git clone --depth 1 --branch pub/CP2025 https://github.com/huub-solver/huub.git /huub
 WORKDIR /huub
@@ -94,7 +93,7 @@ RUN wget https://github.com/chocoteam/choco-solver/archive/refs/tags/v4.10.18.ta
     && sed -i 's&JAR_FILE=.*&JAR_FILE="/opt/choco/bin/choco.jar"&g' /opt/choco/bin/fzn-choco.py \
     && rm -rf /choco
 
-FROM rust AS pumpkin
+FROM base AS pumpkin
 
 # Version 0.2.2
 RUN wget https://github.com/ConSol-Lab/Pumpkin/archive/62b2f09f4b28d0065e4a274d7346f34598b44898.tar.gz -O pumpkin.tar.gz \
@@ -103,12 +102,12 @@ RUN wget https://github.com/ConSol-Lab/Pumpkin/archive/62b2f09f4b28d0065e4a274d7
     && mv Pumpkin-62b2f09f4b28d0065e4a274d7346f34598b44898 /pumpkin
 WORKDIR /pumpkin
 RUN cargo build --release -p pumpkin-solver
+# We can't use the .msc file from the repository because it is currently not valid JSON
 COPY ./minizinc/solvers/pumpkin.msc.template /pumpkin.msc.template
 RUN mkdir -p /opt/pumpkin/bin \
     && mv /pumpkin/target/release/pumpkin-solver /opt/pumpkin/bin \
     && mkdir -p /opt/pumpkin/share/minizinc/solvers \
     && mv /pumpkin/minizinc/lib /opt/pumpkin/share/minizinc/pumpkin_lib \
-    # We can't use the .msc file from the repository because it is currently not valid JSON
     && jq '.executable = "/opt/pumpkin/bin/pumpkin-solver"' /pumpkin.msc.template \
      | jq '.mznlib = "/opt/pumpkin/share/minizinc/pumpkin_lib"' > /opt/pumpkin/share/minizinc/solvers/pumpkin.msc \
     && rm -rf /pumpkin
@@ -133,7 +132,7 @@ COPY --from=pumpkin /opt/pumpkin/share/minizinc/solvers/* .
 # Gecode should only be used for compilation, not actually run, so don't correct its executable path
 RUN cp ./gecode.msc.template ./gecode.msc
 
-FROM base
+FROM base AS final
 
 # Install mzn2feat
 # TODO: Move it into its own image (to improve caching)
@@ -171,4 +170,12 @@ COPY --from=pumpkin /opt/pumpkin/ /opt/pumpkin/
 RUN echo '{"tagDefaults": [["", "org.psp.sunny"]]}' > $HOME/.minizinc/Preferences.json
 
 COPY --from=builder /usr/src/app/target/release/portfolio-solver-framework /usr/local/bin/portfolio-solver-framework
+
+FROM builder AS ci
+
+FROM final AS ci-integration
+
+COPY Cargo.toml Cargo.lock ./
+COPY ./src ./src
+COPY ./tests ./tests
 
