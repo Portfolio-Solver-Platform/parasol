@@ -12,7 +12,7 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs \
 
 # Now copy and build the actual source code
 COPY src ./src
-RUN cargo build --release --locked
+RUN touch src/main.rs && cargo build --release --locked
 
 FROM minizinc/mznc2025:latest AS base
 
@@ -178,4 +178,6 @@ FROM final AS ci-integration
 COPY Cargo.toml Cargo.lock ./
 COPY ./src ./src
 COPY ./tests ./tests
+
+FROM final
 
