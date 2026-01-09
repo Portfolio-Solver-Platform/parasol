@@ -179,5 +179,6 @@ COPY Cargo.toml Cargo.lock ./
 COPY ./src ./src
 COPY ./tests ./tests
 
+# Make the 'final' image the default image
 FROM final
 
