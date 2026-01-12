@@ -13,7 +13,7 @@ pub struct Solver {
     name: String,
     executable: Executable,
     supported_std_flags: SupportedStdFlags,
-    input_type: SolverKind,
+    input_type: SolverInputType,
 }
 
 pub struct SupportedStdFlags {
@@ -23,7 +23,7 @@ pub struct SupportedStdFlags {
     p: bool,
 }
 
-pub enum SolverKind {
+pub enum SolverInputType {
     Fzn,
     Json,
 }
@@ -35,6 +35,10 @@ pub struct Solvers(Vec<Solver>);
 impl Solvers {
     pub fn iter(&self) -> impl Iterator<Item = &Solver> {
         self.0.iter()
+    }
+
+    pub fn get_by_name(&self, name: &str) -> Option<&Solver> {
+        self.0.iter().find(|solver| solver.name == name)
     }
 
     fn from_json(json: Value) -> Result<Self> {
@@ -118,12 +122,12 @@ impl Solver {
         Ok(Executable(s.into()))
     }
 
-    fn input_type_from_json(object: &mut Map<String, Value>) -> SolverParseResult<SolverKind> {
+    fn input_type_from_json(object: &mut Map<String, Value>) -> SolverParseResult<SolverInputType> {
         let input_type_str = Self::string_from_json("inputType", object)?;
 
         match input_type_str.as_str() {
-            "FZN" => Ok(SolverKind::Fzn),
-            "JSON" => Ok(SolverKind::Json),
+            "FZN" => Ok(SolverInputType::Fzn),
+            "JSON" => Ok(SolverInputType::Json),
             _ => Err(SolverParseError::UnknownSolverKind(input_type_str)),
         }
     }
@@ -184,6 +188,16 @@ async fn run_discover_command(minizinc_exe: &Path) -> Result<Vec<u8>> {
         Err(Error::CommandUnsuccessful(output.status))
     } else {
         Ok(output.stdout)
+    }
+}
+
+impl Solver {
+    pub fn input_type(&self) -> &SolverInputType {
+        &self.input_type
+    }
+
+    pub fn executable(&self) -> &Executable {
+        &self.executable
     }
 }
 
