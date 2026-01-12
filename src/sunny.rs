@@ -2,10 +2,10 @@ use crate::config::Config;
 use crate::fzn_to_features::fzn_to_features;
 use crate::mzn_to_fzn::convert_mzn;
 use crate::scheduler::Scheduler;
-use crate::static_schedule::static_schedule;
+use crate::static_schedule::{static_schedule, timeout_schedule};
 use crate::{ai::Ai, args::Args};
 use crate::{logging, solver_manager};
-use tokio::time::{Duration, sleep};
+use tokio::time::{Duration, sleep, timeout};
 use tokio_util::sync::CancellationToken;
 const FEATURES_SOLVER: &str = "gecode";
 
@@ -15,11 +15,11 @@ pub async fn sunny(
     config: Config,
     token: CancellationToken,
 ) -> Result<(), ()> {
-    let mut scheduler = Scheduler::new(args, &config, token)
+    let mut scheduler = Scheduler::new(args, &config, token.clone())
         .await
         .map_err(|e| logging::error!(e.into()))?;
 
-    let result = sunny_inner(args, ai, &config, &mut scheduler).await;
+    let result = sunny_inner(args, ai, &config, &mut scheduler, token).await;
 
     if let Err(e) = scheduler.solver_manager.stop_all_solvers().await {
         handle_schedule_errors(e);
@@ -32,11 +32,22 @@ async fn sunny_inner(
     mut ai: impl Ai,
     config: &Config,
     scheduler: &mut Scheduler,
+    token: CancellationToken,
 ) -> Result<(), ()> {
     let timer_duration = Duration::from_secs(config.dynamic_schedule_interval);
-    let cores = args.cores.unwrap_or(2);
+    let mut cores = args.cores.unwrap_or(2);
 
-    let schedule = static_schedule(args, cores)
+    let initial_solver_cores = if args.pin_cores {
+        if cores <= 1 {
+            logging::warning!("Too few cores are set. Using 2 cores");
+            cores = 2;
+        }
+        cores - 1 // We subtract one because we are going to be extracting features in the background for the feature extractor
+    } else {
+        cores
+    };
+
+    let schedule = static_schedule(args, initial_solver_cores)
         .await
         .map_err(|e| logging::error!(e.into()))?;
 
@@ -49,8 +60,38 @@ async fn sunny_inner(
         }
     }
 
-    let mut timer = sleep(timer_duration);
+    let timer = sleep(timer_duration);
+    let feature_extraction_max_duration = Duration::from_secs(10);
+    let timeout_result = timeout(feature_extraction_max_duration, get_features(args)).await;
+    let schedule = match timeout_result {
+        Ok(features_result) => {
+            let features = features_result?;
+            ai.schedule(&features, cores)
+                .map_err(|e| logging::error!(e.into()))?
+        }
+        Err(_) => {
+            logging::warning!("Feature extraction timed out. Running timeout schedule");
+            timeout_schedule(args, cores)
+                .await
+                .map_err(|e| logging::error!(e.into()))?
+        }
+    };
 
+    timer.await;
+
+    let schedule_len = schedule.len();
+    if let Err(errors) = scheduler.apply(schedule).await {
+        let errorlen = errors.len();
+        handle_schedule_errors(errors);
+        if errorlen == schedule_len {
+            return Err(());
+        }
+    }
+    token.cancelled().await; // Wait until the solution has been found
+    Ok(())
+}
+
+async fn get_features(args: &Args) -> Result<Vec<f32>, ()> {
     let conversion = convert_mzn(args, FEATURES_SOLVER)
         .await
         .map_err(|e| logging::error!(e.into()))?;
@@ -58,24 +99,7 @@ async fn sunny_inner(
     let features = fzn_to_features(conversion.fzn())
         .await
         .map_err(|e| logging::error!(e.into()))?;
-
-    loop {
-        timer.await;
-        let schedule = ai
-            .schedule(&features, cores)
-            .map_err(|e| logging::error!(e.into()))?;
-
-        let schedule_len = schedule.len();
-        if let Err(errors) = scheduler.apply(schedule).await {
-            let errorlen = errors.len();
-            handle_schedule_errors(errors);
-            if errorlen == schedule_len {
-                return Err(());
-            }
-        }
-
-        timer = sleep(timer_duration);
-    }
+    Ok(features)
 }
 
 fn handle_schedule_errors(errors: Vec<solver_manager::Error>) {

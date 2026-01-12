@@ -48,6 +48,12 @@ pub struct Args {
     #[arg(long)]
     pub static_schedule_path: Option<PathBuf>,
 
+    /// The path to the timeout schedule file. This schedule will be run if the compilation or the feature extraction takes too long
+    /// The file needs to be a CSV (without a header) in the format of `<solver>,<cores>`.
+    /// If not provided, a default timeout schedule will be used.
+    #[arg(long)]
+    pub timeout_schedule_path: Option<PathBuf>,
+
     /// Pin solver processes to specific CPU cores
     #[arg(long)]
     pub pin_cores: bool,

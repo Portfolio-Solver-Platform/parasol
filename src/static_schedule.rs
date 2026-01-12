@@ -24,6 +24,24 @@ pub async fn static_schedule(args: &Args, cores: usize) -> Result<Portfolio> {
     Ok(schedule)
 }
 
+pub async fn timeout_schedule(args: &Args, cores: usize) -> Result<Portfolio> {
+    let schedule = match args.timeout_schedule_path.as_ref() {
+        Some(path) => get_schedule_from_file(path).await?,
+        None => default_schedule(cores),
+    };
+
+    if args.debug_verbosity >= DebugVerbosityLevel::Warning {
+        let schedule_cores = schedule_cores(&schedule);
+        if schedule_cores != cores {
+            logging::warning!(
+                "The timeout schedule cores ({schedule_cores}) does not match the framework's designated cores ({cores})"
+            );
+        }
+    }
+
+    Ok(schedule)
+}
+
 fn schedule_cores(schedule: &Portfolio) -> usize {
     schedule.iter().map(|solver_info| solver_info.cores).sum()
 }
