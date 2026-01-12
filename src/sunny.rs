@@ -1,5 +1,3 @@
-use std::future;
-
 use crate::config::Config;
 use crate::fzn_to_features::fzn_to_features;
 use crate::mzn_to_fzn::convert_mzn;
