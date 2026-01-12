@@ -37,17 +37,17 @@ async fn sunny_inner(
     let timer_duration = Duration::from_secs(config.dynamic_schedule_interval);
     let mut cores = args.cores.unwrap_or(2);
 
-    let solver_cores = if args.pin_cores {
+    let initial_solver_cores = if args.pin_cores {
         if cores <= 1 {
             logging::warning!("Too few cores are set. Using 2 cores");
             cores = 2;
         }
-        cores - 1 // We subtract one because we are gonna be extraction features in the bagground for the feature extractor
+        cores - 1 // We subtract one because we are going to be extracting features in the background for the feature extractor
     } else {
         cores
     };
 
-    let schedule = static_schedule(args, solver_cores)
+    let schedule = static_schedule(args, initial_solver_cores)
         .await
         .map_err(|e| logging::error!(e.into()))?;
 
