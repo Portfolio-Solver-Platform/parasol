@@ -54,10 +54,10 @@ for problem_dir in "$PROBLEMS_DIR"/*/; do
         instance=$(basename "$model_file")
 
         echo -e "${CYAN}Running: $instance${NC}"
-        echo -e "${CYAN}Command: $SOLVER_PATH $model_file -p 10 --debug-verbosity error${NC}"
+        echo -e "${CYAN}Command: $SOLVER_PATH $model_file --pin-cores -p 10 -v error${NC}"
         echo
 
-        $TIMEOUT_CMD --signal=SIGTERM ${TIMEOUT_SECONDS}s "$SOLVER_PATH" "$model_file" -p 10 --debug-verbosity quiet "$@"  > /dev/null 2>&1
+        $TIMEOUT_CMD --signal=SIGTERM ${TIMEOUT_SECONDS}s "$SOLVER_PATH" "$model_file" --pin-cores -p 10 -v quiet "$@"  > /dev/null 2>&1
         exit_code=$?
 
         echo
@@ -75,10 +75,10 @@ for problem_dir in "$PROBLEMS_DIR"/*/; do
 
         echo -e "${CYAN}Model: $(basename "$model_file")${NC}"
         echo -e "${CYAN}Instance: $instance${NC}"
-        echo -e "${CYAN}Command: $SOLVER_PATH $model_file $data_file -p 10 --debug-verbosity error${NC}"
+        echo -e "${CYAN}Command: $SOLVER_PATH $model_file $data_file --pin-cores -p 10 -v error${NC}"
         echo
 
-        $TIMEOUT_CMD --signal=SIGTERM ${TIMEOUT_SECONDS}s "$SOLVER_PATH" "$model_file" "$data_file" -p 10 --debug-verbosity quiet "$@"  > /dev/null 2>&1
+        $TIMEOUT_CMD --signal=SIGTERM ${TIMEOUT_SECONDS}s "$SOLVER_PATH" "$model_file" "$data_file" --pin-cores -p 10 -v quiet "$@"  > /dev/null 2>&1
         exit_code=$?
 
         echo
