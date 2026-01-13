@@ -100,7 +100,6 @@ async fn start_with_ai(
 
     let schedule = match features_result {
         Ok(features_result) => {
-            dbg!("got features");
             let features = features_result?;
             ai.schedule(&features, cores)
                 .map_err(|e| logging::error!(e.into()))?
@@ -157,7 +156,7 @@ async fn start_without_ai(
 fn get_cores(args: &Args, ai: &Option<impl Ai>) -> (usize, usize) {
     let mut cores = args.cores;
 
-    let initial_solver_cores = if args.pin_cores && ai.is_some() {
+    let initial_solver_cores = if args.pin_yuck && ai.is_some() {
         if cores <= 1 {
             logging::warning!("Too few cores are set. Using 2 cores");
             cores = 2;

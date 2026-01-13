@@ -33,15 +33,6 @@ async fn main() {
     let args = Args::parse();
     logging::init(args.verbosity);
 
-    // // Pin the framework to the first core when --pin-cores is enabled
-    // if args.pin_cores {
-    //     if let Some(core_ids) = core_affinity::get_core_ids() {
-    //         if let Some(first_core) = core_ids.first() {
-    //             core_affinity::set_for_current(*first_core);
-    //         }
-    //     }
-    // }
-
     let solvers = solver_discovery::discover(&args.minizinc_exe)
         .await
         .unwrap_or_else(|e| {

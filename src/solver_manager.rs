@@ -174,21 +174,6 @@ impl SolverManager {
         solver_name: &str,
         cores: usize,
     ) -> Result<Command> {
-        // Taskset approach (commented out, using sched_setaffinity instead)
-        // let mut cmd = if !allocated_cores.is_empty() {
-        //     let core_list = allocated_cores
-        //         .iter()
-        //         .map(|c| c.to_string())
-        //         .collect::<Vec<_>>()
-        //         .join(",");
-        //     let mut taskset_cmd = Command::new("taskset");
-        //     taskset_cmd.arg("-c").arg(core_list);
-        //     taskset_cmd.arg(&self.args.minizinc_exe);
-        //     taskset_cmd
-        // } else {
-        //     Command::new(&self.args.minizinc_exe)
-        // };
-
         let solver = self.solver_info.get_by_id(solver_name);
 
         let make_fzn_cmd = || {
@@ -264,26 +249,6 @@ impl SolverManager {
             (conversion_paths.fzn().to_path_buf(), None)
         };
 
-        // Taskset approach: allocate cores before building the command
-        // let mut allocated_cores: Vec<usize> = Vec::new();
-        // #[cfg(target_os = "linux")]
-        // {
-        //     let mut available_cores_guard = self.available_cores.lock().await;
-        //     for _ in 0..cores {
-        //         if let Some(val) = available_cores_guard.pop_first() {
-        //             allocated_cores.push(val);
-        //         } else {
-        //             // Return already-allocated cores before erroring
-        //             for c in &allocated_cores {
-        //                 available_cores_guard.insert(*c);
-        //             }
-        //             return Err(Error::CPUCoresRetrieval(
-        //                 "Schedule contained more cores than there was available".to_string(),
-        //             ));
-        //         }
-        //     }
-        // }
-
         let mut fzn_cmd = self.get_solver_command(&fzn_final_path, solver_name, cores)?;
         #[cfg(unix)]
         fzn_cmd.process_group(0); // let OS give it a group process id
@@ -301,38 +266,10 @@ impl SolverManager {
 
         let pid = fzn.id().expect("Child has no PID");
         let mut allocated_cores: Vec<usize> = Vec::new();
+
         #[cfg(target_os = "linux")]
-        if self.args.pin_cores {
-            let mut cpu_set = CpuSet::new();
-            {
-                let mut available_cores_guard = self.available_cores.lock().await;
-                for _ in 0..cores {
-                    if let Some(val) = available_cores_guard.pop_first() {
-                        if let Err(e) = cpu_set.set(val) {
-                            for c in &allocated_cores {
-                                available_cores_guard.insert(*c);
-                            }
-                            return Err(e.into());
-                        }
-                        allocated_cores.push(val);
-                    } else {
-                        for c in &allocated_cores {
-                            available_cores_guard.insert(*c);
-                        }
-
-                        return Err(Error::CPUCoresRetrieval(
-                            "Schedule contained more cores than there was available".to_string(),
-                        ));
-                    }
-                }
-            }
-
-            if let Err(e) = sched_setaffinity(unistd::Pid::from_raw(pid as i32), &cpu_set) {
-                eprintln!(
-                    "Warning: Failed to set affinity (process might have exited): {}",
-                    e
-                );
-            }
+        if self.args.pin_yuck && elem.info.name == "yuck" {
+            allocated_cores = pin_yuck_solver_to_cores(pid, cores, &self.available_cores).await?;
         }
 
         let ozn_stdout = ozn.stdout.take().expect("Failed to take ozn stdout");
@@ -695,6 +632,47 @@ async fn pipe(mut left: Command, mut right: Command) -> Result<PipeCommand> {
         right: right_child,
         pipe: pipe_task,
     })
+}
+
+async fn pin_yuck_solver_to_cores(
+    pid: u32,
+    cores: usize,
+    available_cores: &Arc<Mutex<BTreeSet<usize>>>,
+) -> Result<Vec<usize>> {
+    let mut cpu_set = CpuSet::new();
+    let mut allocated_cores: Vec<usize> = Vec::new();
+
+    {
+        let mut available_cores_guard = available_cores.lock().await;
+        for _ in 0..cores {
+            if let Some(val) = available_cores_guard.pop_first() {
+                if let Err(e) = cpu_set.set(val) {
+                    for c in &allocated_cores {
+                        available_cores_guard.insert(*c);
+                    }
+                    return Err(e.into());
+                }
+                allocated_cores.push(val);
+            } else {
+                for c in &allocated_cores {
+                    available_cores_guard.insert(*c);
+                }
+
+                return Err(Error::CPUCoresRetrieval(
+                    "Schedule contained more cores than there was available".to_string(),
+                ));
+            }
+        }
+    }
+
+    if let Err(e) = sched_setaffinity(unistd::Pid::from_raw(pid as i32), &cpu_set) {
+        eprintln!(
+            "Warning: Failed to set affinity (process might have exited): {}",
+            e
+        );
+    }
+
+    Ok(allocated_cores)
 }
 
 #[derive(Debug, thiserror::Error)]

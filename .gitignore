@@ -1,2 +1,5 @@
 .DS_Store
 /target
+
+perf.data*
+flamegraph.svg
