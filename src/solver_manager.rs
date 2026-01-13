@@ -293,6 +293,17 @@ impl SolverManager {
             }
         }
 
+        let ozn_stdout = ozn.stdout.take().expect("Failed to take ozn stdout");
+        let ozn_stderr = ozn.stderr.take().expect("Failed to take ozn stderr");
+        let fzn_stderr = fzn.stderr.take().expect("Failed to take fzt stderr");
+
+        let solver_id = elem.id;
+        let tx_clone = self.tx.clone();
+        let solvers_clone_stdout = self.solvers.clone();
+        let objective_type = self.objective_type;
+        let solvers_clone = self.solvers.clone();
+        let solver_name = elem.info.name.clone();
+        let available_cores_clone = self.available_cores.clone();
         {
             let mut map = self.solvers.lock().await;
             map.insert(
@@ -302,57 +313,46 @@ impl SolverManager {
                     best_objective: objective,
                 },
             );
+
+            tokio::spawn(async move {
+                Self::handle_solver_stdout(
+                    ozn_stdout,
+                    pipe,
+                    tx_clone,
+                    solver_id,
+                    solvers_clone_stdout,
+                    objective_type,
+                )
+                .await;
+            });
+
+            tokio::spawn(async move { Self::handle_solver_stderr(fzn_stderr).await });
+            tokio::spawn(async move { Self::handle_solver_stderr(ozn_stderr).await });
+
+            tokio::spawn(async move {
+                let _keep_alive = fzn_guard;
+                match fzn.wait().await {
+                    Ok(status) if !status.success() => {
+                        logging::info!("Solver '{}' exited with status: {}", solver_name, status);
+                    }
+                    Err(e) => {
+                        logging::error_msg!("Error waiting for solver '{}': {}", solver_name, e);
+                    }
+                    _ => {}
+                }
+
+                {
+                    let mut cores_guard = available_cores_clone.lock().await;
+                    for core_id in allocated_cores {
+                        cores_guard.insert(core_id);
+                    }
+                }
+
+                let mut map: tokio::sync::MutexGuard<'_, HashMap<u64, SolverProcess>> =
+                    solvers_clone.lock().await;
+                map.remove(&solver_id);
+            });
         }
-
-        let ozn_stdout = ozn.stdout.take().expect("Failed to take ozn stdout");
-        let ozn_stderr = ozn.stderr.take().expect("Failed to take ozn stderr");
-        let fzn_stderr = fzn.stderr.take().expect("Failed to take fzt stderr");
-
-        let tx_clone = self.tx.clone();
-        let solvers_clone_stdout = self.solvers.clone();
-        let solver_id = elem.id;
-        let objective_type = self.objective_type;
-        tokio::spawn(async move {
-            Self::handle_solver_stdout(
-                ozn_stdout,
-                pipe,
-                tx_clone,
-                solver_id,
-                solvers_clone_stdout,
-                objective_type,
-            )
-            .await;
-        });
-
-        tokio::spawn(async move { Self::handle_solver_stderr(fzn_stderr).await });
-        tokio::spawn(async move { Self::handle_solver_stderr(ozn_stderr).await });
-
-        let solvers_clone = self.solvers.clone();
-        let solver_name = elem.info.name.clone();
-        let available_cores_clone = self.available_cores.clone();
-
-        tokio::spawn(async move {
-            let _keep_alive = fzn_guard;
-            match fzn.wait().await {
-                Ok(status) if !status.success() => {
-                    logging::info!("Solver '{}' exited with status: {}", solver_name, status);
-                }
-                Err(e) => {
-                    logging::error_msg!("Error waiting for solver '{}': {}", solver_name, e);
-                }
-                _ => {}
-            }
-
-            {
-                let mut cores_guard = available_cores_clone.lock().await;
-                for core_id in allocated_cores {
-                    cores_guard.insert(core_id);
-                }
-            }
-
-            let mut map = solvers_clone.lock().await;
-            map.remove(&solver_id);
-        });
 
         Ok(())
     }

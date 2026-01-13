@@ -1,18 +1,16 @@
 use itertools::Itertools;
 
 use super::{Error, Features, Result};
-use crate::{
-    args::DebugVerbosityLevel, logging, scheduler::Portfolio, static_schedule::parse_schedule,
-};
+use crate::{args::Verbosity, logging, scheduler::Portfolio, static_schedule::parse_schedule};
 use std::process::Command;
 
 pub struct Ai {
     pub command_name: String,
-    pub verbosity: DebugVerbosityLevel,
+    pub verbosity: Verbosity,
 }
 
 impl Ai {
-    pub fn new(command_name: String, verbosity: DebugVerbosityLevel) -> Self {
+    pub fn new(command_name: String, verbosity: Verbosity) -> Self {
         Self {
             command_name,
             verbosity,
@@ -34,7 +32,7 @@ impl super::Ai for Ai {
             ))
         })?;
 
-        if self.verbosity >= DebugVerbosityLevel::Error {
+        if self.verbosity >= Verbosity::Error {
             print_stderr(output.stderr);
         }
 

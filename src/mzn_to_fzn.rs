@@ -89,7 +89,7 @@ async fn run_mzn_to_fzn_cmd(
 
     let mut child = cmd.spawn()?;
 
-    if args.debug_verbosity >= crate::args::DebugVerbosityLevel::Warning
+    if args.verbosity >= crate::args::Verbosity::Warning
         && let Some(stderr) = child.stderr.take()
     {
         tokio::spawn(async move {

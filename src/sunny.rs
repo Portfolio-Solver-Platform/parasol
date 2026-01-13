@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::fzn_to_features::fzn_to_features;
 use crate::mzn_to_fzn::convert_mzn;
-use crate::scheduler::Scheduler;
+use crate::scheduler::{Portfolio, Scheduler};
 use crate::static_schedule::{static_schedule, timeout_schedule};
 use crate::{ai::Ai, args::Args};
 use crate::{logging, solver_manager};
@@ -11,15 +11,15 @@ const FEATURES_SOLVER: &str = "gecode";
 
 pub async fn sunny(
     args: &Args,
-    ai: impl Ai,
+    ai: Option<impl Ai>,
     config: Config,
     token: CancellationToken,
 ) -> Result<(), ()> {
-    let mut scheduler = Scheduler::new(args, &config, token.clone())
+    let mut scheduler = Scheduler::new(args, &config, token)
         .await
         .map_err(|e| logging::error!(e.into()))?;
 
-    let result = sunny_inner(args, ai, &config, &mut scheduler, token).await;
+    let result = sunny_inner(args, ai, &mut scheduler).await;
 
     if let Err(e) = scheduler.solver_manager.stop_all_solvers().await {
         handle_schedule_errors(e);
@@ -29,41 +29,57 @@ pub async fn sunny(
 
 async fn sunny_inner(
     args: &Args,
-    mut ai: impl Ai,
-    config: &Config,
+    ai: Option<impl Ai>,
     scheduler: &mut Scheduler,
-    token: CancellationToken,
 ) -> Result<(), ()> {
-    let timer_duration = Duration::from_secs(config.dynamic_schedule_interval);
-    let mut cores = args.cores.unwrap_or(2);
+    let (cores, initial_solver_cores) = get_cores(args, &ai);
 
-    let initial_solver_cores = if args.pin_cores {
-        if cores <= 1 {
-            logging::warning!("Too few cores are set. Using 2 cores");
-            cores = 2;
-        }
-        cores - 1 // We subtract one because we are going to be extracting features in the background for the feature extractor
-    } else {
-        cores
-    };
-
-    let schedule = static_schedule(args, initial_solver_cores)
+    let initial_schedule = static_schedule(args, initial_solver_cores)
         .await
         .map_err(|e| logging::error!(e.into()))?;
 
-    let schedule_len = schedule.len();
-    if let Err(errors) = scheduler.apply(schedule).await {
-        let errorlen = errors.len();
-        handle_schedule_errors(errors);
-        if errorlen == schedule_len {
-            return Err(());
-        }
-    }
+    let static_runtime = Duration::from_secs(args.static_runtime);
+    let mut timer = sleep(static_runtime);
 
-    let timer = sleep(timer_duration);
-    let feature_extraction_max_duration = Duration::from_secs(10);
-    let timeout_result = timeout(feature_extraction_max_duration, get_features(args)).await;
-    let schedule = match timeout_result {
+    let schedule = if let Some(ai) = ai {
+        start_with_ai(args, ai, scheduler, initial_schedule, cores).await?
+    } else {
+        start_without_ai(args, scheduler, initial_schedule).await?
+    };
+
+    let restart_interval = Duration::from_secs(args.restart_interval);
+    // Restart loop, where it share bounds. It runs forever until it finds a solution, where it will then be cancelled by the cancellation token.
+    loop {
+        timer.await;
+        let schedule_len = schedule.len();
+        if let Err(errors) = scheduler.apply(schedule.clone()).await {
+            let errorlen = errors.len();
+            handle_schedule_errors(errors);
+            if errorlen == schedule_len {
+                return Err(());
+            }
+        }
+        timer = sleep(restart_interval);
+    }
+}
+
+async fn start_with_ai(
+    args: &Args,
+    mut ai: impl Ai,
+    scheduler: &mut Scheduler,
+    initial_schedule: Portfolio,
+    cores: usize,
+) -> Result<Portfolio, ()> {
+    let feature_extraction_max_duration = Duration::from_secs(args.feature_timeout);
+    let (static_schedule_apply_result, features_result) = tokio::join!(
+        timeout(
+            feature_extraction_max_duration,
+            scheduler.apply(initial_schedule.clone())
+        ),
+        timeout(feature_extraction_max_duration, get_features(args))
+    );
+
+    let schedule = match features_result {
         Ok(features_result) => {
             let features = features_result?;
             ai.schedule(&features, cores)
@@ -77,18 +93,60 @@ async fn sunny_inner(
         }
     };
 
-    timer.await;
-
-    let schedule_len = schedule.len();
-    if let Err(errors) = scheduler.apply(schedule).await {
-        let errorlen = errors.len();
-        handle_schedule_errors(errors);
-        if errorlen == schedule_len {
-            return Err(());
+    match static_schedule_apply_result {
+        Ok(Ok(())) => {}
+        Ok(Err(errors)) => {
+            let error_len = errors.len();
+            handle_schedule_errors(errors);
+            if error_len == schedule.len() {
+                return Err(());
+            }
+        }
+        Err(_) => {
+            logging::warning!("applying static schedule timed out");
         }
     }
-    token.cancelled().await; // Wait until the solution has been found
-    Ok(())
+    Ok(schedule)
+}
+
+async fn start_without_ai(
+    args: &Args,
+    scheduler: &mut Scheduler,
+    schedule: Portfolio,
+) -> Result<Portfolio, ()> {
+    let static_runtime = Duration::from_secs(args.feature_timeout);
+
+    let apply_result = timeout(static_runtime, scheduler.apply(schedule.clone())).await;
+
+    match apply_result {
+        Ok(Ok(())) => {}
+        Ok(Err(errors)) => {
+            let error_len = errors.len();
+            handle_schedule_errors(errors);
+            if error_len == schedule.len() {
+                return Err(());
+            }
+        }
+        Err(_) => {
+            logging::warning!("applying static schedule timed out");
+        }
+    }
+    Ok(schedule)
+}
+
+fn get_cores(args: &Args, ai: &Option<impl Ai>) -> (usize, usize) {
+    let mut cores = args.cores;
+
+    let initial_solver_cores = if args.pin_cores && ai.is_some() {
+        if cores <= 1 {
+            logging::warning!("Too few cores are set. Using 2 cores");
+            cores = 2;
+        }
+        cores - 1 // We subtract one because we are going to be extracting features in the background for the feature extractor
+    } else {
+        cores
+    };
+    (cores, initial_solver_cores)
 }
 
 async fn get_features(args: &Args) -> Result<Vec<f32>, ()> {
