@@ -37,8 +37,9 @@ pub async fn insert_objective(
     constraints.push(constraint);
 
     let uuid = Uuid::new_v4();
+    let modified_content = serde_json::to_vec(&json).map_err(Error::JsonSerialize)?;
     let mut temp_file = TempFile::new_with_name(format!("temp-{uuid}.fzn.json")).await?;
-    temp_file.write_all(content.as_bytes()).await?;
+    temp_file.write_all(&modified_content).await?;
     temp_file.flush().await?;
     Ok(temp_file)
 }
@@ -96,7 +97,9 @@ pub enum Error {
     #[error("the constraints field is not an array")]
     InvalidConstraintsType,
     #[error("failed to parse JSON: {0}")]
-    JsonParse(#[from] serde_json::Error),
+    JsonParse(#[source] serde_json::Error),
+    #[error("failed to serialize JSON: {0}")]
+    JsonSerialize(#[source] serde_json::Error),
     #[error("failed to find objective name in JSON: {0}")]
     ObjectiveNotFound(String),
     #[error(transparent)]

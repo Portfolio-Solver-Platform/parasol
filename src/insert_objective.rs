@@ -20,7 +20,7 @@ impl ObjectiveInserter {
     pub async fn insert_objective(
         &self,
         solver_name: &str,
-        fzn_path: &Path,
+        input_path: &Path,
         objective_type: &ObjectiveType,
         objective: ObjectiveValue,
     ) -> Result<TempFile> {
@@ -36,10 +36,10 @@ impl ObjectiveInserter {
             });
 
         match input_type {
-            SolverInputType::Fzn => fzn::insert_objective(fzn_path, objective_type, objective)
+            SolverInputType::Fzn => fzn::insert_objective(input_path, objective_type, objective)
                 .await
                 .map_err(Into::into),
-            SolverInputType::Json => json::insert_objective(fzn_path, objective_type, objective)
+            SolverInputType::Json => json::insert_objective(input_path, objective_type, objective)
                 .await
                 .map_err(Into::into),
         }

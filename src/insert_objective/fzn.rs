@@ -36,7 +36,7 @@ pub async fn insert_objective(
         file.seek(SeekFrom::Start(cursor)).await?;
         file.read_exact(&mut buffer[..read_size]).await?;
 
-        // scan bufer backwards
+        // scan buffer backwards
         for i in (0..read_size).rev() {
             if buffer[i] == b';' {
                 semi_colon_count += 1;
