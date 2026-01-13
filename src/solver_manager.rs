@@ -1,12 +1,13 @@
 use crate::args::Args;
-use crate::insert_objective::insert_objective;
+use crate::insert_objective::ObjectiveInserter;
 use crate::model_parser::{ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type};
 use crate::process_tree::{
     get_process_tree_memory, recursive_force_kill, send_signals_to_process_tree,
 };
 use crate::scheduler::ScheduleElement;
+use crate::solver_discovery::SolverInputType;
 use crate::solver_output::{Output, Solution, Status};
-use crate::{logging, mzn_to_fzn, solver_output};
+use crate::{logging, mzn_to_fzn, solver_discovery, solver_output};
 use futures::future::join_all;
 use nix::errno::Errno;
 #[cfg(target_os = "linux")]
@@ -40,6 +41,8 @@ pub enum Error {
     CPUCoresRetrieval(String),
     #[error("could not set solver to a specific core")]
     SolverSetCoreAffinity(#[from] Errno),
+    #[error("solver with ID '{0}' has input type of JSON but has no executable")]
+    ExecutableMissingForJsonSolver(String),
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -70,7 +73,9 @@ pub struct SolverManager {
     solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
     args: Args,
     mzn_to_fzn: mzn_to_fzn::CachedConverter,
+    objective_inserter: ObjectiveInserter,
     best_objective: Arc<RwLock<Option<ObjectiveValue>>>,
+    solver_info: Arc<solver_discovery::Solvers>,
     objective_type: ObjectiveType,
     solver_args: HashMap<String, Vec<String>>,
     available_cores: Arc<Mutex<BTreeSet<usize>>>, // assume that smallest ids is fastest cores, hence we use btreeset to sort the core id's
@@ -86,6 +91,7 @@ impl SolverManager {
     pub async fn new(
         args: Args,
         solver_args: HashMap<String, Vec<String>>,
+        solver_info: Arc<solver_discovery::Solvers>,
         token: CancellationToken,
     ) -> std::result::Result<Self, Error> {
         let objective_type = get_objective_type(&args.minizinc_exe, &args.model).await?;
@@ -113,9 +119,11 @@ impl SolverManager {
         Ok(Self {
             tx,
             solvers,
+            solver_info: solver_info.clone(),
             mzn_to_fzn: mzn_to_fzn::CachedConverter::new(args.clone()),
             args,
             best_objective,
+            objective_inserter: ObjectiveInserter::new(solver_info),
             objective_type,
             solver_args,
             available_cores: Arc::new(Mutex::new(cores)),
@@ -160,7 +168,12 @@ impl SolverManager {
         }
     }
 
-    fn get_fzn_command(&self, fzn_path: &Path, solver_name: &str, cores: usize) -> Command {
+    fn get_solver_command(
+        &self,
+        fzn_path: &Path,
+        solver_name: &str,
+        cores: usize,
+    ) -> Result<Command> {
         // Taskset approach (commented out, using sched_setaffinity instead)
         // let mut cmd = if !allocated_cores.is_empty() {
         //     let core_list = allocated_cores
@@ -176,8 +189,25 @@ impl SolverManager {
         //     Command::new(&self.args.minizinc_exe)
         // };
 
-        let mut cmd = Command::new(&self.args.minizinc_exe);
-        cmd.arg("--solver").arg(solver_name);
+        let solver = self.solver_info.get_by_id(solver_name);
+
+        let make_fzn_cmd = || {
+            let mut cmd = Command::new(&self.args.minizinc_exe);
+            cmd.arg("--solver").arg(solver_name);
+            cmd
+        };
+        let mut cmd = match solver {
+            Some(solver) => match solver.input_type() {
+                SolverInputType::Fzn => make_fzn_cmd(),
+                SolverInputType::Json => solver
+                    .executable()
+                    .ok_or_else(|| Error::ExecutableMissingForJsonSolver(solver_name.to_owned()))?
+                    .clone()
+                    .into_command(),
+            },
+            None => make_fzn_cmd(),
+        };
+
         cmd.arg(fzn_path);
 
         // Apply solver-specific arguments from config
@@ -189,9 +219,14 @@ impl SolverManager {
             logging::error_msg!("Solver '{solver_name}' does not have an arguments configuration");
         }
 
-        cmd.arg("-p").arg(cores.to_string());
+        let supports_p_flag = solver
+            .map(|solver| solver.supported_std_flags().p)
+            .unwrap_or(true);
+        if supports_p_flag {
+            cmd.arg("-p").arg(cores.to_string());
+        }
 
-        cmd
+        Ok(cmd)
     }
 
     fn get_ozn_command(&self, ozn_path: &Path) -> Command {
@@ -211,8 +246,15 @@ impl SolverManager {
         let conversion_paths = self.mzn_to_fzn.convert(solver_name).await?;
 
         let (fzn_final_path, fzn_guard) = if let Some(obj) = objective {
-            if let Ok(new_temp_file) =
-                insert_objective(conversion_paths.fzn(), &self.objective_type, obj).await
+            if let Ok(new_temp_file) = self
+                .objective_inserter
+                .insert_objective(
+                    solver_name,
+                    conversion_paths.fzn(),
+                    &self.objective_type,
+                    obj,
+                )
+                .await
             {
                 (new_temp_file.file_path().to_path_buf(), Some(new_temp_file))
             } else {
@@ -242,7 +284,7 @@ impl SolverManager {
         //     }
         // }
 
-        let mut fzn_cmd = self.get_fzn_command(&fzn_final_path, solver_name, cores);
+        let mut fzn_cmd = self.get_solver_command(&fzn_final_path, solver_name, cores)?;
         #[cfg(unix)]
         fzn_cmd.process_group(0); // let OS give it a group process id
         fzn_cmd.stderr(Stdio::piped());

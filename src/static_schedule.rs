@@ -4,6 +4,7 @@ use crate::{
     args::{Args, Verbosity},
     logging,
     scheduler::{Portfolio, SolverInfo},
+    solvers,
 };
 
 pub async fn static_schedule(args: &Args, cores: usize) -> Result<Portfolio> {
@@ -81,7 +82,7 @@ fn parse_schedule_line(line: &str) -> std::result::Result<SolverInfo, ParseError
 }
 
 fn default_schedule(cores: usize) -> Portfolio {
-    vec![SolverInfo::new("cp-sat".to_string(), cores)]
+    vec![SolverInfo::new(solvers::CP_SAT_ID.to_owned(), cores)]
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

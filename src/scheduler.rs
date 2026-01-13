@@ -3,6 +3,7 @@ use crate::{
     config::Config,
     logging,
     model_parser::ObjectiveValue,
+    solver_discovery,
     solver_manager::{Error, SolverManager},
 };
 use std::collections::{HashMap, HashSet};
@@ -89,10 +90,13 @@ impl Scheduler {
     pub async fn new(
         args: &Args,
         config: &Config,
+        solver_info: Arc<solver_discovery::Solvers>,
         token: CancellationToken,
     ) -> std::result::Result<Self, Error> {
-        let solver_manager =
-            Arc::new(SolverManager::new(args.clone(), config.solver_args.clone(), token).await?);
+        let solver_manager = Arc::new(
+            SolverManager::new(args.clone(), config.solver_args.clone(), solver_info, token)
+                .await?,
+        );
 
         let memory_limit = std::env::var("MEMORY_LIMIT")
             .ok()
