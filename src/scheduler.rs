@@ -1,5 +1,5 @@
 use crate::{
-    args::{Args, DebugVerbosityLevel},
+    args::{Args, Verbosity},
     config::Config,
     logging,
     model_parser::ObjectiveValue,
@@ -73,7 +73,7 @@ struct MemoryEnforcerState {
     next_solver_id: u64,
     prev_objective: Option<ObjectiveValue>,
     config: Config,
-    debug_verbosity: DebugVerbosityLevel,
+    debug_verbosity: Verbosity,
 }
 
 pub struct Scheduler {
@@ -100,7 +100,7 @@ impl Scheduler {
             .map(|mib| mib * 1024 * 1024)
             .unwrap_or(0);
 
-        let debug_verbosity = args.debug_verbosity;
+        let debug_verbosity = args.verbosity;
 
         let state = Arc::new(Mutex::new(MemoryEnforcerState {
             running_solvers: HashMap::new(),
@@ -333,10 +333,12 @@ impl Scheduler {
                 state.prev_objective,
                 new_objective
             );
+
             state.prev_objective = new_objective;
 
             if let Some(obj) = new_objective {
                 let solver_objectives = self.solver_manager.get_solver_objectives().await;
+
                 let objective_type = self.solver_manager.objective_type();
                 let to_restart: Vec<u64> = solver_objectives
                     .iter()
@@ -348,7 +350,6 @@ impl Scheduler {
                     logging::info!("solver objectives: {:?}", solver_objectives);
                     logging::info!("solver to restart {:?}", to_restart);
                 }
-
                 self.solver_manager.stop_solvers(&to_restart).await?;
 
                 for id in &to_restart {
@@ -364,7 +365,7 @@ impl Scheduler {
                 .await;
         Self::apply_changes_to_state(&mut state, &changes);
 
-        if state.debug_verbosity >= DebugVerbosityLevel::Info
+        if state.debug_verbosity >= Verbosity::Info
             && (!changes.to_start.is_empty()
                 || !changes.to_suspend.is_empty()
                 || !changes.to_resume.is_empty())

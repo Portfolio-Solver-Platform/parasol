@@ -8,8 +8,8 @@ fn test_cli_success() {
     cmd.args([
         "tests/data/accap.mzn",
         "tests/data/accap_instance6.dzn",
-        "--debug-verbosity",
-        "warning",
+        "-v",
+        "info",
     ])
     .assert()
     .success()
@@ -20,12 +20,8 @@ fn test_cli_success() {
 fn test_cli_failure() {
     let path = assert_cmd::cargo::cargo_bin!("portfolio-solver-framework");
     let mut cmd = Command::new(path);
-    cmd.args([
-        "tests/data/accap_instance6.dzn",
-        "--debug-verbosity",
-        "warning",
-    ])
-    .assert()
-    .failure()
-    .stderr(contains("ERROR"));
+    cmd.args(["tests/data/accap_instance6.dzn", "-v", "info"])
+        .assert()
+        .failure()
+        .stderr(contains("ERROR"));
 }

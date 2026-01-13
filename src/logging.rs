@@ -1,9 +1,9 @@
-use crate::args::DebugVerbosityLevel;
+use crate::args::Verbosity;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 static CURRENT_VERBOSITY: AtomicU8 = AtomicU8::new(LEVEL_WARNING);
 
-pub fn init(verbosity: DebugVerbosityLevel) {
+pub fn init(verbosity: Verbosity) {
     CURRENT_VERBOSITY.store(verbosity as u8, Ordering::Relaxed);
 }
 
