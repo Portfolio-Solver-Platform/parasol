@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::args::Args;
+use crate::{args::Args, solver_discovery};
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -10,31 +10,25 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(args: &Args) -> Self {
+    pub fn new(program_args: &Args, solvers: &solver_discovery::Solvers) -> Self {
         let mut solver_args = HashMap::new();
 
-        // Default args for most solvers
-        let mut default_args = vec!["-i".to_string()];
-        if args.ignore_search {
-            default_args.push("-f".to_string());
-        }
+        for solver in solvers.iter() {
+            let supported_flags = solver.supported_std_flags();
+            let mut args: Vec<String> = vec![];
 
-        solver_args.insert("gecode".to_string(), default_args.clone());
-        solver_args.insert("chuffed".to_string(), default_args.clone());
-        solver_args.insert("coinbc".to_string(), default_args.clone());
-        solver_args.insert("cp-sat".to_string(), default_args.clone());
-        solver_args.insert("yuck".to_string(), default_args.clone());
-        solver_args.insert("huub".to_string(), default_args.clone());
-        solver_args.insert("choco".to_string(), default_args.clone());
-        solver_args.insert("pumpkin".to_string(), default_args.clone());
-        solver_args.insert("highs".to_string(), default_args.clone());
+            if supported_flags.i {
+                args.push("-i".to_owned());
+            } else if supported_flags.a {
+                args.push("-a".to_owned());
+            }
 
-        // Picat doesn't support -i flag
-        let mut picat_args = vec!["-a".to_string()];
-        if args.ignore_search {
-            picat_args.push("-f".to_string());
+            if program_args.ignore_search && supported_flags.f {
+                args.push("-f".to_string());
+            }
+
+            solver_args.insert(solver.id().to_owned(), args);
         }
-        solver_args.insert("picat".to_string(), picat_args);
 
         Self {
             memory_enforcer_interval: 3,

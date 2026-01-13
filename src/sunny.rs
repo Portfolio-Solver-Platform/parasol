@@ -1,10 +1,12 @@
+use std::sync::Arc;
+
 use crate::config::Config;
 use crate::fzn_to_features::fzn_to_features;
 use crate::mzn_to_fzn::convert_mzn;
 use crate::scheduler::{Portfolio, Scheduler};
 use crate::static_schedule::{static_schedule, timeout_schedule};
 use crate::{ai::Ai, args::Args};
-use crate::{logging, solver_manager};
+use crate::{logging, solver_discovery, solver_manager};
 use tokio::time::{Duration, sleep, timeout};
 use tokio_util::sync::CancellationToken;
 const FEATURES_SOLVER: &str = "gecode";
@@ -13,9 +15,10 @@ pub async fn sunny(
     args: &Args,
     ai: Option<impl Ai>,
     config: Config,
+    solvers: Arc<solver_discovery::Solvers>,
     token: CancellationToken,
 ) -> Result<(), ()> {
-    let mut scheduler = Scheduler::new(args, &config, token)
+    let mut scheduler = Scheduler::new(args, &config, solvers, token)
         .await
         .map_err(|e| logging::error!(e.into()))?;
 
@@ -153,7 +156,7 @@ async fn start_without_ai(
 fn get_cores(args: &Args, ai: &Option<impl Ai>) -> (usize, usize) {
     let mut cores = args.cores;
 
-    let initial_solver_cores = if args.pin_cores && ai.is_some() {
+    let initial_solver_cores = if args.pin_yuck && ai.is_some() {
         if cores <= 1 {
             logging::warning!("Too few cores are set. Using 2 cores");
             cores = 2;

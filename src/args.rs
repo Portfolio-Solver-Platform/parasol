@@ -50,9 +50,9 @@ pub struct Args {
     #[arg(short = 'p', default_value = "2", help_heading = "Execution")]
     pub cores: usize,
 
-    /// Pin solver processes to specific CPU cores. This guarantees that we never use more than the allowed cpu (except for printing to stdout)
+    /// Pin the yuck solver processes to specific CPU cores. The yuck is written in java, hence it can use more cpu than it was given. This guarantees that we never use more than the allowed cpu (except for printing to stdout)
     #[arg(long, help_heading = "Execution")]
-    pub pin_cores: bool,
+    pub pin_yuck: bool,
 
     /// Enable free search for all solvers
     #[arg(long, short = 'f', help_heading = "Execution")]

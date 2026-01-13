@@ -25,3 +25,8 @@ core_affinity = "0.8.3"
 [dev-dependencies]
 predicates = "3.1"
 assert_cmd = "2.1.2"
+
+
+[profile.release]
+debug = true
+
