@@ -348,8 +348,7 @@ impl SolverManager {
                     }
                 }
 
-                let mut map: tokio::sync::MutexGuard<'_, HashMap<u64, SolverProcess>> =
-                    solvers_clone.lock().await;
+                let mut map = solvers_clone.lock().await;
                 map.remove(&solver_id);
             });
         }

@@ -35,12 +35,13 @@ pub struct Args {
         long,
         short = 'o',
         value_enum,
+        default_value = "dzn",
         ignore_case = true,
         help_heading = "Output"
     )]
-    pub output_mode: Option<OutputMode>,
+    pub output_mode: OutputMode,
 
-    /// Whether to output the objective in the `_objective` format
+    /// This is only there for the competition, it will always output objective
     #[arg(long, help_heading = "Output")]
     pub output_objective: bool,
 
@@ -49,7 +50,7 @@ pub struct Args {
     #[arg(short = 'p', default_value = "2", help_heading = "Execution")]
     pub cores: usize,
 
-    /// Pin solver processes to specific CPU cores. This garantuees that we never use more than the allowed cpu (except for printing to stdout)
+    /// Pin solver processes to specific CPU cores. This guarantees that we never use more than the allowed cpu (except for printing to stdout)
     #[arg(long, help_heading = "Execution")]
     pub pin_cores: bool,
 
@@ -66,7 +67,8 @@ pub struct Args {
     #[arg(long, default_value = "7", help_heading = "Timing")]
     pub restart_interval: u64,
 
-    /// The time (in seconds) before we skip extracting the features and stop using the static schedule, and instead use the timeout schedule
+    /// The time (in seconds) before we skip extracting the features and stop using the static schedule, and instead use the timeout schedule.
+    /// Warning: if static_runtime set higher than feature_timeout, then static_runtime will be used instead.
     #[arg(long, default_value = "10", help_heading = "Timing")]
     pub feature_timeout: u64,
 

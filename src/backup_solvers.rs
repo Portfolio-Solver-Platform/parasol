@@ -27,16 +27,10 @@ pub async fn run_backup_solver(args: &Args, cores: usize) -> Result<()> {
         }
     }
 
-    if args.output_objective {
-        cmd.arg("--output-objective");
-    }
+    cmd.arg("--output-objective");
+    cmd.arg("--output-mode");
+    cmd.arg(args.output_mode.to_string());
 
-    if let Some(output_mode) = &args.output_mode {
-        cmd.arg("--output-mode");
-        cmd.arg(output_mode.to_string());
-    } else {
-        cmd.args(["--output-mode", "dzn"]);
-    }
     cmd.arg("-p").arg(cores.to_string());
 
     let mut child = cmd.spawn()?;

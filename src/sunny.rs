@@ -70,40 +70,57 @@ async fn start_with_ai(
     initial_schedule: Portfolio,
     cores: usize,
 ) -> Result<Portfolio, ()> {
-    let feature_extraction_max_duration = Duration::from_secs(args.feature_timeout);
-    let (static_schedule_apply_result, features_result) = tokio::join!(
-        timeout(
-            feature_extraction_max_duration,
-            scheduler.apply(initial_schedule.clone())
-        ),
-        timeout(feature_extraction_max_duration, get_features(args))
-    );
+    let feature_timeout_duration =
+        Duration::from_secs(args.feature_timeout.max(args.static_runtime)); // if static runtime is higher thatn feature_runtime, we anyways have to wait, so we have more time to extract features
+    let static_runtime_duration = Duration::from_secs(args.static_runtime);
+    let barrier = async {
+        tokio::join!(
+            timeout(feature_timeout_duration, get_features(args)),
+            sleep(static_runtime_duration)
+        )
+    };
+    tokio::pin!(barrier);
+
+    let scheduler_task = scheduler.apply(initial_schedule.clone());
+    tokio::pin!(scheduler_task);
+
+    let (features_result, static_schedule_finished) = tokio::select! {
+        (feat_res, _sleep_res) = &mut barrier => {
+            (feat_res, None)
+        }
+
+        sched_res = &mut scheduler_task => {
+            let (feat_res, _sleep_res) = barrier.await;
+            (feat_res, Some(sched_res))
+        }
+    };
 
     let schedule = match features_result {
         Ok(features_result) => {
+            dbg!("got features");
             let features = features_result?;
             ai.schedule(&features, cores)
                 .map_err(|e| logging::error!(e.into()))?
         }
         Err(_) => {
-            logging::warning!("Feature extraction timed out. Running timeout schedule");
+            logging::info!("Feature extraction timed out. Running timeout schedule");
             timeout_schedule(args, cores)
                 .await
                 .map_err(|e| logging::error!(e.into()))?
         }
     };
 
-    match static_schedule_apply_result {
-        Ok(Ok(())) => {}
-        Ok(Err(errors)) => {
+    match static_schedule_finished {
+        Some(Ok(())) => {}
+        Some(Err(errors)) => {
             let error_len = errors.len();
             handle_schedule_errors(errors);
-            if error_len == schedule.len() {
+            if error_len == initial_schedule.len() {
                 return Err(());
             }
         }
-        Err(_) => {
-            logging::warning!("applying static schedule timed out");
+        None => {
+            logging::info!("applying static schedule timed out");
         }
     }
     Ok(schedule)
@@ -114,7 +131,7 @@ async fn start_without_ai(
     scheduler: &mut Scheduler,
     schedule: Portfolio,
 ) -> Result<Portfolio, ()> {
-    let static_runtime = Duration::from_secs(args.feature_timeout);
+    let static_runtime = Duration::from_secs(args.static_runtime);
 
     let apply_result = timeout(static_runtime, scheduler.apply(schedule.clone())).await;
 

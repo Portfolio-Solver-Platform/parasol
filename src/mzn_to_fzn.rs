@@ -126,12 +126,8 @@ fn get_mzn_to_fzn_cmd(
     cmd.args(["--solver", solver_name]);
     cmd.arg("-o").arg(fzn_result_path);
     cmd.arg("--output-objective");
-    if let Some(output_mode) = &args.output_mode {
-        cmd.arg("--output-mode");
-        cmd.arg(output_mode.to_string());
-    } else {
-        cmd.args(["--output-mode", "dzn"]);
-    }
+    cmd.arg("--output-mode");
+    cmd.arg(args.output_mode.to_string());
 
     cmd.arg("--ozn");
     cmd.arg(ozn_result_path);
