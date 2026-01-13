@@ -202,7 +202,7 @@ impl Solver {
 }
 
 impl Executable {
-    pub fn to_command(self) -> Command {
+    pub fn into_command(self) -> Command {
         Command::new(self.0)
     }
 }

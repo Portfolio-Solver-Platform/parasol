@@ -199,16 +199,11 @@ impl SolverManager {
         let mut cmd = match solver {
             Some(solver) => match solver.input_type() {
                 SolverInputType::Fzn => make_fzn_cmd(),
-                SolverInputType::Json => {
-                    let command = solver
-                        .executable()
-                        .ok_or_else(|| {
-                            Error::ExecutableMissingForJsonSolver(solver_name.to_owned())
-                        })?
-                        .clone()
-                        .to_command();
-                    command
-                }
+                SolverInputType::Json => solver
+                    .executable()
+                    .ok_or_else(|| Error::ExecutableMissingForJsonSolver(solver_name.to_owned()))?
+                    .clone()
+                    .into_command(),
             },
             None => make_fzn_cmd(),
         };

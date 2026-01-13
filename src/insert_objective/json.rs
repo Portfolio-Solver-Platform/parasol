@@ -21,8 +21,7 @@ pub async fn insert_objective(
         return Err(Error::NoStatements(content));
     }
 
-    let mut json: serde_json::Value =
-        serde_json::from_str(&content).map_err(|e| Error::JsonParse(e))?;
+    let mut json: serde_json::Value = serde_json::from_str(&content).map_err(Error::JsonParse)?;
 
     let objective_name = get_objective_name_from_json(objective_type, &json)?;
 
