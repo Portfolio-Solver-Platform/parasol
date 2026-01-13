@@ -174,6 +174,7 @@ impl SolverManager {
         solver_name: &str,
         cores: usize,
     ) -> Result<Command> {
+
         let solver = self.solver_info.get_by_id(solver_name);
 
         let make_fzn_cmd = || {
@@ -192,6 +193,7 @@ impl SolverManager {
             },
             None => make_fzn_cmd(),
         };
+
 
         cmd.arg(fzn_path);
 
