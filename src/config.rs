@@ -4,7 +4,6 @@ use crate::{args::Args, solver_discovery};
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub dynamic_schedule_interval: u64,
     pub memory_enforcer_interval: u64,
     pub memory_threshold: f64,
     pub solver_args: HashMap<String, Vec<String>>,
@@ -32,7 +31,6 @@ impl Config {
         }
 
         Self {
-            dynamic_schedule_interval: 5,
             memory_enforcer_interval: 3,
             memory_threshold: 0.9,
             solver_args,

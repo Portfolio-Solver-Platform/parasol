@@ -89,7 +89,7 @@ async fn run_mzn_to_fzn_cmd(
 
     let mut child = cmd.spawn()?;
 
-    if args.debug_verbosity >= crate::args::DebugVerbosityLevel::Warning
+    if args.verbosity >= crate::args::Verbosity::Warning
         && let Some(stderr) = child.stderr.take()
     {
         tokio::spawn(async move {
@@ -126,12 +126,8 @@ fn get_mzn_to_fzn_cmd(
     cmd.args(["--solver", solver_name]);
     cmd.arg("-o").arg(fzn_result_path);
     cmd.arg("--output-objective");
-    if let Some(output_mode) = &args.output_mode {
-        cmd.arg("--output-mode");
-        cmd.arg(output_mode.to_string());
-    } else {
-        cmd.args(["--output-mode", "dzn"]);
-    }
+    cmd.arg("--output-mode");
+    cmd.arg(args.output_mode.to_string());
 
     cmd.arg("--ozn");
     cmd.arg(ozn_result_path);

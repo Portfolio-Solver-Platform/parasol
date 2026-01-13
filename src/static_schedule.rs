@@ -1,23 +1,41 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    args::{Args, DebugVerbosityLevel},
+    args::{Args, Verbosity},
     logging,
     scheduler::{Portfolio, SolverInfo},
     solvers,
 };
 
 pub async fn static_schedule(args: &Args, cores: usize) -> Result<Portfolio> {
-    let schedule = match args.static_schedule_path.as_ref() {
+    let schedule = match args.static_schedule.as_ref() {
         Some(path) => get_schedule_from_file(path).await?,
         None => default_schedule(cores),
     };
 
-    if args.debug_verbosity >= DebugVerbosityLevel::Warning {
+    if args.verbosity >= Verbosity::Warning {
         let schedule_cores = schedule_cores(&schedule);
         if schedule_cores != cores {
             logging::warning!(
                 "The static schedule cores ({schedule_cores}) does not match the framework's designated cores ({cores})"
+            );
+        }
+    }
+
+    Ok(schedule)
+}
+
+pub async fn timeout_schedule(args: &Args, cores: usize) -> Result<Portfolio> {
+    let schedule = match args.timeout_schedule.as_ref() {
+        Some(path) => get_schedule_from_file(path).await?,
+        None => default_schedule(cores),
+    };
+
+    if args.verbosity >= Verbosity::Warning {
+        let schedule_cores = schedule_cores(&schedule);
+        if schedule_cores != cores {
+            logging::warning!(
+                "The timeout schedule cores ({schedule_cores}) does not match the framework's designated cores ({cores})"
             );
         }
     }
@@ -64,7 +82,7 @@ fn parse_schedule_line(line: &str) -> std::result::Result<SolverInfo, ParseError
 }
 
 fn default_schedule(cores: usize) -> Portfolio {
-    vec![SolverInfo::new(solvers::HUUB_ID.to_owned(), cores)]
+    vec![SolverInfo::new(solvers::CP_SAT_ID.to_owned(), cores)]
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

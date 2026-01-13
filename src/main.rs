@@ -31,7 +31,7 @@ use tokio_util::sync::CancellationToken;
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let args = Args::parse();
-    logging::init(args.debug_verbosity);
+    logging::init(args.verbosity);
 
     // // Pin the framework to the first core when --pin-cores is enabled
     // if args.pin_cores {
@@ -58,11 +58,15 @@ async fn main() {
     })
     .expect("Error setting Ctrl-C handler");
 
-    let cores = args.cores.unwrap_or(2);
+    let cores = args.cores;
 
     let result = match args.ai {
+        Ai::None => tokio::select! {
+            result = sunny(&args, None::<SimpleAi>, config, Arc::new(solvers), token.clone()) => result,
+            _ = token.cancelled() => Ok(())
+        },
         Ai::Simple => tokio::select! {
-            result = sunny(&args, SimpleAi {}, config, Arc::new(solvers), token.clone()) => result,
+            result = sunny(&args, Some(SimpleAi {}), config, Arc::new(solvers), token.clone()) => result,
             _ = token.cancelled() => Ok(())
         },
         Ai::CommandLine => {
@@ -74,9 +78,9 @@ async fn main() {
                 exit(1);
             };
 
-            let ai = crate::ai::commandline::Ai::new(command.clone(), args.debug_verbosity);
+            let ai = crate::ai::commandline::Ai::new(command.clone(), args.verbosity);
             tokio::select! {
-                result = sunny(&args, ai, config, Arc::new(solvers), token.clone()) => result,
+                result = sunny(&args, Some(ai), config, Arc::new(solvers), token.clone()) => result,
                 _ = token.cancelled() => Ok(())
             }
         }
