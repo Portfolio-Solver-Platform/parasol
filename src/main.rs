@@ -12,10 +12,12 @@ mod scheduler;
 mod solver_discovery;
 mod solver_manager;
 mod solver_output;
+mod solvers;
 mod static_schedule;
 mod sunny;
 
 use std::process::exit;
+use std::sync::Arc;
 
 use crate::ai::SimpleAi;
 use crate::args::{Ai, parse_ai_config};
@@ -39,7 +41,15 @@ async fn main() {
     //         }
     //     }
     // }
-    let config = Config::new(&args);
+
+    let solvers = solver_discovery::discover(&args.minizinc_exe)
+        .await
+        .unwrap_or_else(|e| {
+            logging::error!(e.into());
+            solver_discovery::Solvers::empty()
+        });
+
+    let config = Config::new(&args, &solvers);
     let token = CancellationToken::new();
     let token_signal = token.clone();
 
@@ -52,7 +62,7 @@ async fn main() {
 
     let result = match args.ai {
         Ai::Simple => tokio::select! {
-            result = sunny(&args, SimpleAi {}, config, token.clone()) => result,
+            result = sunny(&args, SimpleAi {}, config, Arc::new(solvers), token.clone()) => result,
             _ = token.cancelled() => Ok(())
         },
         Ai::CommandLine => {
@@ -66,7 +76,7 @@ async fn main() {
 
             let ai = crate::ai::commandline::Ai::new(command.clone(), args.debug_verbosity);
             tokio::select! {
-                result = sunny(&args, ai, config, token.clone()) => result,
+                result = sunny(&args, ai, config, Arc::new(solvers), token.clone()) => result,
                 _ = token.cancelled() => Ok(())
             }
         }

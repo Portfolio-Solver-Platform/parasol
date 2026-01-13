@@ -15,16 +15,10 @@ pub async fn sunny(
     args: &Args,
     ai: impl Ai,
     config: Config,
+    solvers: Arc<solver_discovery::Solvers>,
     token: CancellationToken,
 ) -> Result<(), ()> {
-    let solvers = solver_discovery::discover(&args.minizinc_exe)
-        .await
-        .unwrap_or_else(|e| {
-            logging::error!(e.into());
-            solver_discovery::Solvers::empty()
-        });
-
-    let mut scheduler = Scheduler::new(args, &config, Arc::new(solvers), token)
+    let mut scheduler = Scheduler::new(args, &config, solvers, token)
         .await
         .map_err(|e| logging::error!(e.into()))?;
 

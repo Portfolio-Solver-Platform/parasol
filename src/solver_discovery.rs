@@ -9,28 +9,32 @@ use tokio::process::Command;
 
 use crate::logging;
 
+#[derive(Debug, Clone)]
 pub struct Solver {
-    name: String,
-    executable: Executable,
+    id: String,
+    executable: Option<Executable>,
     supported_std_flags: SupportedStdFlags,
     input_type: SolverInputType,
 }
 
+#[derive(Debug, Clone)]
 pub struct SupportedStdFlags {
-    a: bool,
-    i: bool,
-    f: bool,
-    p: bool,
+    pub a: bool,
+    pub i: bool,
+    pub f: bool,
+    pub p: bool,
 }
 
+#[derive(Debug, Clone)]
 pub enum SolverInputType {
     Fzn,
     Json,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Executable(PathBuf);
 
+#[derive(Debug, Clone)]
 pub struct Solvers(Vec<Solver>);
 
 impl Solvers {
@@ -42,8 +46,9 @@ impl Solvers {
         self.0.iter()
     }
 
-    pub fn get_by_name(&self, name: &str) -> Option<&Solver> {
-        self.0.iter().find(|solver| solver.name == name)
+    pub fn get_by_id(&self, name: &str) -> Option<&Solver> {
+        let lowered_id = name.to_lowercase();
+        self.0.iter().find(|solver| solver.id == lowered_id)
     }
 
     fn from_json(json: Value) -> Result<Self> {
@@ -56,35 +61,28 @@ impl Solvers {
         let mut solvers: Vec<Solver> = vec![];
         for solver_json in array {
             match Solver::from_json(solver_json) {
-                Ok(Some(solver)) => solvers.push(solver),
-                Ok(None) => {}
+                Ok(solver) => solvers.push(solver),
                 Err(e) => logging::error!(e.into()),
             }
         }
+        logging::info!("Discovered solvers: {solvers:?}");
 
         Ok(Self(solvers))
     }
 }
 
 impl Solver {
-    fn from_json(json: Value) -> SolverParseResult<Option<Self>> {
+    fn from_json(json: Value) -> SolverParseResult<Self> {
         let Value::Object(mut object) = json else {
             return Err(SolverParseError::NotAnObject(json));
         };
 
-        let name = Self::string_from_json("name", &mut object)?;
-
-        let Some(executable_result) = Self::executable_from_json(&mut object) else {
-            logging::info!("Solver with name '{name}' has no 'executable' field");
-            return Ok(None);
-        };
-
-        Ok(Some(Self {
-            name: name,
-            executable: executable_result?,
+        Ok(Self {
+            id: Self::string_from_json("id", &mut object)?.to_lowercase(),
+            executable: Self::executable_from_json(&mut object).transpose()?,
             supported_std_flags: Self::std_flags_from_json(&mut object)?,
             input_type: Self::input_type_from_json(&mut object)?,
-        }))
+        })
     }
 
     fn field_from_json(
@@ -222,12 +220,20 @@ async fn run_discover_command(minizinc_exe: &Path) -> Result<Vec<u8>> {
 }
 
 impl Solver {
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
     pub fn input_type(&self) -> &SolverInputType {
         &self.input_type
     }
 
-    pub fn executable(&self) -> &Executable {
-        &self.executable
+    pub fn executable(&self) -> Option<&Executable> {
+        self.executable.as_ref()
+    }
+
+    pub fn supported_std_flags(&self) -> &SupportedStdFlags {
+        &self.supported_std_flags
     }
 }
 

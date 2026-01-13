@@ -1,5 +1,4 @@
 use crate::args::Args;
-use crate::config::Config;
 use tokio::process::Command;
 
 #[derive(Debug, thiserror::Error)]
@@ -12,7 +11,6 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub async fn run_backup_solver(args: &Args, cores: usize) -> Result<()> {
-    let config = Config::new(args);
     let mut cmd = Command::new(&args.minizinc_exe);
     cmd.arg("--solver").arg("cp-sat");
 
@@ -21,11 +19,7 @@ pub async fn run_backup_solver(args: &Args, cores: usize) -> Result<()> {
         cmd.arg(data);
     }
 
-    if let Some(solver_args) = config.solver_args.get("cp-sat") {
-        for arg in solver_args {
-            cmd.arg(arg);
-        }
-    }
+    cmd.arg("-i").arg("-f");
 
     if args.output_objective {
         cmd.arg("--output-objective");

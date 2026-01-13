@@ -7,7 +7,8 @@
   "stdFlags": ["-p", "-f"],
   "extraFlags": [
     ["--output-mode", "Output solutions in DZN format", "string", "dzn"],
-    ["--output-objective", "Output the objective value as _objective for optimisation problems", "bool", ""]
+    ["--output-objective", "Output the objective value as _objective for optimisation problems", "bool", ""],
+    ["--debug-verbosity", "", "string", ""]
   ],
   "inputType": "MZN",
   "supportsMzn": true,

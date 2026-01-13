@@ -1,5 +1,8 @@
 pub mod commandline;
-use crate::scheduler::{Portfolio, SolverInfo};
+use crate::{
+    scheduler::{Portfolio, SolverInfo},
+    solvers,
+};
 pub type Features = Vec<f32>;
 
 #[derive(Debug, thiserror::Error)]
@@ -18,11 +21,7 @@ pub struct SimpleAi {}
 
 impl Ai for SimpleAi {
     fn schedule(&mut self, _features: &Features, cores: usize) -> Result<Portfolio> {
-        let solvers = [
-            "coinbc", "picat", "cp-sat", "yuck", "highs", "choco", "pumpkin",
-        ];
-
-        Ok(solvers
+        Ok(solvers::ALL_IDS
             .iter()
             .take(cores)
             .map(|solver| SolverInfo::new(solver.to_string(), 1))

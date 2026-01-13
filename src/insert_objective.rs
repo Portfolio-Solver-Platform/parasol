@@ -26,7 +26,7 @@ impl ObjectiveInserter {
     ) -> Result<TempFile> {
         let input_type = self
             .solvers
-            .get_by_name(solver_name)
+            .get_by_id(solver_name)
             .map(|solver| solver.input_type())
             .unwrap_or_else(|| {
                 logging::error_msg!(
