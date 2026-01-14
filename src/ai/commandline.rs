@@ -43,7 +43,9 @@ impl super::Ai for Ai {
             )));
         }
 
-        parse_output_as_schedule(output.stdout)
+        let k = parse_output_as_schedule(output.stdout);
+        dbg!(&k);
+        k
     }
 }
 

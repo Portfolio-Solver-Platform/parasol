@@ -3,3 +3,8 @@
 
 perf.data*
 flamegraph.svg
+
+*.pyc
+
+command-line-ai/data/*
+!command-line-ai/data/knn_model.pkl

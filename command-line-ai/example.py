@@ -2,6 +2,19 @@
 
 import argparse
 
+HUUB_ID = "solutions.huub"
+CP_SAT_ID = "cp-sat"
+COIN_BC_ID = "org.minizinc.mip.coin-bc"
+CHOCO_ID = "org.choco.choco"
+GECODE_ID = "org.gecode.gecode"
+GUROBI_ID = "org.minizinc.mip.gurobi"
+HIGHS_ID = "org.minizinc.mip.highs"
+PICAT_ID = "org.picat-lang.picat"
+PUMPKIN_ID = "nl.tudelft.algorithmics.pumpkin"
+SCIP_ID = "org.minizinc.mip.scip"
+YUCK_ID = "yuck"
+
+
 
 def parse_comma_separated_floats(input_str):
     try:
@@ -38,7 +51,7 @@ def main():
 
 
 def schedule(features: list[float], cores: int) -> list[tuple[str, int]]:
-    return [("gecode", cores // 2), ("coinbc", cores // 2)]
+    return [(GECODE_ID, cores // 2), (COIN_BC_ID, cores // 2)]
 
 
 if __name__ == "__main__":

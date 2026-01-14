@@ -98,8 +98,8 @@ impl Solver {
         let id = Self::string_from_json("id", &mut object)?.to_lowercase();
         Ok(Self {
             executable: Self::executable_from_json(&mut object).transpose()?,
-            supported_std_flags: Self::std_flags_from_json(&mut object)?,
             input_type: Self::input_type_from_json(&id, &mut object)?,
+            supported_std_flags: Self::std_flags_from_json(&id, &mut object)?,
             id,
         })
     }
@@ -180,9 +180,22 @@ impl Solver {
     }
 
     fn std_flags_from_json(
+        solver_id: &str,
         object: &mut Map<String, Value>,
     ) -> SolverParseResult<SupportedStdFlags> {
-        let flags_json = Self::array_from_json("stdFlags", object)?;
+        const FIELD_NAME: &str = "stdFlags";
+        let flags_json_result = Self::array_from_json(FIELD_NAME, object);
+        let Ok(flags_json) = flags_json_result else {
+            logging::warning!(
+                "solver with ID '{solver_id}' does not state its supported standard flags (the '{FIELD_NAME}' field) in its configuration. We assume that it supports '-i' and '-p'. If you mean that it does not support any standard flags, please set '{FIELD_NAME}' to the empty array"
+            );
+            return Ok(SupportedStdFlags {
+                i: true,
+                p: true,
+                ..Default::default()
+            });
+        };
+
         let mut supported_flags = HashSet::<String>::new();
         for flag_json in flags_json {
             let Value::String(flag) = flag_json else {
