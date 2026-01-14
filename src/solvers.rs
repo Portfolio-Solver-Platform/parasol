@@ -8,12 +8,11 @@ pub const GUROBI_ID: &str = "org.minizinc.mip.gurobi";
 pub const HIGHS_ID: &str = "org.minizinc.mip.highs";
 pub const PICAT_ID: &str = "org.picat-lang.picat";
 pub const PUMPKIN_ID: &str = "nl.tudelft.algorithmics.pumpkin";
-#[allow(dead_code)]
 pub const SCIP_ID: &str = "org.minizinc.mip.scip";
 pub const YUCK_ID: &str = "yuck";
 pub const CHUFFED_ID: &str = "org.chuffed.chuffed";
 
-pub const ALL_IDS: [&str; 10] = [
+pub const ALL_IDS: [&str; 11] = [
     COIN_BC_ID, PICAT_ID, HUUB_ID, CP_SAT_ID, CHOCO_ID, GECODE_ID, PUMPKIN_ID, YUCK_ID, HIGHS_ID,
-    CHUFFED_ID,
+    CHUFFED_ID, SCIP_ID,
 ];

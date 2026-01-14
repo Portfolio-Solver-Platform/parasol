@@ -143,6 +143,10 @@ RUN mkdir bin \
     && jq '.executable = "/opt/chuffed/bin/fzn-chuffed"' chuffed.msc.template \
      | jq '.mznlib = "/opt/chuffed/share/minizinc/chuffed_lib"' > share/minizinc/solvers/chuffed.msc
 
+FROM base AS scip
+
+WORKDIR /opt/scip
+RUN wget -qO package.deb https://www.scipopt.org/download/release/SCIPOptSuite-9.2.4-Linux-ubuntu24.deb
 
 FROM base AS solver-configs
 
@@ -183,6 +187,15 @@ RUN wget https://picat-lang.org/download/picat394_linux64.tar.gz \
 
 RUN git clone https://github.com/nfzhou/fzn_picat.git /opt/fzn_picat
 
+# Install SCIP from a .deb package. This requires updating apt-get lists
+COPY --from=scip /opt/scip/package.deb ./scip-package.deb
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository universe \
+    && apt-get install -y ./scip-package.deb \
+    && rm ./scip-package.deb \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # Install solver configurations
 COPY --from=solver-configs /solvers/*.msc /usr/local/share/minizinc/solvers/
 
@@ -198,14 +211,17 @@ COPY --from=choco /opt/choco/ /opt/choco/
 COPY --from=pumpkin /opt/pumpkin/ /opt/pumpkin/
 COPY --from=gecode /opt/gecode/ /opt/gecode/
 COPY --from=chuffed /opt/chuffed/ /opt/chuffed/
-# Gecode also uses dynamically linked libraries, so register these with the system
-# Note that Chuffed may be dependent on these same linked libraries, but I'm not sure
-RUN echo "/opt/gecode/lib" > /etc/ld.so.conf.d/gecode.conf && ldconfig
 
 # Set our solver as the default
 RUN echo '{"tagDefaults": [["", "org.psp.sunny"]]}' > $HOME/.minizinc/Preferences.json
 
 COPY --from=builder /usr/src/app/target/release/portfolio-solver-framework /usr/local/bin/portfolio-solver-framework
+
+# Gecode also uses dynamically linked libraries, so register these with the system
+# Note that Chuffed may be dependent on these same linked libraries, but I'm not sure
+# This is done at the very end to make sure it doesn't mess with other commands
+RUN echo "/opt/gecode/lib" > /etc/ld.so.conf.d/gecode.conf \
+    && ldconfig
 
 FROM builder AS ci
 
