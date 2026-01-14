@@ -255,7 +255,7 @@ RUN echo "/opt/gecode/lib" > /etc/ld.so.conf.d/gecode.conf \
     && ldconfig
 
 # NOTE: For CPLEX support:
-#       1. Copy the libcplexXXXX.so file from your CPLEX installation into this repository and rename it to libcplex.so.
+#       1. Copy the cplex/bin/libcplexXXXX.so file from your CPLEX installation into the root of this repository and rename it to libcplex.so (this requires the Linux installation of CPLEX).
 #       2. Uncomment the following line of code:
 # COPY ./libcplex.so .
 
