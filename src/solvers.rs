@@ -12,8 +12,9 @@ pub const SCIP_ID: &str = "org.minizinc.mip.scip";
 pub const YUCK_ID: &str = "yuck";
 pub const CHUFFED_ID: &str = "org.chuffed.chuffed";
 pub const DEXTER_ID: &str = "dexter";
+pub const CPLEX_ID: &str = "org.minizinc.mip.cplex";
 
-pub const ALL_IDS: [&str; 12] = [
+pub const ALL_IDS: [&str; 13] = [
     COIN_BC_ID, PICAT_ID, HUUB_ID, CP_SAT_ID, CHOCO_ID, GECODE_ID, PUMPKIN_ID, YUCK_ID, HIGHS_ID,
-    CHUFFED_ID, SCIP_ID, DEXTER_ID,
+    CHUFFED_ID, SCIP_ID, DEXTER_ID, CPLEX_ID,
 ];
