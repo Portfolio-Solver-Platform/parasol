@@ -1,6 +1,9 @@
 FROM rust:1.91 AS rust
 FROM rust AS builder
 
+# The number of make jobs used when `make` is called
+ARG MAKE_JOBS=2
+
 WORKDIR /usr/src/app
 
 # Build dependencies only (so they are cached)
@@ -36,6 +39,7 @@ RUN apt-get update && apt-get install -y \
     git \
     curl \
     jq \
+    cmake \
     flex \
     bison \
     libxml++2.6-dev \
@@ -157,6 +161,23 @@ FROM base AS scip
 WORKDIR /opt/scip
 RUN wget -qO package.deb https://www.scipopt.org/download/release/SCIPOptSuite-9.2.4-Linux-ubuntu24.deb
 
+FROM base AS dexter
+
+WORKDIR /source
+RUN wget -qO source.tar.gz https://github.com/ddxter/gecode-dexter/archive/b46a6f557977c7b1863dc6b5885b69ebf9edcc14.tar.gz \
+    && tar xf source.tar.gz --strip-components=1 \
+    && rm source.tar.gz \
+    && cmake . \
+    && make -j${MAKE_JOBS}
+
+WORKDIR /opt/dexter
+RUN mkdir bin \
+    && mkdir -p share/minizinc/solvers \
+    && mv /source/bin/fzn-gecode bin/fzn-dexter \
+    && mv /source/gecode/ share/minizinc/dexter_lib/ \
+    && jq '.executable = "/opt/dexter/bin/fzn-dexter"' /source/tools/flatzinc/gecode.msc.in \
+     | jq '.mznlib = "/opt/dexter/share/minizinc/dexter_lib"' > share/minizinc/solvers/dexter.msc
+
 FROM base AS solver-configs
 
 COPY ./minizinc/solvers/ /solvers/
@@ -175,6 +196,7 @@ COPY --from=choco /opt/choco/share/minizinc/solvers/* .
 COPY --from=pumpkin /opt/pumpkin/share/minizinc/solvers/* .
 COPY --from=gecode /opt/gecode/share/minizinc/solvers/* .
 COPY --from=chuffed /opt/chuffed/share/minizinc/solvers/* .
+COPY --from=dexter /opt/dexter/share/minizinc/solvers/* .
 
 FROM base AS final
 
@@ -220,6 +242,7 @@ COPY --from=choco /opt/choco/ /opt/choco/
 COPY --from=pumpkin /opt/pumpkin/ /opt/pumpkin/
 COPY --from=gecode /opt/gecode/ /opt/gecode/
 COPY --from=chuffed /opt/chuffed/ /opt/chuffed/
+COPY --from=dexter /opt/dexter/ /opt/dexter/
 
 # Set our solver as the default
 RUN echo '{"tagDefaults": [["", "org.psp.sunny"]]}' > $HOME/.minizinc/Preferences.json
