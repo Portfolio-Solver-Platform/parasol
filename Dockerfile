@@ -1,6 +1,9 @@
 FROM rust:1.91 AS rust
 FROM rust AS builder
 
+# The number of make jobs used when `make` is called
+ARG MAKE_JOBS=2
+
 WORKDIR /usr/src/app
 
 # Build dependencies only (so they are cached)
@@ -156,7 +159,7 @@ RUN wget -qO source.tar.gz https://github.com/ddxter/gecode-dexter/archive/b46a6
     && tar xf source.tar.gz --strip-components=1 \
     && rm source.tar.gz \
     && cmake . \
-    && make
+    && make -j${MAKE_JOBS}
 
 WORKDIR /opt/dexter
 RUN mkdir bin \
