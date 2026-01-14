@@ -259,6 +259,12 @@ RUN echo "/opt/gecode/lib" > /etc/ld.so.conf.d/gecode.conf \
 #       2. Uncomment the following line of code:
 # COPY ./libcplex.so .
 
+
+# NOTE: For FICO Xpress support:
+#       1. Copy the entire xpressmp folder (the entire Xpress installation) into the root of this repository.
+#       2. Uncomment the following line of code:
+# COPY ./xpressmp/ /opt/xpressmp/
+
 FROM builder AS ci
 
 FROM final AS ci-integration

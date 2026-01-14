@@ -1,4 +1,6 @@
 {
     "tagDefaults": [["", "org.psp.sunny"]],
-    "solverDefaults": [["org.minizinc.mip.cplex","--cplex-dll","/app/libcplex.so"]]
+    "solverDefaults": [
+        ["org.minizinc.mip.cplex","--cplex-dll","/app/libcplex.so"]
+    ]
 }

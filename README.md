@@ -11,6 +11,8 @@ You can use the build argument `MAKE_JOBS` to set the number of jobs `make` is a
 
 If you want to use CPLEX with the framework, due to licensing reasons, it cannot be included in the Dockerfile by default. Instead, you need to provide CPLEX to the Dockerfile yourself. For details on how to do this, see the note near the bottom of the Dockerfile (search for "CPLEX" to find the note). 
 
+The same can be done for FICO Xpress, instead search for "Xpress".
+
 You run the Docker image like this:
 ```bash
 docker run -v /my/path/to/problems:/problems framework <command>
