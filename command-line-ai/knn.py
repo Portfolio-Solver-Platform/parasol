@@ -95,7 +95,7 @@ def distribuite_cores(preds_log, total_cores):
                 else:
                     gecode_idx = SOLVER_ORDER.index(GECODE_ID)
                     final_allocations[gecode_idx] += left_over
-                remaining_cores = 0
+            remaining_cores = 0
                 
     return final_allocations
 
