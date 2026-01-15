@@ -23,17 +23,16 @@ Alternatively, if you want to run the framework directly, use the command `portf
 
 ### Direct
 
+This section will describe how to run the framework's binary executable.
+
 Prerequisites:
 - You are on a Unix system
 - You need to have `minizinc` installed
+  - The solvers you want to use in the portfolio need to be installed for use in `minizinc`.
 
 When using the framework directly, you first need to build it with cargo: `cargo build --release`. This will place the executable in `./target/release/portfolio-solver-framework`.
 
 Use `<executable> --help` to see how to use the program, where `<executable>` is the path to the executable.
-
-Some additional information about select options:
-- `--ai`: When you use the `command-line` value, you also need to set `--ai-config command=<path_to_command>`. Also, there is an example Python AI in `command-line-ai/example.py`.
-- `--static-schedule-path`: This is used to set the static schedule by path. An example of a static schedule file is provided in `static-schedules/example.csv`.
 
 To make it available as a solver to MiniZinc, take the `minizinc/solvers/framework.msc.template` and copy it to one of these paths:
 - `/usr/share/minizinc/solvers` (on Linux only)
@@ -42,3 +41,8 @@ To make it available as a solver to MiniZinc, take the `minizinc/solvers/framewo
 
 and remove the `.template` suffix from the file name and replace `${EXE_PATH}` in the file with the path to the executable.
 
+## Options
+
+Some additional information about select options:
+- `--ai`: When you use the `command-line` value, you also need to set `--ai-config command=<path_to_command>`. Also, there is an example Python AI in `command-line-ai/example.py`.
+- `--static-schedule-path`: This is used to set the static schedule by path. An example of a static schedule file is provided in `static-schedules/example.csv`.
