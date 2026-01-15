@@ -1,7 +1,6 @@
 #!/usr/bin/env python3.13
 
 import argparse
-import sys
 import joblib
 import numpy as np
 import os
@@ -115,6 +114,7 @@ def schedule(features: np.ndarray, total_cores: int) -> list[tuple[str, int]]:
         for i, cores in enumerate(final_allocations)
         if cores > 0
     ]
+
 
 if __name__ == "__main__":
     main()
