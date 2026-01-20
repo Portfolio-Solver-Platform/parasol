@@ -8,16 +8,7 @@ use tempfile::NamedTempFile;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::RwLock;
-
-#[derive(Debug, thiserror::Error)]
-pub enum ConversionError {
-    #[error("command failed: {0}")]
-    CommandFailed(std::process::ExitStatus),
-    #[error("IO error during temporary file use")]
-    TempFile(std::io::Error),
-    #[error("IO error")]
-    Io(#[from] tokio::io::Error),
-}
+use tokio_util::sync::CancellationToken;
 
 pub struct CachedConverter {
     args: Args,
@@ -47,23 +38,22 @@ impl CachedConverter {
         }
     }
 
-    pub async fn convert(&self, solver_name: &str) -> Result<Arc<Conversion>, ConversionError> {
+    pub async fn convert(&self, solver_name: &str, cancellation_token: Option<CancellationToken>) -> Result<Arc<Conversion>> {
         {
             let cache = self.cache.read().await;
             if let Some(conversion) = cache.get(solver_name) {
-                return Ok(conversion.clone());
+                return Result::Ok(conversion.clone());
             }
         }
 
-        let conversion = Arc::new(convert_mzn(&self.args, solver_name).await?);
+        let conversion = Arc::new(convert_mzn(&self.args, solver_name, cancellation_token).await?);
         let mut cache = self.cache.write().await;
         cache.insert(solver_name.to_owned(), conversion.clone());
-
         Ok(conversion)
     }
 }
 
-pub async fn convert_mzn(args: &Args, solver_name: &str) -> Result<Conversion, ConversionError> {
+pub async fn convert_mzn(args: &Args, solver_name: &str, cancellation_token: Option<CancellationToken>) -> Result<Conversion> {
     let fzn_file = tempfile::Builder::new()
         .suffix(".fzn")
         .tempfile()
@@ -73,7 +63,7 @@ pub async fn convert_mzn(args: &Args, solver_name: &str) -> Result<Conversion, C
         .tempfile()
         .map_err(ConversionError::TempFile)?;
 
-    run_mzn_to_fzn_cmd(args, solver_name, fzn_file.path(), ozn_file.path()).await?;
+    run_mzn_to_fzn_cmd(args, solver_name, fzn_file.path(), ozn_file.path(), cancellation_token).await?;
 
     Ok(Conversion { fzn_file, ozn_file })
 }
@@ -83,11 +73,12 @@ async fn run_mzn_to_fzn_cmd(
     solver_name: &str,
     fzn_result_path: &Path,
     ozn_result_path: &Path,
-) -> Result<(), ConversionError> {
+    cancellation_token: Option<CancellationToken>,
+) -> Result<()> {
     let mut cmd = get_mzn_to_fzn_cmd(args, solver_name, fzn_result_path, ozn_result_path);
     cmd.stderr(Stdio::piped());
 
-    let mut child = cmd.spawn()?;
+    let mut child = cmd.spawn().map_err(ConversionError::from)?;
 
     if args.verbosity >= crate::args::Verbosity::Warning
         && let Some(stderr) = child.stderr.take()
@@ -101,9 +92,22 @@ async fn run_mzn_to_fzn_cmd(
         });
     }
 
-    let status = child.wait().await?;
+    let status = if let Some(token) = cancellation_token {
+        tokio::select! {
+            _ = token.cancelled() => {
+                Err(Error::Cancelled)
+            }
+            result = child.wait() => {
+                result.map_err(|e| Error::Conversion(ConversionError::from(e)))
+            }
+        }
+    } else {
+        child.wait().await.map_err(|e| Error::Conversion(ConversionError::from(e)))
+    };
+
+    let status = status?;
     if !status.success() {
-        return Err(ConversionError::CommandFailed(status));
+        return Err(ConversionError::CommandFailed(status).into());
     }
     Ok(())
 }
@@ -133,4 +137,24 @@ fn get_mzn_to_fzn_cmd(
     cmd.arg(ozn_result_path);
 
     cmd
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("conversion was cancelled")]
+    Cancelled,
+    #[error(transparent)]
+    Conversion(#[from] ConversionError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ConversionError {
+    #[error("command failed: {0}")]
+    CommandFailed(std::process::ExitStatus),
+    #[error("IO error during temporary file use")]
+    TempFile(std::io::Error),
+    #[error("IO error")]
+    Io(#[from] tokio::io::Error),
 }

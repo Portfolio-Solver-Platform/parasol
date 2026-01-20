@@ -327,7 +327,8 @@ impl Scheduler {
         }
     }
 
-    pub async fn apply(&mut self, portfolio: Portfolio) -> std::result::Result<(), Vec<Error>> {
+
+    pub async fn apply(&mut self, portfolio: Portfolio, cancellation_token: Option<CancellationToken>) -> std::result::Result<(), Vec<Error>> {
         let mut state = self.state.lock().await;
         let new_objective = self.solver_manager.get_best_objective().await;
 
@@ -399,12 +400,12 @@ impl Scheduler {
                 }
             }
             self.solver_manager
-                .start_solvers(&resume_elements, state.prev_objective)
+                .start_solvers(&resume_elements, state.prev_objective, cancellation_token.clone())
                 .await?;
         }
 
         self.solver_manager
-            .start_solvers(&changes.to_start, state.prev_objective)
+            .start_solvers(&changes.to_start, state.prev_objective, cancellation_token.clone())
             .await
     }
 

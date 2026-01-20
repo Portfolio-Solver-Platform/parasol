@@ -225,10 +225,16 @@ impl SolverManager {
         &self,
         elem: &ScheduleElement,
         objective: Option<ObjectiveValue>,
+        cancellation_token: Option<CancellationToken>,
+
     ) -> Result<()> {
         let solver_name = &elem.info.name;
         let cores = elem.info.cores;
-        let conversion_paths = self.mzn_to_fzn.convert(solver_name).await?;
+        let conversion_paths = match self.mzn_to_fzn.convert(solver_name, cancellation_token.clone()).await {
+            Ok(conversion_paths) => conversion_paths,
+            Err(mzn_to_fzn::Error::Cancelled) => return Ok(()),
+            Err(mzn_to_fzn::Error::Conversion(e)) => return Err(e.into()),
+        };
 
         let (fzn_final_path, fzn_guard) = if let Some(obj) = objective {
             if let Ok(new_temp_file) = self
@@ -424,10 +430,11 @@ impl SolverManager {
         &self,
         schedule: &[ScheduleElement],
         objective: Option<ObjectiveValue>,
+        cancellation_token: Option<CancellationToken>,
     ) -> std::result::Result<(), Vec<Error>> {
         let futures = schedule
             .iter()
-            .map(|elem| self.start_solver(elem, objective));
+            .map(|elem| self.start_solver(elem, objective, cancellation_token.clone()));
         let results = join_all(futures).await;
         let errors: Vec<Error> = results.into_iter().filter_map(Result::err).collect();
 
