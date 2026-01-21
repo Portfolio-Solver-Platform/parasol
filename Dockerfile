@@ -17,7 +17,8 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs \
 COPY src ./src
 RUN touch src/main.rs && cargo build --release --locked --quiet
 
-FROM minizinc/mznc2025:latest AS base
+FROM minizinc/mznc2025:latest AS base-small
+FROM base-small AS base
 
 WORKDIR /app
 
@@ -48,15 +49,10 @@ RUN apt-get update -qq && apt-get install -y -qq \
     libglu1-mesa \
     libegl1 \
     libfontconfig1 \
-    python3.13 \
     # Install rustup
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
     # Cleanup
     && rm -rf /var/lib/apt/lists/*
-
-COPY command-line-ai/requirements.txt ./requirements.txt
-RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.13
-RUN python3.13 -m pip install --quiet -r ./requirements.txt
 
 FROM base AS huub
 
@@ -198,19 +194,14 @@ COPY --from=gecode /opt/gecode/share/minizinc/solvers/* .
 COPY --from=chuffed /opt/chuffed/share/minizinc/solvers/* .
 COPY --from=dexter /opt/dexter/share/minizinc/solvers/* .
 
-FROM base AS final
+FROM base AS mzn2feat
 
-# Install mzn2feat
-# TODO: Move it into its own image (to improve caching)
-RUN git clone -q https://github.com/CP-Unibo/mzn2feat.git /opt/mzn2feat
+RUN git clone -q https://github.com/CP-Unibo/mzn2feat.git /opt/mzn2feat \
+    && cd /opt/mzn2feat \
+    && bash install --no-xcsp
 
-RUN cd /opt/mzn2feat && bash install --no-xcsp
+FROM base AS picat
 
-RUN ln -s /opt/mzn2feat/bin/mzn2feat /usr/local/bin/mzn2feat \
-    && ln -s /opt/mzn2feat/bin/fzn2feat /usr/local/bin/fzn2feat
-
-# Install Picat solver
-# TODO: Move it into its own image (to improve caching)
 RUN wget -q https://picat-lang.org/download/picat394_linux64.tar.gz \
     && tar -xzf picat394_linux64.tar.gz -C /opt \
     && ln -s /opt/Picat/picat /usr/local/bin/picat \
@@ -218,14 +209,28 @@ RUN wget -q https://picat-lang.org/download/picat394_linux64.tar.gz \
 
 RUN git clone -q https://github.com/nfzhou/fzn_picat.git /opt/fzn_picat
 
-# Install SCIP from a .deb package. This requires updating apt-get lists
+FROM base-small AS final
+
+# Install dependencies and SCIP from a .deb package
 COPY --from=scip /opt/scip/package.deb ./scip-package.deb
 RUN apt-get update -qq && apt-get install -qq -y --no-install-recommends \
     software-properties-common \
     && add-apt-repository universe \
-    && apt-get install -qq -y ./scip-package.deb \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get install -qq -y \
+        ./scip-package.deb \
+        python3.13 \
+        python3.13-venv \
     && rm ./scip-package.deb \
     && apt-get clean -qq && rm -rf /var/lib/apt/lists/*
+
+RUN python3.13 -m ensurepip --upgrade
+
+COPY command-line-ai/requirements.txt ./requirements.txt
+RUN python3.13 -m pip install --quiet -r ./requirements.txt
+
+COPY --from=mzn2feat /opt/mzn2feat/bin/mzn2feat /usr/local/bin/mzn2feat
+COPY --from=mzn2feat /opt/mzn2feat/bin/fzn2feat /usr/local/bin/fzn2feat
 
 # Install solver configurations
 COPY --from=solver-configs /solvers/*.msc /usr/local/share/minizinc/solvers/
@@ -236,6 +241,8 @@ COPY ./solvers/picat/wrapper.sh /usr/local/bin/fzn-picat
 COPY --from=huub /huub/target/release/fzn-huub /usr/local/bin/fzn-huub
 COPY --from=huub /huub/share/minizinc/huub/ /usr/local/share/minizinc/huub/
 
+COPY --from=picat /opt/Picat/picat /usr/local/bin/picat
+COPY --from=picat /opt/fzn_picat/ /opt/fzn_picat/
 COPY --from=yuck /opt/yuck/ /opt/yuck/
 COPY --from=or-tools /opt/or-tools/ /opt/or-tools/
 COPY --from=choco /opt/choco/ /opt/choco/
