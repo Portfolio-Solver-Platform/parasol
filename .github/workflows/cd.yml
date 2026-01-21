@@ -30,6 +30,6 @@ jobs:
       uses: docker/build-push-action@v6
       with:
         push: true
-        tags: jobork/framework:latest
-        cache-from: type=registry,ref=jobork/framework:buildcache
-        cache-to: type=registry,ref=jobork/framework:buildcache,mode=max
+        tags: ${{ vars.DOCKERHUB_USERNAME }}/framework:latest
+        cache-from: type=registry,ref=${{ vars.DOCKERHUB_USERNAME }}/framework:buildcache
+        cache-to: type=registry,ref=${{ vars.DOCKERHUB_USERNAME }}/framework:buildcache,mode=max

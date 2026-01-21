@@ -10,12 +10,12 @@ WORKDIR /usr/src/app
 COPY Cargo.toml Cargo.lock ./
 # Dummy main file
 RUN mkdir src && echo "fn main() {}" > src/main.rs \
-    && cargo build --release --locked \
+    && cargo build --release --locked --quiet \
     && rm -rf src
 
 # Now copy and build the actual source code
 COPY src ./src
-RUN touch src/main.rs && cargo build --release --locked
+RUN touch src/main.rs && cargo build --release --locked --quiet
 
 FROM minizinc/mznc2025:latest AS base
 
@@ -27,10 +27,10 @@ ENV RUSTUP_HOME=/usr/local/rustup
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update -qq && apt-get install -y -qq \
     software-properties-common \
     && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get update && apt-get install -y \
+    && apt-get update -qq && apt-get install -y -qq \
     ca-certificates \
     libssl-dev \
     wget \
@@ -56,27 +56,27 @@ RUN apt-get update && apt-get install -y \
 
 COPY command-line-ai/requirements.txt ./requirements.txt
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.13
-RUN python3.13 -m pip install -r ./requirements.txt
+RUN python3.13 -m pip install --quiet -r ./requirements.txt
 
 FROM base AS huub
 
-RUN git clone --depth 1 --branch pub/CP2025 https://github.com/huub-solver/huub.git /huub
+RUN git clone -q --depth 1 --branch pub/CP2025 https://github.com/huub-solver/huub.git /huub
 WORKDIR /huub
-RUN cargo build --release
+RUN cargo build --release --quiet
 
 
 FROM base AS yuck
 
-RUN wget https://github.com/informarte/yuck/releases/download/20251106/yuck-20251106.zip \
-    && unzip yuck-20251106.zip -d /opt \
+RUN wget -q https://github.com/informarte/yuck/releases/download/20251106/yuck-20251106.zip \
+    && unzip -q yuck-20251106.zip -d /opt \
     && mv /opt/yuck-20251106 /opt/yuck \
     && chmod +x /opt/yuck/bin/yuck \
     && rm yuck-20251106.zip
 
 FROM base AS or-tools
 
-RUN wget https://github.com/google/or-tools/releases/download/v9.14/or-tools_amd64_ubuntu-24.04_cpp_v9.14.6206.tar.gz -O or-tools.tar.gz \
-    && tar -xzvf or-tools.tar.gz \
+RUN wget -q https://github.com/google/or-tools/releases/download/v9.14/or-tools_amd64_ubuntu-24.04_cpp_v9.14.6206.tar.gz -O or-tools.tar.gz \
+    && tar -xzf or-tools.tar.gz \
     && rm or-tools.tar.gz \
     && mv or-tools_x86_64_Ubuntu-24.04_cpp_v9.14.6206 /or-tools \
     && mkdir /opt/or-tools \
@@ -89,9 +89,9 @@ RUN wget https://github.com/google/or-tools/releases/download/v9.14/or-tools_amd
 
 FROM base AS choco
 
-RUN wget https://github.com/chocoteam/choco-solver/archive/refs/tags/v4.10.18.tar.gz -O choco.tar.gz \
-    && wget https://github.com/chocoteam/choco-solver/releases/download/v4.10.18/choco-solver-4.10.18-light.jar -O choco.jar \
-    && tar -xzvf choco.tar.gz \
+RUN wget -q https://github.com/chocoteam/choco-solver/archive/refs/tags/v4.10.18.tar.gz -O choco.tar.gz \
+    && wget -q https://github.com/chocoteam/choco-solver/releases/download/v4.10.18/choco-solver-4.10.18-light.jar -O choco.jar \
+    && tar -xzf choco.tar.gz \
     && rm choco.tar.gz \
     && mv choco-solver-4.10.18 /choco \
     && mkdir -p /opt/choco/bin \
@@ -108,12 +108,12 @@ RUN wget https://github.com/chocoteam/choco-solver/archive/refs/tags/v4.10.18.ta
 FROM base AS pumpkin
 
 # Version 0.2.2
-RUN wget https://github.com/ConSol-Lab/Pumpkin/archive/62b2f09f4b28d0065e4a274d7346f34598b44898.tar.gz -O pumpkin.tar.gz \
-    && tar -xzvf pumpkin.tar.gz \
+RUN wget -q https://github.com/ConSol-Lab/Pumpkin/archive/62b2f09f4b28d0065e4a274d7346f34598b44898.tar.gz -O pumpkin.tar.gz \
+    && tar -xzf pumpkin.tar.gz \
     && rm pumpkin.tar.gz \
     && mv Pumpkin-62b2f09f4b28d0065e4a274d7346f34598b44898 /pumpkin
 WORKDIR /pumpkin
-RUN cargo build --release -p pumpkin-solver
+RUN cargo build --release --quiet -p pumpkin-solver
 # We can't use the .msc file from the repository because it is currently not valid JSON
 COPY ./minizinc/solvers/pumpkin.msc.template /pumpkin.msc.template
 RUN mkdir -p /opt/pumpkin/bin \
@@ -211,7 +211,7 @@ RUN ln -s /opt/mzn2feat/bin/mzn2feat /usr/local/bin/mzn2feat \
 
 # Install Picat solver
 # TODO: Move it into its own image (to improve caching)
-RUN wget https://picat-lang.org/download/picat394_linux64.tar.gz \
+RUN wget -q https://picat-lang.org/download/picat394_linux64.tar.gz \
     && tar -xzf picat394_linux64.tar.gz -C /opt \
     && ln -s /opt/Picat/picat /usr/local/bin/picat \
     && rm picat394_linux64.tar.gz

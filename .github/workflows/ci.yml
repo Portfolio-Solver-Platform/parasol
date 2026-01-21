@@ -24,7 +24,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Linting
-      run: cargo clippy --verbose --locked -- -D warnings
+      run: cargo clippy --locked -- -D warnings
 
   audit:
     runs-on: ubuntu-latest
@@ -52,11 +52,11 @@ jobs:
       with:
         target: ci
         load: true
-        tags: jobork/framework:latest
-        cache-from: type=registry,ref=jobork/framework:buildcache
+        tags: ${{ vars.DOCKERHUB_USERNAME }}/framework:latest
+        cache-from: type=registry,ref=${{ vars.DOCKERHUB_USERNAME }}/framework:buildcache
 
     - name: Unit tests
-      run: docker run -t jobork/framework:latest cargo test --release --verbose --locked
+      run: docker run -t ${{ vars.DOCKERHUB_USERNAME }}/framework:latest cargo test --release --locked
 
   integration-tests:
     runs-on: ubuntu-latest
@@ -72,10 +72,10 @@ jobs:
       with:
         target: ci-integration
         load: true
-        tags: jobork/framework:latest
-        cache-from: type=registry,ref=jobork/framework:buildcache
+        tags: ${{ vars.DOCKERHUB_USERNAME }}/framework:latest
+        cache-from: type=registry,ref=${{ vars.DOCKERHUB_USERNAME }}/framework:buildcache
         # Only push to the cache if on main branch
-        cache-to: ${{ github.ref == 'refs/heads/main' && 'type=registry,ref=jobork/framework:buildcache,mode=max' || '' }}
+        cache-to: ${{ github.ref == 'refs/heads/main' && 'type=registry,ref=${{ vars.DOCKERHUB_USERNAME }}/framework:buildcache,mode=max' || '' }}
 
     - name: Integration tests
-      run: docker run -t jobork/framework:latest cargo test --tests --release --verbose --locked
+      run: docker run -t ${{ vars.DOCKERHUB_USERNAME }}/framework:latest cargo test --tests --release --locked
