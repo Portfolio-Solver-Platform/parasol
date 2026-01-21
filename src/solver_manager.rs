@@ -13,6 +13,7 @@ use nix::errno::Errno;
 #[cfg(target_os = "linux")]
 use nix::sched::{CpuSet, sched_setaffinity};
 use nix::sys::signal::Signal;
+#[cfg(target_os = "linux")]
 use nix::unistd;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
@@ -43,6 +44,10 @@ pub enum Error {
     SolverSetCoreAffinity(#[from] Errno),
     #[error("solver with ID '{0}' has input type of JSON but has no executable")]
     ExecutableMissingForJsonSolver(String),
+    #[error("pipeing failed for process: {0}")]
+    PipeError(String),
+    #[error("task join failed")]
+    JoinError(#[from] tokio::task::JoinError),
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -52,6 +57,7 @@ enum Msg {
     Status(Status),
 }
 
+#[derive(Clone)]
 struct SolverProcess {
     pid: u32,
     best_objective: Option<ObjectiveValue>,
@@ -92,7 +98,7 @@ impl SolverManager {
         args: Args,
         solver_args: HashMap<String, Vec<String>>,
         solver_info: Arc<solver_discovery::Solvers>,
-        token: CancellationToken,
+        program_cancellation_token: CancellationToken,
     ) -> std::result::Result<Self, Error> {
         let objective_type = get_objective_type(&args.minizinc_exe, &args.model).await?;
         let (tx, rx) = mpsc::unbounded_channel::<Msg>();
@@ -101,7 +107,7 @@ impl SolverManager {
         let best_objective: Arc<RwLock<Option<i64>>> = Arc::new(RwLock::new(None));
 
         let shared_objective = best_objective.clone();
-        let token_clone = token.clone();
+        let token_clone = program_cancellation_token.clone();
         tokio::spawn(async move {
             Self::receiver(rx, objective_type, shared_objective, token_clone).await
         });
@@ -134,7 +140,7 @@ impl SolverManager {
         mut rx: mpsc::UnboundedReceiver<Msg>,
         objective_type: ObjectiveType,
         shared_objective: Arc<RwLock<Option<ObjectiveValue>>>,
-        token: CancellationToken,
+        program_cancellation_token: CancellationToken,
     ) {
         let mut objective: Option<ObjectiveValue> = None;
 
@@ -160,7 +166,7 @@ impl SolverManager {
                 Msg::Status(status) => {
                     if status != Status::Unknown {
                         println!("{}", status.to_dzn_string());
-                        token.cancel();
+                        program_cancellation_token.cancel();
                         break;
                     }
                 }
@@ -264,17 +270,27 @@ impl SolverManager {
         ozn_cmd.stdout(Stdio::piped());
         ozn_cmd.stderr(Stdio::piped());
 
+        let solvers_clone = self.solvers.clone();
+        let elem_id = elem.id;
+        // we lock on solvers to garantuee we dont in another thread try to stop them at the same time
+        let mut map = solvers_clone.lock().await;
         let PipeCommand {
             left: mut fzn,
             right: mut ozn,
             pipe,
-        } = pipe(fzn_cmd, ozn_cmd).await?;
+        } = pipe(fzn_cmd, ozn_cmd)?;
 
         let pid = fzn.id().expect("Child has no PID");
-        let mut allocated_cores: Vec<usize> = Vec::new();
+        let solver_proccess = SolverProcess {
+            pid,
+            best_objective: objective,
+        };
 
+        map.insert(elem_id, solver_proccess);
+
+        let mut allocated_cores: Vec<usize> = Vec::new();
         #[cfg(target_os = "linux")]
-        if self.args.pin_yuck && elem.info.name == "yuck" {
+        if self.args.pin_yuck {
             allocated_cores = pin_yuck_solver_to_cores(pid, cores, &self.available_cores).await?;
         }
 
@@ -289,54 +305,44 @@ impl SolverManager {
         let solvers_clone = self.solvers.clone();
         let solver_name = elem.info.name.clone();
         let available_cores_clone = self.available_cores.clone();
-        {
-            let mut map = self.solvers.lock().await;
-            map.insert(
-                elem.id,
-                SolverProcess {
-                    pid,
-                    best_objective: objective,
-                },
-            );
 
-            tokio::spawn(async move {
-                Self::handle_solver_stdout(
-                    ozn_stdout,
-                    pipe,
-                    tx_clone,
-                    solver_id,
-                    solvers_clone_stdout,
-                    objective_type,
-                )
-                .await;
-            });
+        tokio::spawn(async move {
+            Self::handle_solver_stdout(
+                ozn_stdout,
+                pipe,
+                tx_clone,
+                solver_id,
+                solvers_clone_stdout,
+                objective_type,
+            )
+            .await;
+        });
 
-            tokio::spawn(async move { Self::handle_solver_stderr(fzn_stderr).await });
-            tokio::spawn(async move { Self::handle_solver_stderr(ozn_stderr).await });
+        tokio::spawn(async move { Self::handle_solver_stderr(fzn_stderr).await });
+        tokio::spawn(async move { Self::handle_solver_stderr(ozn_stderr).await });
 
-            tokio::spawn(async move {
-                let _keep_alive = fzn_guard;
-                match fzn.wait().await {
-                    Ok(status) if !status.success() => {
-                        logging::info!("Solver '{}' exited with status: {}", solver_name, status);
-                    }
-                    Err(e) => {
-                        logging::error_msg!("Error waiting for solver '{}': {}", solver_name, e);
-                    }
-                    _ => {}
+        tokio::spawn(async move {
+            let _keep_alive = fzn_guard;
+            match fzn.wait().await {
+                Ok(status) if !status.success() => {
+                    logging::info!("Solver '{}' exited with status: {}", solver_name, status);
                 }
-
-                {
-                    let mut cores_guard = available_cores_clone.lock().await;
-                    for core_id in allocated_cores {
-                        cores_guard.insert(core_id);
-                    }
+                Err(e) => {
+                    logging::error_msg!("Error waiting for solver '{}': {}", solver_name, e);
                 }
+                _ => {}
+            }
 
-                let mut map = solvers_clone.lock().await;
-                map.remove(&solver_id);
-            });
-        }
+            {
+                let mut cores_guard = available_cores_clone.lock().await;
+                for core_id in allocated_cores {
+                    cores_guard.insert(core_id);
+                }
+            }
+
+            let mut map = solvers_clone.lock().await;
+            map.remove(&solver_id);
+        });
 
         Ok(())
     }
@@ -446,12 +452,11 @@ impl SolverManager {
     }
 
     async fn send_signals_to_solver(
-        solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
-        id: u64,
         signals: Vec<Signal>,
+        id: u64,
+        solvers_guard: tokio::sync::MutexGuard<'_, HashMap<u64, SolverProcess>>,
     ) -> Result<()> {
-        let map = solvers.lock().await;
-        let pid = match map.get(&id) {
+        let pid = match solvers_guard.get(&id) {
             Some(state) => state.pid,
             None => return Err(Error::InvalidSolver(format!("Solver {id} not running"))),
         };
@@ -460,13 +465,18 @@ impl SolverManager {
     }
 
     async fn send_signals_to_solvers(
-        solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
-        ids: &[u64],
         signals: Vec<Signal>,
+        ids: &[u64],
+        solvers: tokio::sync::MutexGuard<'_, HashMap<u64, SolverProcess>>,
     ) -> std::result::Result<(), Vec<Error>> {
-        let futures = ids
-            .iter()
-            .map(|id| Self::send_signals_to_solver(solvers.clone(), *id, signals.clone()));
+        let futures = ids.iter().map(async |id| {
+            let pid = match solvers.get(&id) {
+                Some(state) => state.pid,
+                None => return Err(Error::InvalidSolver(format!("Solver {id} not running"))),
+            };
+            send_signals_to_process_tree(pid, signals.clone())
+                .map_err(|e| Error::InvalidSolver(format!("Failed to send signals: {}", e)))
+        });
         let results = join_all(futures).await;
         let errors: Vec<Error> = results.into_iter().filter_map(|res| res.err()).collect();
 
@@ -482,17 +492,20 @@ impl SolverManager {
         solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
         signals: Vec<Signal>,
     ) -> std::result::Result<(), Vec<Error>> {
-        let ids: Vec<u64> = { solvers.lock().await.keys().cloned().collect() };
-        Self::send_signals_to_solvers(solvers.clone(), &ids, signals).await
+        let solvers_guard = solvers.lock().await;
+        let ids: Vec<u64> = { solvers_guard.keys().cloned().collect() };
+        Self::send_signals_to_solvers(signals, &ids, solvers_guard).await
     }
 
     #[allow(dead_code)]
     pub async fn suspend_solver(&self, id: u64) -> std::result::Result<(), Error> {
-        Self::send_signals_to_solver(self.solvers.clone(), id, vec![Signal::SIGSTOP]).await
+        let solvers_guard = self.solvers.lock().await;
+        Self::send_signals_to_solver(vec![Signal::SIGSTOP], id, solvers_guard).await
     }
 
     pub async fn suspend_solvers(&self, ids: &[u64]) -> std::result::Result<(), Vec<Error>> {
-        Self::send_signals_to_solvers(self.solvers.clone(), ids, vec![Signal::SIGSTOP]).await
+        let solvers_guard = self.solvers.lock().await;
+        Self::send_signals_to_solvers(vec![Signal::SIGSTOP], ids, solvers_guard).await
     }
 
     #[allow(dead_code)]
@@ -502,11 +515,13 @@ impl SolverManager {
 
     #[allow(dead_code)]
     pub async fn resume_solver(&self, id: u64) -> std::result::Result<(), Error> {
-        Self::send_signals_to_solver(self.solvers.clone(), id, vec![Signal::SIGCONT]).await
+        let solvers_guard = self.solvers.lock().await;
+        Self::send_signals_to_solver(vec![Signal::SIGCONT], id, solvers_guard).await
     }
 
     pub async fn resume_solvers(&self, ids: &[u64]) -> std::result::Result<(), Vec<Error>> {
-        Self::send_signals_to_solvers(self.solvers.clone(), ids, vec![Signal::SIGCONT]).await
+        let solvers_guard = self.solvers.lock().await;
+        Self::send_signals_to_solvers(vec![Signal::SIGCONT], ids, solvers_guard).await
     }
 
     #[allow(dead_code)]
@@ -624,12 +639,11 @@ impl SolverManager {
         self.objective_type
     }
 
-    /// precondition: self.solvers is locked
     async fn kill_solver(
         id: u64,
         solvers_map: &mut tokio::sync::MutexGuard<'_, HashMap<u64, SolverProcess>>,
     ) -> Result<()> {
-        // let RAII clean up the solver. look in drop function.
+        // let RAII clean up the solver. Look in drop function for SolverProcess.
         if solvers_map.remove(&id).is_none() {
             return Err(Error::InvalidSolver(format!("Solver {id} not running")));
         }
@@ -638,19 +652,25 @@ impl SolverManager {
     }
 }
 
-async fn pipe(mut left: Command, mut right: Command) -> Result<PipeCommand> {
+fn pipe(mut left: Command, mut right: Command) -> Result<PipeCommand> {
     let mut left_child = left.stdout(Stdio::piped()).spawn()?;
 
     #[cfg(unix)]
     {
-        let left_pid = left_child.id().expect("left child has no PID");
+        let left_pid = left_child
+            .id()
+            .ok_or_else(|| Error::PipeError("Could not get PID for process".to_string()))?;
         right.process_group(left_pid as i32);
     }
 
     let mut right_child = right.stdin(Stdio::piped()).spawn()?;
 
-    let mut left_stdout = left_child.stdout.take().expect("left stdout not captured");
-    let mut right_stdin = right_child.stdin.take().expect("right stdin not captured");
+    let mut left_stdout = left_child.stdout.take().ok_or_else(|| {
+        Error::PipeError("Could not capture the left process' stdout".to_string())
+    })?;
+    let mut right_stdin = right_child.stdin.take().ok_or_else(|| {
+        Error::PipeError("Could not capture the rigts process' stdin".to_string())
+    })?;
 
     let pipe_task =
         tokio::spawn(async move { tokio::io::copy(&mut left_stdout, &mut right_stdin).await });
@@ -662,6 +682,7 @@ async fn pipe(mut left: Command, mut right: Command) -> Result<PipeCommand> {
     })
 }
 
+#[cfg(target_os = "linux")]
 async fn pin_yuck_solver_to_cores(
     pid: u32,
     cores: usize,

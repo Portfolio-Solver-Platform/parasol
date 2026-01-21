@@ -82,6 +82,16 @@ pub struct Scheduler {
     pub solver_manager: Arc<SolverManager>,
 }
 
+impl Drop for Scheduler {
+    fn drop(&mut self) {
+        let manager = self.solver_manager.clone();
+
+        tokio::spawn(async move {
+            let _ = manager.stop_all_solvers().await;
+        });
+    }
+}
+
 fn is_over_threshold(used: f64, total: f64, threshold: f64) -> bool {
     used / total > threshold
 }
@@ -91,11 +101,16 @@ impl Scheduler {
         args: &Args,
         config: &Config,
         solver_info: Arc<solver_discovery::Solvers>,
-        token: CancellationToken,
+        program_cancellation_token: CancellationToken,
     ) -> std::result::Result<Self, Error> {
         let solver_manager = Arc::new(
-            SolverManager::new(args.clone(), config.solver_args.clone(), solver_info, token)
-                .await?,
+            SolverManager::new(
+                args.clone(),
+                config.solver_args.clone(),
+                solver_info,
+                program_cancellation_token,
+            )
+            .await?,
         );
 
         let memory_limit = std::env::var("MEMORY_LIMIT")

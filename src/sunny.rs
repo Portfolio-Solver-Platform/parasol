@@ -16,25 +16,12 @@ pub async fn sunny(
     ai: Option<impl Ai>,
     config: Config,
     solvers: Arc<solver_discovery::Solvers>,
-    token: CancellationToken,
+    program_cancellation_token: CancellationToken,
 ) -> Result<(), ()> {
-    let mut scheduler = Scheduler::new(args, &config, solvers, token)
+    let mut scheduler = Scheduler::new(args, &config, solvers, program_cancellation_token)
         .await
         .map_err(|e| logging::error!(e.into()))?;
 
-    let result = sunny_inner(args, ai, &mut scheduler).await;
-
-    if let Err(e) = scheduler.solver_manager.stop_all_solvers().await {
-        handle_schedule_errors(e);
-    }
-    result
-}
-
-async fn sunny_inner(
-    args: &Args,
-    ai: Option<impl Ai>,
-    scheduler: &mut Scheduler,
-) -> Result<(), ()> {
     let (cores, initial_solver_cores) = get_cores(args, &ai);
 
     let initial_schedule = static_schedule(args, initial_solver_cores)
@@ -45,9 +32,9 @@ async fn sunny_inner(
     let mut timer = sleep(static_runtime);
 
     let schedule = if let Some(mut ai) = ai {
-        start_with_ai(args, &mut ai, scheduler, initial_schedule, cores).await?
+        start_with_ai(args, &mut ai, &mut scheduler, initial_schedule, cores).await?
     } else {
-        start_without_ai(args, scheduler, initial_schedule).await?
+        start_without_ai(args, &mut scheduler, initial_schedule).await?
     };
 
     let restart_interval = Duration::from_secs(args.restart_interval);
@@ -111,7 +98,6 @@ async fn start_with_ai(
             }
         };
     }
-
 
     // let feature_timeout_duration =
     //     Duration::from_secs(args.feature_timeout.max(args.static_runtime)); // if static runtime is higher thatn feature_runtime, we anyways have to wait, so we have more time to extract features
