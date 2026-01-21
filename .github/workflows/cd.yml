@@ -1,12 +1,7 @@
 name: CD
 
 on:
-  workflow_run:
-    workflows: ["CI"]      # Must match the 'name:' of your CI workflow exactly
-    branches: [main]       # Only deploy when CI finishes on main
-    types:
-      - completed
-  workflow_dispatch:
+  workflow_call
 
 env:
   CARGO_TERM_COLOR: always
