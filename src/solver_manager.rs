@@ -48,6 +48,8 @@ pub enum Error {
     PipeError(String),
     #[error("task join failed")]
     JoinError(#[from] tokio::task::JoinError),
+    #[error("conversion was cancelled")]
+    MznToFzn(#[from] mzn_to_fzn::Error),
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -231,17 +233,14 @@ impl SolverManager {
         &self,
         elem: &ScheduleElement,
         objective: Option<ObjectiveValue>,
-        cancellation_token: Option<CancellationToken>,
-
+        cancellation_token: CancellationToken,
     ) -> Result<()> {
         let solver_name = &elem.info.name;
         let cores = elem.info.cores;
-        let conversion_paths = match self.mzn_to_fzn.convert(solver_name, cancellation_token.clone()).await {
-            Ok(conversion_paths) => conversion_paths,
-            Err(mzn_to_fzn::Error::Cancelled) => return Ok(()),
-            Err(mzn_to_fzn::Error::Conversion(e)) => return Err(e.into()),
-        };
-
+        let conversion_paths = self
+            .mzn_to_fzn
+            .convert(solver_name, cancellation_token.clone())
+            .await?;
         let (fzn_final_path, fzn_guard) = if let Some(obj) = objective {
             if let Ok(new_temp_file) = self
                 .objective_inserter
@@ -287,6 +286,7 @@ impl SolverManager {
         };
 
         map.insert(elem_id, solver_proccess);
+        drop(map);
 
         let mut allocated_cores: Vec<usize> = Vec::new();
         #[cfg(target_os = "linux")]
@@ -436,7 +436,7 @@ impl SolverManager {
         &self,
         schedule: &[ScheduleElement],
         objective: Option<ObjectiveValue>,
-        cancellation_token: Option<CancellationToken>,
+        cancellation_token: CancellationToken,
     ) -> std::result::Result<(), Vec<Error>> {
         let futures = schedule
             .iter()

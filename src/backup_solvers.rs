@@ -12,6 +12,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 pub async fn run_backup_solver(args: &Args, cores: usize) -> Result<()> {
     let mut cmd = Command::new(&args.minizinc_exe);
+    cmd.kill_on_drop(true);
     cmd.arg("--solver").arg("cp-sat");
 
     cmd.arg(&args.model);

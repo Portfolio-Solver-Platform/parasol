@@ -13,7 +13,7 @@ pub enum Error {
 }
 
 pub async fn fzn_to_features(fzn_model: &Path) -> Result<Features, Error> {
-    let output = run_fzn_to_feat_cmd(fzn_model).await?;
+    let output: String = run_fzn_to_feat_cmd(fzn_model).await?;
     output
         .replace("\n", "")
         .split(",")

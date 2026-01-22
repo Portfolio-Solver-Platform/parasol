@@ -1,156 +1,194 @@
 use std::sync::Arc;
 
 use crate::config::Config;
-use crate::fzn_to_features::fzn_to_features;
-use crate::mzn_to_fzn::convert_mzn;
+use crate::fzn_to_features::{self, fzn_to_features};
+use crate::mzn_to_fzn::{self, convert_mzn};
 use crate::scheduler::{Portfolio, Scheduler};
-use crate::static_schedule::{static_schedule, timeout_schedule};
+use crate::static_schedule::{self, static_schedule, timeout_schedule};
+use crate::{ai, logging, solver_discovery, solver_manager};
 use crate::{ai::Ai, args::Args};
-use crate::{logging, solver_discovery, solver_manager};
 use tokio::time::{Duration, sleep, timeout};
 use tokio_util::sync::CancellationToken;
 const FEATURES_SOLVER: &str = "gecode";
 
-pub async fn sunny(
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("conversion was cancelled")]
+    Cancelled,
+    #[error("failed converting flatzinc to features")]
+    FznToFeatures(#[from] fzn_to_features::Error),
+    #[error("failed converting flatzinc to features")]
+    MznToFzn(#[from] mzn_to_fzn::Error),
+    #[error("Schedule error")]
+    Schedule(#[from] static_schedule::Error),
+    #[error("Ai error")]
+    Ai(#[from] ai::Error),
+    #[error("Task join error")]
+    JoinError(#[from] tokio::task::JoinError),
+    #[error("Solver manager error")]
+    SolverManager(#[from] solver_manager::Error),
+    #[error("All solvers failed, could not continue")]
+    SolverFailure,
+}
+
+pub async fn sunny<T: Ai + Send + 'static>(
     args: &Args,
-    ai: Option<impl Ai>,
+    ai: Option<T>,
     config: Config,
     solvers: Arc<solver_discovery::Solvers>,
     program_cancellation_token: CancellationToken,
-) -> Result<(), ()> {
-    let mut scheduler = Scheduler::new(args, &config, solvers, program_cancellation_token)
-        .await
-        .map_err(|e| logging::error!(e.into()))?;
+) -> Result<(), Error> {
+    let mut scheduler =
+        Scheduler::new(args, &config, solvers, program_cancellation_token.clone()).await?;
 
     let (cores, initial_solver_cores) = get_cores(args, &ai);
 
-    let initial_schedule = static_schedule(args, initial_solver_cores)
-        .await
-        .map_err(|e| logging::error!(e.into()))?;
+    let initial_schedule = static_schedule(args, initial_solver_cores).await?;
 
     let static_runtime = Duration::from_secs(args.static_runtime);
     let mut timer = sleep(static_runtime);
 
-    let schedule = if let Some(mut ai) = ai {
-        start_with_ai(args, &mut ai, &mut scheduler, initial_schedule, cores).await?
+    let start_cancellation_token = program_cancellation_token.child_token();
+    let schedule = if let Some(ai) = ai {
+        start_with_ai(
+            args,
+            ai,
+            &mut scheduler,
+            initial_schedule,
+            cores,
+            start_cancellation_token,
+        )
+        .await
     } else {
-        start_without_ai(args, &mut scheduler, initial_schedule).await?
-    };
+        start_without_ai(args, &mut scheduler, initial_schedule).await
+    }?;
 
     let restart_interval = Duration::from_secs(args.restart_interval);
     // Restart loop, where it share bounds. It runs forever until it finds a solution, where it will then be cancelled by the cancellation token.
     loop {
-        timer.await;
+        tokio::select! {
+            _ = timer => {}
+            _ = program_cancellation_token.cancelled() => {
+                return Err(Error::Cancelled)
+            }
+        }
+
         let schedule_len = schedule.len();
-        if let Err(errors) = scheduler.apply(schedule.clone(), None).await {
+        if let Err(errors) = scheduler
+            .apply(schedule.clone(), program_cancellation_token.clone())
+            .await
+        {
             let errorlen = errors.len();
             handle_schedule_errors(errors);
             if errorlen == schedule_len {
-                return Err(());
+                return Err(Error::SolverFailure);
             }
         }
         timer = sleep(restart_interval);
     }
 }
 
-async fn start_with_ai(
+async fn start_with_ai<T: Ai + Send + 'static>(
     args: &Args,
-    ai: &mut impl Ai,
+    mut ai: T,
     scheduler: &mut Scheduler,
     initial_schedule: Portfolio,
     cores: usize,
-) -> Result<Portfolio, ()> {
+    cancellation_token: CancellationToken,
+) -> Result<Portfolio, Error> {
     // Static schedule, compilation only
     // Feature extraction
     // Timeout
-    let cancellation_token = CancellationToken::new();
 
     let static_runtime_duration = Duration::from_secs(args.static_runtime);
-    let static_runtime_timeout_future = sleep(static_runtime_duration);
-    let feature_timeout_duration =
-        Duration::from_secs(args.feature_timeout.max(args.static_runtime));
-    let feature_timeout_timeout_future = sleep(feature_timeout_duration);
-
-    let get_features_future = get_features(args, cancellation_token.clone());
-
-    let scheduler_task =
-        scheduler.apply(initial_schedule.clone(), Some(cancellation_token.clone()));
-
-    tokio::pin!(static_runtime_timeout_future);
-    tokio::pin!(feature_timeout_timeout_future);
-    tokio::pin!(get_features_future);
-    tokio::pin!(scheduler_task);
-
-    let mut static_timeout_expired = false;
-    let mut feature_timeout_expired = false;
-    let mut got_features = false;
-    let mut app_features = false;
-    loop {
-        let r = tokio::select! {
-            (feat_res, _sleep_res) = &mut static_runtime_timeout_future => {
-                static_timeout_expired = true;
-                (feat_res, None)
-            }
-
-            sched_res = &mut scheduler_task => {
-                let (feat_res, _sleep_res) = barrier.await;
-                (feat_res, Some(sched_res))
-            }
-        };
-    }
-
+    // let static_runtime_timeout_future = sleep(static_runtime_duration);
     // let feature_timeout_duration =
-    //     Duration::from_secs(args.feature_timeout.max(args.static_runtime)); // if static runtime is higher thatn feature_runtime, we anyways have to wait, so we have more time to extract features
-    // let barrier = async {
-    //     tokio::join!(
-    //         timeout(feature_timeout_duration, get_features(args, cancellation_token.clone())),
-    //         sleep(static_runtime_duration)
-    //     )
-    // };
-    // tokio::pin!(barrier);
+    //     Duration::from_secs(args.feature_timeout.max(args.static_runtime));
+    // let feature_timeout_timeout_future = sleep(feature_timeout_duration);
 
-    // let scheduler_task = scheduler.apply(initial_schedule.clone(), Some(cancellation_token.clone()));
+    // let get_features_future = get_features(args, cancellation_token.clone());
+
+    // let scheduler_task =
+    //     scheduler.apply(initial_schedule.clone(), Some(cancellation_token.clone()));
+
+    // tokio::pin!(static_runtime_timeout_future);
+    // tokio::pin!(feature_timeout_timeout_future);
+    // tokio::pin!(get_features_future);
     // tokio::pin!(scheduler_task);
 
-    // let (features_result, static_schedule_finished) = tokio::select! {
-    //     (feat_res, _sleep_res) = &mut barrier => {
-    //         (feat_res, None)
-    //     }
-
-    //     sched_res = &mut scheduler_task => {
-    //         let (feat_res, _sleep_res) = barrier.await;
-    //         (feat_res, Some(sched_res))
-    //     }
-    // };
-    todo!();
-    // let schedule = match features_result {
-    //     Ok(features_result) => {
-    //         let features = features_result?;
-    //         ai.schedule(&features, cores)
-    //             .map_err(|e| logging::error!(e.into()))?
-    //     }
-    //     Err(_) => {
-    //         logging::info!("Feature extraction timed out. Running timeout schedule");
-    //         timeout_schedule(args, cores)
-    //             .await
-    //             .map_err(|e| logging::error!(e.into()))?
-    //     }
-    // };
-
-    // match static_schedule_finished {
-    //     Some(Ok(())) => {}
-    //     Some(Err(errors)) => {
-    //         let error_len = errors.len();
-    //         handle_schedule_errors(errors);
-    //         if error_len == initial_schedule.len() {
-    //             return Err(());
+    // let mut static_timeout_expired = false;
+    // let mut feature_timeout_expired = false;
+    // let mut got_features = false;
+    // let mut app_features = false;
+    // loop {
+    //     let r = tokio::select! {
+    //         (feat_res, _sleep_res) = &mut static_runtime_timeout_future => {
+    //             static_timeout_expired = true;
+    //             (feat_res, None)
     //         }
-    //     }
-    //     None => {
-    //         logging::info!("applying static schedule timed out");
-    //     }
+
+    //         sched_res = &mut scheduler_task => {
+    //             let (feat_res, _sleep_res) = barrier.await;
+    //             (feat_res, Some(sched_res))
+    //         }
+    //     };
     // }
-    // Ok(schedule)
+
+    let feature_timeout_duration =
+        Duration::from_secs(args.feature_timeout.max(args.static_runtime)); // if static runtime is higher thatn feature_runtime, we anyways have to wait, so we have more time to extract features
+    let barrier = async {
+        tokio::join!(
+            timeout(
+                feature_timeout_duration,
+                get_features(args, cancellation_token.clone())
+            ),
+            sleep(static_runtime_duration)
+        )
+    };
+    tokio::pin!(barrier);
+
+    let scheduler_task = scheduler.apply(initial_schedule.clone(), cancellation_token.clone());
+    tokio::pin!(scheduler_task);
+
+    let (features_result, static_schedule_finished) = tokio::select! {
+        (feat_res, _sleep_res) = &mut barrier => {
+            (feat_res, None)
+        }
+
+        sched_res = &mut scheduler_task => {
+            let feat_res = tokio::select! {
+                (feat_res, _sleep_res) = barrier => feat_res,
+                _ = cancellation_token.cancelled() => return Err(Error::Cancelled),
+            };
+            (feat_res, Some(sched_res))
+        }
+    };
+
+    let schedule = match features_result {
+        Ok(features_result) => {
+            let features = features_result.map_err(Error::from)?;
+            tokio::task::spawn_blocking(move || ai.schedule(&features, cores)).await??
+        }
+        Err(_) => {
+            logging::info!("Feature extraction timed out. Running timeout schedule");
+            timeout_schedule(args, cores).await?
+        }
+    };
+
+    match static_schedule_finished {
+        Some(Ok(())) => {}
+        Some(Err(errors)) => {
+            let error_len = errors.len();
+            handle_schedule_errors(errors);
+            if error_len == initial_schedule.len() {
+                return Err(Error::SolverFailure);
+            }
+        }
+        None => {
+            logging::info!("applying static schedule timed out");
+        }
+    }
+    Ok(schedule)
 }
 
 // async fn start_with_ai(
@@ -219,11 +257,11 @@ async fn start_without_ai(
     args: &Args,
     scheduler: &mut Scheduler,
     schedule: Portfolio,
-) -> Result<Portfolio, ()> {
+) -> Result<Portfolio, Error> {
     let static_runtime = Duration::from_secs(args.static_runtime);
     let cancellation_token = CancellationToken::new();
 
-    let fut = scheduler.apply(schedule.clone(), Some(cancellation_token.clone()));
+    let fut = scheduler.apply(schedule.clone(), cancellation_token.clone());
     tokio::pin!(fut);
 
     let apply_result = tokio::select! {
@@ -243,7 +281,7 @@ async fn start_without_ai(
             let error_len = errors.len();
             handle_schedule_errors(errors);
             if error_len == schedule.len() {
-                return Err(());
+                return Err(Error::SolverFailure);
             }
         }
     }
@@ -265,15 +303,15 @@ fn get_cores(args: &Args, ai: &Option<impl Ai>) -> (usize, usize) {
     (cores, initial_solver_cores)
 }
 
-async fn get_features(args: &Args, token: CancellationToken) -> Result<Vec<f32>, ()> {
-    let conversion = convert_mzn(args, FEATURES_SOLVER, Some(token))
-        .await
-        .map_err(|e| logging::error!(e.into()))?;
+async fn get_features(args: &Args, token: CancellationToken) -> Result<Vec<f32>, Error> {
+    let conversion = convert_mzn(args, FEATURES_SOLVER, token.clone()).await?;
 
-    let features = fzn_to_features(conversion.fzn())
-        .await
-        .map_err(|e| logging::error!(e.into()))?;
-    Ok(features)
+    tokio::select! {
+        result = fzn_to_features(conversion.fzn()) => {
+            result.map_err(Error::from)
+        },
+        _ = token.cancelled() => Err(Error::Cancelled)
+    }
 }
 
 fn handle_schedule_errors(errors: Vec<solver_manager::Error>) {

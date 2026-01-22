@@ -38,7 +38,11 @@ impl CachedConverter {
         }
     }
 
-    pub async fn convert(&self, solver_name: &str, cancellation_token: Option<CancellationToken>) -> Result<Arc<Conversion>> {
+    pub async fn convert(
+        &self,
+        solver_name: &str,
+        cancellation_token: CancellationToken,
+    ) -> Result<Arc<Conversion>> {
         {
             let cache = self.cache.read().await;
             if let Some(conversion) = cache.get(solver_name) {
@@ -53,7 +57,11 @@ impl CachedConverter {
     }
 }
 
-pub async fn convert_mzn(args: &Args, solver_name: &str, cancellation_token: Option<CancellationToken>) -> Result<Conversion> {
+pub async fn convert_mzn(
+    args: &Args,
+    solver_name: &str,
+    cancellation_token: CancellationToken,
+) -> Result<Conversion> {
     let fzn_file = tempfile::Builder::new()
         .suffix(".fzn")
         .tempfile()
@@ -63,7 +71,14 @@ pub async fn convert_mzn(args: &Args, solver_name: &str, cancellation_token: Opt
         .tempfile()
         .map_err(ConversionError::TempFile)?;
 
-    run_mzn_to_fzn_cmd(args, solver_name, fzn_file.path(), ozn_file.path(), cancellation_token).await?;
+    run_mzn_to_fzn_cmd(
+        args,
+        solver_name,
+        fzn_file.path(),
+        ozn_file.path(),
+        cancellation_token,
+    )
+    .await?;
 
     Ok(Conversion { fzn_file, ozn_file })
 }
@@ -73,7 +88,7 @@ async fn run_mzn_to_fzn_cmd(
     solver_name: &str,
     fzn_result_path: &Path,
     ozn_result_path: &Path,
-    cancellation_token: Option<CancellationToken>,
+    cancellation_token: CancellationToken,
 ) -> Result<()> {
     let mut cmd = get_mzn_to_fzn_cmd(args, solver_name, fzn_result_path, ozn_result_path);
     cmd.stderr(Stdio::piped());
@@ -92,17 +107,13 @@ async fn run_mzn_to_fzn_cmd(
         });
     }
 
-    let status = if let Some(token) = cancellation_token {
-        tokio::select! {
-            _ = token.cancelled() => {
-                Err(Error::Cancelled)
-            }
-            result = child.wait() => {
-                result.map_err(|e| Error::Conversion(ConversionError::from(e)))
-            }
+    let status = tokio::select! {
+        _ = cancellation_token.cancelled() => {
+            Err(Error::Cancelled)
         }
-    } else {
-        child.wait().await.map_err(|e| Error::Conversion(ConversionError::from(e)))
+        result = child.wait() => {
+            result.map_err(|e| Error::Conversion(ConversionError::from(e)))
+        }
     };
 
     let status = status?;

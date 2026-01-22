@@ -52,14 +52,26 @@ async fn main() {
     let cores = args.cores;
 
     let result = match args.ai {
-        Ai::None => tokio::select! {
-            result = sunny(&args, None::<SimpleAi>, config, Arc::new(solvers), token.clone()) => result,
-            _ = token.cancelled() => Ok(())
-        },
-        Ai::Simple => tokio::select! {
-            result = sunny(&args, Some(SimpleAi {}), config, Arc::new(solvers), token.clone()) => result,
-            _ = token.cancelled() => Ok(())
-        },
+        Ai::None => {
+            sunny(
+                &args,
+                None::<SimpleAi>,
+                config,
+                Arc::new(solvers),
+                token.clone(),
+            )
+            .await
+        }
+        Ai::Simple => {
+            sunny(
+                &args,
+                Some(SimpleAi {}),
+                config,
+                Arc::new(solvers),
+                token.clone(),
+            )
+            .await
+        }
         Ai::CommandLine => {
             let ai_config = parse_ai_config(args.ai_config.as_deref());
             let Some(command) = ai_config.get("command") else {
@@ -70,20 +82,27 @@ async fn main() {
             };
 
             let ai = crate::ai::commandline::Ai::new(command.clone(), args.verbosity);
-            tokio::select! {
-                result = sunny(&args, Some(ai), config, Arc::new(solvers), token.clone()) => result,
-                _ = token.cancelled() => Ok(())
-            }
+            sunny(&args, Some(ai), config, Arc::new(solvers), token.clone()).await
         }
     };
 
-    if result.is_err() {
-        logging::error_msg!("Portfolio solver failed, falling back to backup solver");
-        if let Err(e) = run_backup_solver(&args, cores).await {
+    match result {
+        Ok(()) => {}
+        Err(sunny::Error::Cancelled) => {
+            // User cancelled, don't run backup solver
+        }
+        Err(e) => {
             logging::error!(e.into());
-            exit(1);
-        } else {
-            exit(2);
+            logging::error_msg!("Portfolio solver failed, falling back to backup solver");
+            tokio::select! {
+                _ = token.cancelled() => {},
+                result = run_backup_solver(&args, cores) => {
+                    if let Err(e) = result {
+                        logging::error!(e.into());
+                        exit(1);
+                    }
+                }
+            }
         }
     }
 }
