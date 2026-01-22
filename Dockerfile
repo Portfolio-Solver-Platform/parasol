@@ -18,6 +18,17 @@ COPY src ./src
 RUN touch src/main.rs && cargo build --release --locked --quiet
 
 FROM minizinc/mznc2025:latest AS base-small
+
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+    ca-certificates \
+    # Java is needed at runtime by Yuck
+    default-jre \
+    # Dynamic library needed by Gecode
+    libegl1 \
+    # Cleanup
+    && apt-get clean -qq \
+    && rm -rf /var/lib/apt/lists/*
+
 FROM base-small AS base
 
 WORKDIR /app
@@ -28,30 +39,21 @@ ENV RUSTUP_HOME=/usr/local/rustup
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
 # Install system dependencies
-RUN apt-get update -qq && apt-get install -y -qq \
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     software-properties-common \
-    && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get update -qq && apt-get install -y -qq \
-    ca-certificates \
-    libssl-dev \
+    curl \
     wget \
-    default-jre \
     unzip \
     git \
-    curl \
     jq \
     cmake \
     flex \
     bison \
-    libxml++2.6-dev \
     build-essential \
-    libgl1 \
-    libglu1-mesa \
-    libegl1 \
-    libfontconfig1 \
     # Install rustup
-    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.91 \
     # Cleanup
+    && apt-get clean -qq \
     && rm -rf /var/lib/apt/lists/*
 
 FROM base AS huub
@@ -211,23 +213,24 @@ RUN git clone -q https://github.com/nfzhou/fzn_picat.git /opt/fzn_picat
 
 FROM base-small AS final
 
-# Install dependencies and SCIP from a .deb package
-COPY --from=scip /opt/scip/package.deb ./scip-package.deb
+# Install Python
 RUN apt-get update -qq && apt-get install -qq -y --no-install-recommends \
     software-properties-common \
     && add-apt-repository universe \
     && add-apt-repository ppa:deadsnakes/ppa \
     && apt-get install -qq -y \
-        ./scip-package.deb \
         python3.13 \
         python3.13-venv \
-    && rm ./scip-package.deb \
     && apt-get clean -qq && rm -rf /var/lib/apt/lists/*
-
 RUN python3.13 -m ensurepip --upgrade
 
 COPY command-line-ai/requirements.txt ./requirements.txt
 RUN python3.13 -m pip install --quiet -r ./requirements.txt
+
+COPY --from=scip /opt/scip/package.deb ./scip-package.deb
+RUN apt-get update -qq && apt-get install -qq -y ./scip-package.deb \
+    && rm ./scip-package.deb \
+    && apt-get clean -qq && rm -rf /var/lib/apt/lists/*
 
 COPY --from=mzn2feat /opt/mzn2feat/bin/mzn2feat /usr/local/bin/mzn2feat
 COPY --from=mzn2feat /opt/mzn2feat/bin/fzn2feat /usr/local/bin/fzn2feat
@@ -255,9 +258,9 @@ COPY ./minizinc/Preferences.json /root/.minizinc/
 COPY --from=builder /usr/src/app/target/release/portfolio-solver-framework /usr/local/bin/portfolio-solver-framework
 COPY command-line-ai ./command-line-ai
 
-# Gecode also uses dynamically linked libraries, so register these with the system
-# Note that Chuffed may be dependent on these same linked libraries, but I'm not sure
-# This is done at the very end to make sure it doesn't mess with other commands
+# Gecode also uses dynamically linked libraries (DLL), so register these with the system.
+# Note that Chuffed may be dependent on these same linked libraries, but I'm not sure.
+# This is done at the very end to make sure it doesn't mess with other commands.
 RUN echo "/opt/gecode/lib" > /etc/ld.so.conf.d/gecode.conf \
     && ldconfig
 
@@ -274,7 +277,29 @@ RUN echo "/opt/gecode/lib" > /etc/ld.so.conf.d/gecode.conf \
 
 FROM builder AS ci
 
-FROM final AS ci-integration
+FROM final AS ci-end-to-end
+
+    # Undo Gecode DLL modifications
+RUN rm /etc/ld.so.conf.d/gecode.conf && ldconfig \
+    # Remove Python apt-get repository
+    && rm -f /etc/apt/sources.list.d/deadsnakes* \
+    # Install build tools (because the CI builds the application)
+    && apt-get update -qq \
+    && apt-get install -y -qq --no-install-recommends \
+    gcc \
+    libc6-dev \
+    # Cleanup
+    && rm -rf /var/lib/apt/lists/* \
+    # Redo Gecode DLL modifications (because they are needed at runtime)
+    && echo "/opt/gecode/lib" > /etc/ld.so.conf.d/gecode.conf && ldconfig
+
+# Fix paths for cargo
+ENV CARGO_HOME=/usr/local/cargo
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
+
+COPY --from=base /usr/local/cargo /usr/local/cargo
+COPY --from=base /usr/local/rustup /usr/local/rustup
 
 COPY Cargo.toml Cargo.lock ./
 COPY ./src ./src

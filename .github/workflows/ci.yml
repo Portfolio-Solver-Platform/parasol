@@ -84,7 +84,7 @@ jobs:
     - name: Build integration Docker image
       uses: docker/build-push-action@v6
       with:
-        target: ci-integration
+        target: ci-end-to-end
         load: true
         tags: ${{ vars.DOCKERHUB_USERNAME }}/framework:latest
         cache-from: type=registry,ref=${{ vars.DOCKERHUB_USERNAME }}/framework:buildcache
