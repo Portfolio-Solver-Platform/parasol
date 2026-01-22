@@ -1,61 +1,11 @@
 use crate::args::Args;
 use crate::logging;
-use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
-use std::sync::Arc;
-use tempfile::NamedTempFile;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
-
-pub struct CachedConverter {
-    args: Args,
-    cache: RwLock<HashMap<String, Arc<Conversion>>>,
-}
-
-pub struct Conversion {
-    fzn_file: NamedTempFile,
-    ozn_file: NamedTempFile,
-}
-
-impl Conversion {
-    pub fn fzn(&self) -> &Path {
-        self.fzn_file.path()
-    }
-
-    pub fn ozn(&self) -> &Path {
-        self.ozn_file.path()
-    }
-}
-
-impl CachedConverter {
-    pub fn new(args: Args) -> Self {
-        Self {
-            args,
-            cache: RwLock::new(HashMap::new()),
-        }
-    }
-
-    pub async fn convert(
-        &self,
-        solver_name: &str,
-        cancellation_token: CancellationToken,
-    ) -> Result<Arc<Conversion>> {
-        {
-            let cache = self.cache.read().await;
-            if let Some(conversion) = cache.get(solver_name) {
-                return Result::Ok(conversion.clone());
-            }
-        }
-
-        let conversion = Arc::new(convert_mzn(&self.args, solver_name, cancellation_token).await?);
-        let mut cache = self.cache.write().await;
-        cache.insert(solver_name.to_owned(), conversion.clone());
-        Ok(conversion)
-    }
-}
+use super::Conversion;
 
 pub async fn convert_mzn(
     args: &Args,

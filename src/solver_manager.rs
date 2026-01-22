@@ -80,7 +80,7 @@ pub struct SolverManager {
     tx: mpsc::UnboundedSender<Msg>,
     solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
     args: Args,
-    mzn_to_fzn: mzn_to_fzn::CachedConverter,
+    mzn_to_fzn: mzn_to_fzn::cached_compiler::CachedCompiler,
     objective_inserter: ObjectiveInserter,
     best_objective: Arc<RwLock<Option<ObjectiveValue>>>,
     solver_info: Arc<solver_discovery::Solvers>,
@@ -128,7 +128,7 @@ impl SolverManager {
             tx,
             solvers,
             solver_info: solver_info.clone(),
-            mzn_to_fzn: mzn_to_fzn::CachedConverter::new(args.clone()),
+            mzn_to_fzn: mzn_to_fzn::cached_compiler::CachedCompiler::new(args.clone()),
             args,
             best_objective,
             objective_inserter: ObjectiveInserter::new(solver_info),
@@ -239,7 +239,7 @@ impl SolverManager {
         let cores = elem.info.cores;
         let conversion_paths = self
             .mzn_to_fzn
-            .convert(solver_name, cancellation_token.clone())
+            .compile(solver_name, cancellation_token.clone())
             .await?;
         let (fzn_final_path, fzn_guard) = if let Some(obj) = objective {
             if let Ok(new_temp_file) = self
