@@ -3,11 +3,11 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::{sync::RwLock, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
+use super::Conversion;
+use super::compilation;
 use crate::args;
 use crate::args::RunArgs;
 use crate::logging;
-use super::Conversion;
-use super::compilation;
 
 pub struct CompilationManager {
     args: Arc<RunArgs>,
@@ -16,10 +16,13 @@ pub struct CompilationManager {
 
 enum Compilation {
     Done(Arc<Conversion>),
-    Started(StartedCompilation)
+    Started(StartedCompilation),
 }
 
-struct StartedCompilation(CancellationToken, JoinHandle<compilation::Result<Conversion>>);
+struct StartedCompilation(
+    CancellationToken,
+    JoinHandle<compilation::Result<Conversion>>,
+);
 
 impl CompilationManager {
     pub async fn is_started(&self, solver_name: &str) -> bool {
@@ -33,7 +36,9 @@ impl CompilationManager {
     pub async fn start_all(&self, solver_names: impl Iterator<Item = String>) {
         let new_solvers: Vec<_> = {
             let compilations = self.compilations.read().await;
-            solver_names.filter(|name| !compilations.contains_key(name)).collect()
+            solver_names
+                .filter(|name| !compilations.contains_key(name))
+                .collect()
         };
 
         if self.args.verbosity >= args::Verbosity::Info {
@@ -45,10 +50,13 @@ impl CompilationManager {
             let args = self.args.clone();
             let cancellation_token_clone = cancellation_token.clone();
             let name_clone = solver_name.clone();
-            let compilation = tokio::spawn( async move {
+            let compilation = tokio::spawn(async move {
                 compilation::convert_mzn(&args, &solver_name, cancellation_token_clone).await
             });
-            (name_clone, StartedCompilation(cancellation_token, compilation))
+            (
+                name_clone,
+                StartedCompilation(cancellation_token, compilation),
+            )
         });
 
         let mut compilations = self.compilations.write().await;
@@ -57,7 +65,11 @@ impl CompilationManager {
         }
     }
 
-    pub async fn get(&self, solver_name: &str, cancellation_token: Option<CancellationToken>) -> compilation::Result<Conversion> {
+    pub async fn get(
+        &self,
+        solver_name: &str,
+        cancellation_token: Option<CancellationToken>,
+    ) -> compilation::Result<Conversion> {
         todo!()
     }
 
@@ -68,7 +80,7 @@ impl CompilationManager {
 
 pub enum Cancellable<T> {
     Done(T),
-    Cancelled
+    Cancelled,
 }
 
 impl From<StartedCompilation> for Compilation {

@@ -3,8 +3,8 @@ use crate::{
     config::Config,
     logging,
     model_parser::ObjectiveValue,
-    solver_manager::{Error, SolverManager},
     solver_config,
+    solver_manager::{Error, SolverManager},
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

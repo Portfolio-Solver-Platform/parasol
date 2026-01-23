@@ -1,3 +1,4 @@
+use super::Conversion;
 use crate::args::RunArgs;
 use crate::logging;
 use std::path::Path;
@@ -5,7 +6,6 @@ use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
-use super::Conversion;
 
 pub async fn convert_mzn(
     args: &RunArgs,
@@ -79,7 +79,7 @@ fn get_mzn_to_fzn_cmd(
     fzn_result_path: &Path,
     ozn_result_path: &Path,
 ) -> Command {
-    let mut cmd = Command::new(&args.minizinc_exe);
+    let mut cmd = Command::new(&args.minizinc.minizinc_exe);
     cmd.kill_on_drop(true);
     #[cfg(unix)]
     cmd.process_group(0);

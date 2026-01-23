@@ -1,10 +1,34 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
+use crate::args::SolverConfigMode;
+use crate::logging;
+
+pub mod cache;
 pub mod discovery;
 
-#[derive(Debug, Clone)]
+pub async fn load(mode: &SolverConfigMode, minizinc_exe: &Path) -> Solvers {
+    match mode {
+        SolverConfigMode::Cache => match cache::load_solvers_config() {
+            Ok(solvers) => return solvers,
+            Err(e) => {
+                logging::error_msg!(
+                    "Failed to load solver cache: {e}. Falling back to discovery"
+                );
+            }
+        },
+        SolverConfigMode::Discover => {}
+    }
+
+    discovery::discover(minizinc_exe).await.unwrap_or_else(|e| {
+        logging::error!(e.into());
+        Solvers::empty()
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Solver {
     id: String,
     executable: Option<Executable>,
@@ -12,7 +36,7 @@ pub struct Solver {
     input_type: SolverInputType,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SupportedStdFlags {
     pub a: bool,
     pub i: bool,
@@ -20,16 +44,16 @@ pub struct SupportedStdFlags {
     pub p: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SolverInputType {
     Fzn,
     Json,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Executable(PathBuf, Vec<String>);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Solvers(Vec<Solver>);
 
 impl Solvers {

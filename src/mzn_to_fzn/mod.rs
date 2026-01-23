@@ -1,5 +1,5 @@
-mod compilation;
 pub mod cached_compiler;
+mod compilation;
 pub mod compilation_manager;
 
 pub use compilation::*;
@@ -7,7 +7,6 @@ pub use compilation::*;
 use std::path::Path;
 
 use tempfile::NamedTempFile;
-
 
 pub struct Conversion {
     fzn_file: NamedTempFile,

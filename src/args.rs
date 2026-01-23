@@ -12,10 +12,10 @@ pub struct Cli {
 
 #[derive(clap::Subcommand, Debug, Clone)]
 pub enum Command {
-    /// Run the solver framework
+    /// Run the parasol framework
     Run(RunArgs),
     /// Build the solver config cache and exit
-    BuildSolverCache,
+    BuildSolverCache(BuildSolverCacheArgs),
 }
 
 #[derive(clap::Args, Debug, Clone)]
@@ -60,7 +60,7 @@ pub struct RunArgs {
     pub output_objective: bool,
 
     // === Execution ===
-    /// The number of cores the framework should use
+    /// The number of cores parasol should use
     #[arg(short = 'p', default_value = "2", help_heading = "Execution")]
     pub cores: usize,
 
@@ -87,9 +87,8 @@ pub struct RunArgs {
     pub feature_timeout: u64,
 
     // === Paths ===
-    /// The path to the minizinc executable.
-    #[arg(long, default_value = "minizinc", help_heading = "Paths")]
-    pub minizinc_exe: PathBuf,
+    #[command(flatten)]
+    pub minizinc: MiniZincArgs,
 
     /// The path to the static schedule file.
     /// The file needs to be a CSV (without a header) in the format of `<solver>,<cores>`.
@@ -116,6 +115,19 @@ pub struct RunArgs {
     /// Whether to discover solvers at startup or load from a pre-generated cache. Loading from cache is faster.
     #[arg(long, default_value = "discover", help_heading = "Debugging")]
     pub solver_config_mode: SolverConfigMode,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct MiniZincArgs {
+    /// The path to the minizinc executable.
+    #[arg(long, default_value = "minizinc", help_heading = "Paths")]
+    pub minizinc_exe: PathBuf,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct BuildSolverCacheArgs {
+    #[command(flatten)]
+    pub minizinc: MiniZincArgs,
 }
 
 #[derive(Debug, Clone, ValueEnum)]

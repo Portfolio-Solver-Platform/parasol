@@ -32,8 +32,14 @@ async fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::BuildSolverCache => {
-            todo!()
+        Command::BuildSolverCache(cache_args) => {
+            if let Err(e) =
+                solver_config::cache::build_solvers_config_cache(&cache_args.minizinc.minizinc_exe)
+                    .await
+            {
+                eprintln!("Failed to build solver cache: {e}");
+                exit(1);
+            }
         }
         Command::Run(args) => run(args).await,
     }
@@ -42,12 +48,7 @@ async fn main() {
 async fn run(args: RunArgs) {
     logging::init(args.verbosity);
 
-    let solvers = solver_config::discovery::discover(&args.minizinc_exe)
-        .await
-        .unwrap_or_else(|e| {
-            logging::error!(e.into());
-            solver_config::Solvers::empty()
-        });
+    let solvers = solver_config::load(&args.solver_config_mode, &args.minizinc.minizinc_exe).await;
 
     let config = Config::new(&args, &solvers);
     let token = CancellationToken::new();

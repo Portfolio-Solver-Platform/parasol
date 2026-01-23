@@ -1,8 +1,4 @@
-use std::{
-    collections::HashSet,
-    path::Path,
-    process::ExitStatus,
-};
+use std::{collections::HashSet, path::Path, process::ExitStatus};
 
 use serde_json::{Map, Value};
 use tokio::process::Command;

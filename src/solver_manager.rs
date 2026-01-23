@@ -102,7 +102,7 @@ impl SolverManager {
         solver_info: Arc<solver_config::Solvers>,
         program_cancellation_token: CancellationToken,
     ) -> std::result::Result<Self, Error> {
-        let objective_type = get_objective_type(&args.minizinc_exe, &args.model).await?;
+        let objective_type = get_objective_type(&args.minizinc.minizinc_exe, &args.model).await?;
         let (tx, rx) = mpsc::unbounded_channel::<Msg>();
         let solvers = Arc::new(Mutex::new(HashMap::new()));
 
@@ -185,7 +185,7 @@ impl SolverManager {
         let solver = self.solver_info.get_by_id(solver_name);
 
         let make_fzn_cmd = || {
-            let mut cmd = Command::new(&self.args.minizinc_exe);
+            let mut cmd = Command::new(&self.args.minizinc.minizinc_exe);
             cmd.arg("--solver").arg(solver_name);
             cmd
         };
@@ -223,7 +223,7 @@ impl SolverManager {
     }
 
     fn get_ozn_command(&self, ozn_path: &Path) -> Command {
-        let mut cmd = Command::new(&self.args.minizinc_exe);
+        let mut cmd = Command::new(&self.args.minizinc.minizinc_exe);
         cmd.arg("--ozn-file");
         cmd.arg(ozn_path);
         cmd

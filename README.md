@@ -1,4 +1,4 @@
-# Portfolio Solver Framework
+# Parasol
 
 ## Usage
 
