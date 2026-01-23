@@ -3,8 +3,8 @@ use crate::{
     config::Config,
     logging,
     model_parser::ObjectiveValue,
-    solver_discovery,
     solver_manager::{Error, SolverManager},
+    solver_config,
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -100,7 +100,7 @@ impl Scheduler {
     pub async fn new(
         args: &RunArgs,
         config: &Config,
-        solver_info: Arc<solver_discovery::Solvers>,
+        solver_info: Arc<solver_config::Solvers>,
         program_cancellation_token: CancellationToken,
     ) -> std::result::Result<Self, Error> {
         let solver_manager = Arc::new(

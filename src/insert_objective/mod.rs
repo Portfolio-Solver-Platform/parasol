@@ -3,17 +3,17 @@ mod json;
 
 use crate::logging;
 use crate::model_parser::{ObjectiveType, ObjectiveValue};
-use crate::solver_discovery::{self, SolverInputType};
+use crate::solver_config::{self, SolverInputType};
 use async_tempfile::TempFile;
 use std::path::Path;
 use std::sync::Arc;
 
 pub struct ObjectiveInserter {
-    solvers: Arc<solver_discovery::Solvers>,
+    solvers: Arc<solver_config::Solvers>,
 }
 
 impl ObjectiveInserter {
-    pub fn new(solvers: Arc<solver_discovery::Solvers>) -> Self {
+    pub fn new(solvers: Arc<solver_config::Solvers>) -> Self {
         Self { solvers }
     }
 

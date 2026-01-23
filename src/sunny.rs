@@ -5,7 +5,7 @@ use crate::fzn_to_features::{self, fzn_to_features};
 use crate::mzn_to_fzn::{self, convert_mzn};
 use crate::scheduler::{Portfolio, Scheduler};
 use crate::static_schedule::{self, static_schedule, timeout_schedule};
-use crate::{ai, logging, solver_discovery, solver_manager};
+use crate::{ai, logging, solver_config, solver_manager};
 use crate::{ai::Ai, args::RunArgs};
 use tokio::time::{Duration, sleep, timeout};
 use tokio_util::sync::CancellationToken;
@@ -35,7 +35,7 @@ pub async fn sunny<T: Ai + Send + 'static>(
     args: &RunArgs,
     ai: Option<T>,
     config: Config,
-    solvers: Arc<solver_discovery::Solvers>,
+    solvers: Arc<solver_config::Solvers>,
     program_cancellation_token: CancellationToken,
 ) -> Result<(), Error> {
     let mut scheduler =

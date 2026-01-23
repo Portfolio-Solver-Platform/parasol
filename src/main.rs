@@ -9,7 +9,7 @@ mod model_parser;
 mod mzn_to_fzn;
 mod process_tree;
 mod scheduler;
-mod solver_discovery;
+mod solver_config;
 mod solver_manager;
 mod solver_output;
 mod solvers;
@@ -42,11 +42,11 @@ async fn main() {
 async fn run(args: RunArgs) {
     logging::init(args.verbosity);
 
-    let solvers = solver_discovery::discover(&args.minizinc_exe)
+    let solvers = solver_config::discovery::discover(&args.minizinc_exe)
         .await
         .unwrap_or_else(|e| {
             logging::error!(e.into());
-            solver_discovery::Solvers::empty()
+            solver_config::Solvers::empty()
         });
 
     let config = Config::new(&args, &solvers);

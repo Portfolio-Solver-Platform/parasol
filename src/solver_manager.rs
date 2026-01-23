@@ -5,9 +5,9 @@ use crate::process_tree::{
     get_process_tree_memory, recursive_force_kill, send_signals_to_process_tree,
 };
 use crate::scheduler::ScheduleElement;
-use crate::solver_discovery::SolverInputType;
+use crate::solver_config::SolverInputType;
 use crate::solver_output::{Output, Solution, Status};
-use crate::{logging, mzn_to_fzn, solver_discovery, solver_output};
+use crate::{logging, mzn_to_fzn, solver_config, solver_output};
 use futures::future::join_all;
 use nix::errno::Errno;
 #[cfg(target_os = "linux")]
@@ -83,7 +83,7 @@ pub struct SolverManager {
     mzn_to_fzn: mzn_to_fzn::cached_compiler::CachedCompiler,
     objective_inserter: ObjectiveInserter,
     best_objective: Arc<RwLock<Option<ObjectiveValue>>>,
-    solver_info: Arc<solver_discovery::Solvers>,
+    solver_info: Arc<solver_config::Solvers>,
     objective_type: ObjectiveType,
     solver_args: HashMap<String, Vec<String>>,
     available_cores: Arc<Mutex<BTreeSet<usize>>>, // assume that smallest ids is fastest cores, hence we use btreeset to sort the core id's
@@ -99,7 +99,7 @@ impl SolverManager {
     pub async fn new(
         args: RunArgs,
         solver_args: HashMap<String, Vec<String>>,
-        solver_info: Arc<solver_discovery::Solvers>,
+        solver_info: Arc<solver_config::Solvers>,
         program_cancellation_token: CancellationToken,
     ) -> std::result::Result<Self, Error> {
         let objective_type = get_objective_type(&args.minizinc_exe, &args.model).await?;

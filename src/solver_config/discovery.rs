@@ -1,7 +1,6 @@
-use std::time::Instant;
 use std::{
     collections::HashSet,
-    path::{Path, PathBuf},
+    path::Path,
     process::ExitStatus,
 };
 
@@ -9,49 +8,15 @@ use serde_json::{Map, Value};
 use tokio::process::Command;
 
 use crate::logging;
+use crate::solver_config::{Executable, Solver, SolverInputType, Solvers, SupportedStdFlags};
 
-#[derive(Debug, Clone)]
-pub struct Solver {
-    id: String,
-    executable: Option<Executable>,
-    supported_std_flags: SupportedStdFlags,
-    input_type: SolverInputType,
+pub async fn discover(minizinc_exe: &Path) -> Result<Solvers> {
+    let output = run_discover_command(minizinc_exe).await?;
+    let json = serde_json::from_slice::<Value>(&output)?;
+    Solvers::from_json(json)
 }
-
-#[derive(Debug, Clone, Default)]
-pub struct SupportedStdFlags {
-    pub a: bool,
-    pub i: bool,
-    pub f: bool,
-    pub p: bool,
-}
-
-#[derive(Debug, Clone)]
-pub enum SolverInputType {
-    Fzn,
-    Json,
-}
-
-#[derive(Debug, Clone)]
-pub struct Executable(PathBuf, Vec<String>);
-
-#[derive(Debug, Clone)]
-pub struct Solvers(Vec<Solver>);
 
 impl Solvers {
-    pub fn empty() -> Self {
-        Self(Vec::new())
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &Solver> {
-        self.0.iter()
-    }
-
-    pub fn get_by_id(&self, name: &str) -> Option<&Solver> {
-        let lowered_id = name.to_lowercase();
-        self.0.iter().find(|solver| solver.id == lowered_id)
-    }
-
     fn from_json(json: Value) -> Result<Self> {
         let Value::Array(array) = json else {
             return Err(Error::InvalidOutputFormat(
@@ -239,12 +204,6 @@ impl Solver {
     }
 }
 
-impl Executable {
-    pub fn into_command(self) -> Command {
-        Command::new(self.0)
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 enum SolverParseError {
     #[error("JSON is not an object: {0}")]
@@ -273,12 +232,6 @@ enum SolverParseError {
     StdFlagNotAString(Value),
 }
 type SolverParseResult<T> = std::result::Result<T, SolverParseError>;
-
-pub async fn discover(minizinc_exe: &Path) -> Result<Solvers> {
-    let output = run_discover_command(minizinc_exe).await?;
-    let json = serde_json::from_slice::<Value>(&output)?;
-    Solvers::from_json(json)
-}
 
 async fn run_discover_command(minizinc_exe: &Path) -> Result<Vec<u8>> {
     let mut cmd = Command::new(minizinc_exe);
