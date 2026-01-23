@@ -49,6 +49,8 @@ impl Solvers {
 
 impl Executable {
     pub fn into_command(self) -> Command {
-        Command::new(self.0)
+        let mut cmd = Command::new(self.0);
+        cmd.args(self.1);
+        cmd
     }
 }
