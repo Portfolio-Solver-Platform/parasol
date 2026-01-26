@@ -9,6 +9,7 @@ mod model_parser;
 mod mzn_to_fzn;
 mod process_tree;
 mod scheduler;
+mod signal_handler;
 mod solver_config;
 mod solver_manager;
 mod solver_output;
@@ -52,12 +53,12 @@ async fn run(args: RunArgs) {
 
     let config = Config::new(&args, &solvers);
     let token = CancellationToken::new();
-    let token_signal = token.clone();
+    // let token_signal = token.clone();
 
-    ctrlc::set_handler(move || {
-        token_signal.cancel();
-    })
-    .expect("Error setting Ctrl-C handler");
+    // ctrlc::set_handler(move || {
+    //     token_signal.cancel();
+    // })
+    // .expect("Error setting Ctrl-C handler");
 
     let cores = args.cores;
 

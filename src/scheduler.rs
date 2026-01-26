@@ -3,8 +3,9 @@ use crate::{
     config::Config,
     logging,
     model_parser::ObjectiveValue,
+    signal_handler::{SignalEvent, spawn_signal_handler},
     solver_config,
-    solver_manager::{Error, SolverManager},
+    solver_manager::{self, Error, SolverManager},
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -112,6 +113,21 @@ impl Scheduler {
             )
             .await?,
         );
+
+        let mut signal_rx = spawn_signal_handler(program_cancellation_token.clone());
+
+        let solver_manager_clone = solver_manager.clone();
+        tokio::spawn(async move {
+            while let Some(event) = signal_rx.recv().await {
+                let result = match event {
+                    SignalEvent::Suspend => solver_manager_clone.suspend_all_solvers().await,
+                    SignalEvent::Resume => solver_manager_clone.resume_all_solvers().await,
+                };
+                if let Err(e) = result {
+                    handle_schedule_errors(e);
+                }
+            }
+        });
 
         let memory_limit = std::env::var("MEMORY_LIMIT")
             .ok()
@@ -479,4 +495,9 @@ impl Scheduler {
 
         schedule
     }
+}
+
+fn handle_schedule_errors(errors: Vec<solver_manager::Error>) {
+    logging::error_msg!("got the following errors when applying the schedule:");
+    errors.into_iter().for_each(|e| logging::error!(e.into()));
 }
