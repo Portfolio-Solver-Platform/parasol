@@ -1,6 +1,5 @@
-use crate::{args::RunArgs, signal_handler::spawn_signal_handler};
+use crate::args::RunArgs;
 use tokio::process::Command;
-use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
