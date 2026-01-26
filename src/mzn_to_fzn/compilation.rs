@@ -1,5 +1,6 @@
 use super::Conversion;
 use crate::args::RunArgs;
+use crate::is_cancelled::IsCancelled;
 use crate::logging;
 use std::path::Path;
 use std::process::Stdio;
@@ -118,4 +119,22 @@ pub enum ConversionError {
     TempFile(std::io::Error),
     #[error("IO error")]
     Io(#[from] tokio::io::Error),
+}
+
+impl IsCancelled for Error {
+    fn is_cancelled(&self) -> bool {
+        match self {
+            Error::Cancelled => true,
+            Error::Conversion(_) => false,
+        }
+    }
+}
+
+impl<T> IsCancelled for Result<T> {
+    fn is_cancelled(&self) -> bool {
+        match self {
+            Ok(_) => false,
+            Err(e) => e.is_cancelled(),
+        }
+    }
 }

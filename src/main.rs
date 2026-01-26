@@ -4,6 +4,7 @@ mod backup_solvers;
 mod config;
 mod fzn_to_features;
 mod insert_objective;
+mod is_cancelled;
 mod logging;
 mod model_parser;
 mod mzn_to_fzn;

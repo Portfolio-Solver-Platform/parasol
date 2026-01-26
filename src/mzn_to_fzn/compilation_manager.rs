@@ -10,23 +10,28 @@ use super::Conversion;
 use super::compilation;
 use crate::args;
 use crate::args::RunArgs;
+use crate::is_cancelled::IsCancelled;
 use crate::logging;
 
 pub struct CompilationManager {
     args: Arc<RunArgs>,
     compilations: Arc<RwLock<HashMap<String, Compilation>>>,
+    /// The cancellation token for the manager itself.
+    /// If cancelled, the manager will stop working as intended, but it can be used to cancel all
+    /// running processes at once.
+    cancellation_token: CancellationToken,
 }
 
 #[derive(Clone, Debug)]
 enum Compilation {
-    Done(Arc<compilation::Result<Conversion>>),
+    Done(Arc<Result<Conversion>>),
     Started(Arc<StartedCompilation>),
 }
 
 #[derive(Debug)]
 struct StartedCompilation {
     cancellation_token: CancellationToken,
-    receiver: Receiver<Option<Arc<compilation::Result<Conversion>>>>,
+    receiver: Receiver<Option<Arc<Result<Conversion>>>>,
 }
 
 impl CompilationManager {
@@ -51,7 +56,7 @@ impl CompilationManager {
         }
 
         let new_compilations = new_solvers.into_iter().map(|solver_name| {
-            let cancellation_token = CancellationToken::new();
+            let cancellation_token = self.cancellation_token.child_token();
             let args = self.args.clone();
             let cancellation_token_clone = cancellation_token.clone();
             let name_clone = solver_name.clone();
@@ -61,12 +66,13 @@ impl CompilationManager {
             let (tx, rx) = watch::channel(None);
 
             tokio::spawn(async move {
-                let compilation =
-                    compilation::convert_mzn(&args, &solver_name, cancellation_token_clone).await;
+                let compilation = Arc::new(
+                    compilation::convert_mzn(&args, &solver_name, cancellation_token_clone)
+                        .await
+                        .map_err(Error::from),
+                );
 
-                let compilation = Arc::new(compilation);
-
-                {
+                if !compilation.is_cancelled() {
                     compilations
                         .write()
                         .await
@@ -91,42 +97,55 @@ impl CompilationManager {
         }
     }
 
-    pub async fn get(
+    pub async fn wait_for(
         &self,
         solver_name: &str,
-        cancellation_token: Option<CancellationToken>,
-    ) -> Option<Arc<compilation::Result<Conversion>>> {
+        cancellation_token: CancellationToken,
+    ) -> Arc<Result<Conversion>> {
         let compilation = {
-            let compilations = self.compilations.read().await;
-            compilations.get(solver_name).cloned()
+            tokio::select! {
+                compilations = self.compilations.read() => {
+                    Cancellable::Done(compilations.get(solver_name).cloned())
+                },
+                _ = cancellation_token.cancelled() => {
+                    Cancellable::Cancelled
+                }
+            }
+        };
+
+        let Cancellable::Done(compilation) = compilation else {
+            return Arc::new(Err(Error::Cancelled));
         };
 
         let Some(compilation) = compilation else {
-            logging::info!(
-                "Attempted to get the compilation of solver '{solver_name}' when it has not been started"
-            );
-            return None;
+            return Arc::new(Err(Error::NotStarted(solver_name.to_string())));
         };
 
         match compilation {
-            Compilation::Done(result) => Some(result),
+            Compilation::Done(result) => result,
             Compilation::Started(compilation) => {
                 let mut rx = compilation.receiver.clone();
-                let result = rx.wait_for(|value| value.is_some()).await;
+                let wait_for_compilation = rx.wait_for(|value| value.is_some());
+                let result = tokio::select! {
+                    result = wait_for_compilation => Cancellable::Done(result),
+                    _ = cancellation_token.cancelled() => Cancellable::Cancelled
+                };
+
+                let Cancellable::Done(result) = result else {
+                    return Arc::new(Err(Error::Cancelled));
+                };
 
                 let Ok(value) = result else {
-                    logging::error_msg!(
-                        "sender closed the channel for '{solver_name}' before finishing compilation"
-                    );
-                    return None;
+                    return Arc::new(Err(Error::ChannelClosed(solver_name.to_string())));
                 };
 
                 let Some(compilation) = value.clone() else {
-                    logging::error_msg!("value is None despite waiting for it to be Some");
-                    return None;
+                    return Arc::new(Err(Error::CompilationUnfinishedAfterWaiting(
+                        solver_name.to_string(),
+                    )));
                 };
 
-                Some(compilation)
+                compilation
             }
         }
     }
@@ -151,6 +170,46 @@ impl CompilationManager {
                     "attempted to stop the compilation for a solver but a compilation is not registered for that solver (neither as started or finished)"
                 );
             }
+        }
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("compilation was cancelled")]
+    Cancelled,
+    #[error(
+        "a compilation for solver '{0}' was attempted to be retrieved, but one has not been started for that solver"
+    )]
+    NotStarted(String),
+    #[error("the channel closed for the compilation for '{0}' while waiting for the result")]
+    ChannelClosed(String),
+    #[error("the compilation of solver '{0}' was still unfinished after waiting for it to be done")]
+    CompilationUnfinishedAfterWaiting(String),
+    #[error(transparent)]
+    Compilation(#[from] compilation::Error),
+}
+pub type Result<T> = std::result::Result<T, Error>;
+
+enum Cancellable<T> {
+    Done(T),
+    Cancelled,
+}
+
+impl IsCancelled for Error {
+    fn is_cancelled(&self) -> bool {
+        match self {
+            Error::Cancelled => true,
+            _ => false,
+        }
+    }
+}
+
+impl<T> IsCancelled for Result<T> {
+    fn is_cancelled(&self) -> bool {
+        match self {
+            Ok(_) => false,
+            Err(e) => e.is_cancelled(),
         }
     }
 }
