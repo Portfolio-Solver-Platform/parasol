@@ -54,12 +54,6 @@ async fn run(args: RunArgs) {
 
     let config = Config::new(&args, &solvers);
     let token = CancellationToken::new();
-    // let token_signal = token.clone();
-
-    // ctrlc::set_handler(move || {
-    //     token_signal.cancel();
-    // })
-    // .expect("Error setting Ctrl-C handler");
 
     let cores = args.cores;
 
