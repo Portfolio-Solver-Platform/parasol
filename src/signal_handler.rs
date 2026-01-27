@@ -17,7 +17,6 @@ pub fn spawn_signal_handler(
     let (tx, rx) = mpsc::unbounded_channel::<SignalEvent>();
 
     tokio::spawn(async move {
-        eprintln!("[signal_handler] task started");
         macro_rules! register_signal {
             ($kind:expr) => {
                 match signal($kind) {
@@ -56,7 +55,6 @@ pub fn spawn_signal_handler(
                     break;
                 }
                 _ = sigtstp.recv() => {
-                    eprintln!("[signal_handler] SIGTSTP received");
                     let _ = tx.send(SignalEvent::Suspend);
                 }
                 _ = sigcont.recv() => {
