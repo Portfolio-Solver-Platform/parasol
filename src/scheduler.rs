@@ -81,15 +81,12 @@ struct MemoryEnforcerState {
 pub struct Scheduler {
     state: Arc<Mutex<MemoryEnforcerState>>,
     pub solver_manager: Arc<SolverManager>,
+    scheduler_cancellation_token: CancellationToken,
 }
 
 impl Drop for Scheduler {
     fn drop(&mut self) {
-        let manager = self.solver_manager.clone();
-
-        tokio::spawn(async move {
-            let _ = manager.stop_all_solvers().await;
-        });
+        self.scheduler_cancellation_token.cancel();
     }
 }
 
@@ -103,22 +100,22 @@ impl Scheduler {
         config: &Config,
         solver_info: Arc<solver_config::Solvers>,
         program_cancellation_token: CancellationToken,
+        mut suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
     ) -> std::result::Result<Self, Error> {
+        let scheduler_cancellation_token = program_cancellation_token.child_token();
         let solver_manager = Arc::new(
             SolverManager::new(
                 args.clone(),
                 config.solver_args.clone(),
                 solver_info,
-                program_cancellation_token.clone(),
+                program_cancellation_token,
             )
             .await?,
         );
 
-        let mut signal_rx = spawn_signal_handler(program_cancellation_token.clone());
-
         let solver_manager_clone = solver_manager.clone();
         tokio::spawn(async move {
-            while let Some(event) = signal_rx.recv().await {
+            while let Some(event) = suspend_and_resume_signal_rx.recv().await {
                 let result = match event {
                     SignalEvent::Suspend => {
                         let res = solver_manager_clone.suspend_all_solvers().await;
@@ -155,9 +152,10 @@ impl Scheduler {
         let state_clone = state.clone();
         let solver_manager_clone = solver_manager.clone();
         let config_clone = config.clone();
+        let scheduler_cancellation_token_clone = scheduler_cancellation_token.clone();
         tokio::spawn(async move {
             tokio::select! {
-                _ = program_cancellation_token.cancelled() => {},
+                _ = scheduler_cancellation_token_clone.cancelled() => {},
                 _ = Self::memory_enforcer_loop(state_clone, solver_manager_clone, config_clone) => {}
             }
         });
@@ -165,6 +163,7 @@ impl Scheduler {
         Ok(Self {
             state,
             solver_manager,
+            scheduler_cancellation_token,
         })
     }
 

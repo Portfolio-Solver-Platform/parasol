@@ -25,12 +25,17 @@ use crate::ai::SimpleAi;
 use crate::args::{Ai, Cli, Command, RunArgs, parse_ai_config};
 use crate::backup_solvers::run_backup_solver;
 use crate::config::Config;
+use crate::signal_handler::{SignalEvent, spawn_signal_handler};
 use crate::sunny::sunny;
 use clap::Parser;
 use tokio_util::sync::CancellationToken;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    let program_cancellation_token = CancellationToken::new();
+
+    let suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent> =
+        spawn_signal_handler(program_cancellation_token.clone());
     let cli = Cli::parse();
 
     match cli.command {
@@ -43,17 +48,27 @@ async fn main() {
                 exit(1);
             }
         }
-        Command::Run(args) => run(args).await,
+        Command::Run(args) => {
+            run(
+                args,
+                program_cancellation_token,
+                suspend_and_resume_signal_rx,
+            )
+            .await
+        }
     }
 }
 
-async fn run(args: RunArgs) {
+async fn run(
+    args: RunArgs,
+    program_cancellation_token: CancellationToken,
+    suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
+) {
     logging::init(args.verbosity);
 
     let solvers = solver_config::load(&args.solver_config_mode, &args.minizinc.minizinc_exe).await;
 
     let config = Config::new(&args, &solvers);
-    let token = CancellationToken::new();
 
     let cores = args.cores;
 
@@ -64,7 +79,8 @@ async fn run(args: RunArgs) {
                 None::<SimpleAi>,
                 config,
                 Arc::new(solvers),
-                token.clone(),
+                program_cancellation_token.clone(),
+                suspend_and_resume_signal_rx,
             )
             .await
         }
@@ -74,7 +90,8 @@ async fn run(args: RunArgs) {
                 Some(SimpleAi {}),
                 config,
                 Arc::new(solvers),
-                token.clone(),
+                program_cancellation_token.clone(),
+                suspend_and_resume_signal_rx,
             )
             .await
         }
@@ -88,7 +105,15 @@ async fn run(args: RunArgs) {
             };
 
             let ai = crate::ai::commandline::Ai::new(command.clone(), args.verbosity);
-            sunny(&args, Some(ai), config, Arc::new(solvers), token.clone()).await
+            sunny(
+                &args,
+                Some(ai),
+                config,
+                Arc::new(solvers),
+                program_cancellation_token.clone(),
+                suspend_and_resume_signal_rx,
+            )
+            .await
         }
     };
 
@@ -101,7 +126,7 @@ async fn run(args: RunArgs) {
             logging::error!(e.into());
             logging::error_msg!("Portfolio solver failed, falling back to backup solver");
             tokio::select! {
-                _ = token.cancelled() => {},
+                _ = program_cancellation_token.cancelled() => {},
                 result = run_backup_solver(&args, cores) => {
                     if let Err(e) = result {
                         logging::error!(e.into());

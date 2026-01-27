@@ -5,6 +5,7 @@ use crate::fzn_to_features::{self, fzn_to_features};
 use crate::mzn_to_fzn::compilation_manager::CompilationManager;
 use crate::mzn_to_fzn::{self, convert_mzn};
 use crate::scheduler::{Portfolio, Scheduler};
+use crate::signal_handler::SignalEvent;
 use crate::static_schedule::{self, static_schedule, timeout_schedule};
 use crate::{ai, logging, solver_config, solver_manager};
 use crate::{ai::Ai, args::RunArgs};
@@ -38,12 +39,19 @@ pub async fn sunny<T: Ai + Send + 'static>(
     config: Config,
     solvers: Arc<solver_config::Solvers>,
     program_cancellation_token: CancellationToken,
+    suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
 ) -> Result<(), Error> {
+    let compilation_manager =
+        CompilationManager::new(Arc::new(args.clone()), program_cancellation_token.clone());
 
-    let compilation_manager = CompilationManager::new(Arc::new(args.clone()), program_cancellation_token.clone());
-
-    let mut scheduler =
-        Scheduler::new(args, &config, solvers, program_cancellation_token.clone()).await?;
+    let mut scheduler = Scheduler::new(
+        args,
+        &config,
+        solvers,
+        program_cancellation_token.clone(),
+        suspend_and_resume_signal_rx,
+    )
+    .await?;
 
     let (cores, initial_solver_cores) = get_cores(args, &ai);
 

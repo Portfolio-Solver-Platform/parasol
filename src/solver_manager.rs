@@ -110,9 +110,14 @@ impl SolverManager {
         let best_objective: Arc<RwLock<Option<i64>>> = Arc::new(RwLock::new(None));
 
         let shared_objective = best_objective.clone();
-        let token_clone = program_cancellation_token.clone();
         tokio::spawn(async move {
-            Self::receiver(rx, objective_type, shared_objective, token_clone).await
+            Self::receiver(
+                rx,
+                objective_type,
+                shared_objective,
+                program_cancellation_token,
+            )
+            .await
         });
         let mut cores = BTreeSet::new();
         if let Some(core_ids) = core_affinity::get_core_ids() {
@@ -309,12 +314,13 @@ impl SolverManager {
 
         let solver_id = elem.id;
         let tx_clone = self.tx.clone();
-        let solvers_clone_stdout = self.solvers.clone();
         let objective_type = self.objective_type;
+        let solvers_clone_stdout = self.solvers.clone();
         let solvers_clone = self.solvers.clone();
         let solver_name = elem.info.name.clone();
         let available_cores_clone = self.available_cores.clone();
 
+        let cancellation_token_stdout = cancellation_token.clone();
         tokio::spawn(async move {
             Self::handle_solver_stdout(
                 ozn_stdout,
@@ -323,6 +329,7 @@ impl SolverManager {
                 solver_id,
                 solvers_clone_stdout,
                 objective_type,
+                cancellation_token_stdout,
             )
             .await;
         });
@@ -332,14 +339,22 @@ impl SolverManager {
 
         tokio::spawn(async move {
             let _keep_alive = fzn_guard;
-            match fzn.wait().await {
-                Ok(status) if !status.success() => {
-                    logging::info!("Solver '{}' exited with status: {}", solver_name, status);
+
+            tokio::select! {
+                result = fzn.wait() => {
+                    match result {
+                        Ok(status) if !status.success() => {
+                            logging::info!("Solver '{}' exited with status: {}", solver_name, status);
+                        }
+                        Err(e) => {
+                            logging::error_msg!("Error waiting for solver '{}': {}", solver_name, e);
+                        }
+                        _ => {}
+                    }
                 }
-                Err(e) => {
-                    logging::error_msg!("Error waiting for solver '{}': {}", solver_name, e);
+                _ = cancellation_token.cancelled() => {
+                    logging::info!("Solver '{}' cancelled", solver_name);
                 }
-                _ => {}
             }
 
             {
@@ -363,6 +378,7 @@ impl SolverManager {
         solver_id: u64,
         solvers: Arc<Mutex<HashMap<u64, SolverProcess>>>,
         objective_type: ObjectiveType,
+        cancellation_token: CancellationToken,
     ) {
         let reader = BufReader::new(stdout);
         let mut lines = reader.lines();
@@ -373,9 +389,20 @@ impl SolverManager {
             map.get(&solver_id).and_then(|s| s.best_objective)
         };
 
-        while let Ok(Some(line)) = lines.next_line().await.map_err(|err| {
-            logging::error!(HandleStdoutError::Read(err).into());
-        }) {
+        loop {
+            let line = tokio::select! {
+                result = lines.next_line() => {
+                    match result {
+                        Ok(Some(line)) => line,
+                        Ok(None) => break,
+                        Err(err) => {
+                            logging::error!(HandleStdoutError::Read(err).into());
+                            break;
+                        }
+                    }
+                }
+                _ = cancellation_token.cancelled() => break,
+            };
             let output = match parser.next_line(&line) {
                 Ok(o) => o,
                 Err(e) => {
