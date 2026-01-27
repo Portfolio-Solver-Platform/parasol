@@ -169,6 +169,9 @@ impl SolverManager {
                 }) => {
                     println!("{}", s.trim_end());
                     let _ = std::io::stdout().flush();
+                    // In satisfaction problems, we are only interested in a single solution
+                    program_cancellation_token.cancel();
+                    break;
                 }
                 Msg::Status(status) => {
                     if status != Status::Unknown {
