@@ -73,10 +73,10 @@ RUN wget -q https://github.com/informarte/yuck/releases/download/20251106/yuck-2
 
 FROM base AS or-tools
 
-RUN wget -q https://github.com/google/or-tools/releases/download/v9.14/or-tools_amd64_ubuntu-24.04_cpp_v9.14.6206.tar.gz -O or-tools.tar.gz \
-    && tar -xzf or-tools.tar.gz \
+WORKDIR /or-tools
+RUN wget -q https://github.com/google/or-tools/releases/download/v9.15/or-tools_amd64_ubuntu-24.04_cpp_v9.15.6755.tar.gz -O or-tools.tar.gz \
+    && tar -xzf or-tools.tar.gz --strip-components=1 \
     && rm or-tools.tar.gz \
-    && mv or-tools_x86_64_Ubuntu-24.04_cpp_v9.14.6206 /or-tools \
     && mkdir /opt/or-tools \
     && mv /or-tools/bin /opt/or-tools/bin \
     && mv /or-tools/lib /opt/or-tools/lib \
