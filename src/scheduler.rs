@@ -1,5 +1,12 @@
 use crate::{
-    args::{RunArgs, Verbosity}, config::Config, logging, model_parser::ObjectiveValue, mzn_to_fzn::compilation_manager::CompilationManager, signal_handler::{SignalEvent, spawn_signal_handler}, solver_config, solver_manager::{self, Error, SolverManager}
+    args::{RunArgs, Verbosity},
+    config::Config,
+    logging,
+    model_parser::ObjectiveValue,
+    mzn_to_fzn::compilation_manager::CompilationManager,
+    signal_handler::{SignalEvent, spawn_signal_handler},
+    solver_config,
+    solver_manager::{self, Error, SolverManager},
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -106,23 +113,31 @@ impl Scheduler {
                 solver_info,
                 compilation_manager.clone(),
                 program_cancellation_token.clone(),
+                scheduler_cancellation_token.clone(),
             )
             .await?,
         );
 
         let solver_manager_clone = solver_manager.clone();
+        let scheduler_cancellation_token_clone = scheduler_cancellation_token.clone();
         tokio::spawn(async move {
-            while let Some(event) = suspend_and_resume_signal_rx.recv().await {
-                let result = match event {
-                    SignalEvent::Suspend => {
-                        let res = solver_manager_clone.suspend_all_solvers().await;
-                        nix::sys::signal::raise(nix::sys::signal::Signal::SIGSTOP).ok();
-                        res
+            loop {
+                tokio::select! {
+                    _ = scheduler_cancellation_token_clone.cancelled() => break,
+                    event = suspend_and_resume_signal_rx.recv() => {
+                        let Some(event) = event else { break };
+                        let result = match event {
+                            SignalEvent::Suspend => {
+                                let res = solver_manager_clone.suspend_all_solvers().await;
+                                nix::sys::signal::raise(nix::sys::signal::Signal::SIGSTOP).ok();
+                                res
+                            }
+                            SignalEvent::Resume => solver_manager_clone.resume_all_solvers().await,
+                        };
+                        if let Err(e) = result {
+                            handle_schedule_errors(e);
+                        }
                     }
-                    SignalEvent::Resume => solver_manager_clone.resume_all_solvers().await,
-                };
-                if let Err(e) = result {
-                    handle_schedule_errors(e);
                 }
             }
         });
@@ -362,11 +377,7 @@ impl Scheduler {
         }
     }
 
-    pub async fn apply(
-        &mut self,
-        portfolio: Portfolio,
-        cancellation_token: CancellationToken,
-    ) -> std::result::Result<(), Vec<Error>> {
+    pub async fn apply(&mut self, portfolio: Portfolio) -> std::result::Result<(), Vec<Error>> {
         let mut state = self.state.lock().await;
         let new_objective = self.solver_manager.get_best_objective().await;
 
@@ -438,20 +449,12 @@ impl Scheduler {
                 }
             }
             self.solver_manager
-                .start_solvers(
-                    &resume_elements,
-                    state.prev_objective,
-                    cancellation_token.clone(),
-                )
+                .start_solvers(&resume_elements, state.prev_objective)
                 .await?;
         }
 
         self.solver_manager
-            .start_solvers(
-                &changes.to_start,
-                state.prev_objective,
-                cancellation_token.clone(),
-            )
+            .start_solvers(&changes.to_start, state.prev_objective)
             .await
     }
 

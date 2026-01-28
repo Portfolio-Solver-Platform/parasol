@@ -41,7 +41,10 @@ pub async fn sunny<T: Ai + Send + 'static>(
     program_cancellation_token: CancellationToken,
     suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
 ) -> Result<(), Error> {
-    let compilation_manager = Arc::new(CompilationManager::new(Arc::new(args.clone()), program_cancellation_token.clone()));
+    let compilation_manager = Arc::new(CompilationManager::new(
+        Arc::new(args.clone()),
+        program_cancellation_token.clone(),
+    ));
 
     let mut scheduler = Scheduler::new(
         args,
@@ -70,11 +73,17 @@ pub async fn sunny<T: Ai + Send + 'static>(
             initial_schedule,
             cores,
             start_cancellation_token,
-            compilation_manager
+            compilation_manager,
         )
         .await
     } else {
-        start_without_ai(args, &mut scheduler, initial_schedule).await
+        start_without_ai(
+            args,
+            &mut scheduler,
+            initial_schedule,
+            program_cancellation_token.clone(),
+        )
+        .await
     }?;
 
     let restart_interval = Duration::from_secs(args.restart_interval);
@@ -88,9 +97,7 @@ pub async fn sunny<T: Ai + Send + 'static>(
         }
 
         let schedule_len = schedule.len();
-        if let Err(errors) = scheduler
-            .apply(schedule.clone(), program_cancellation_token.clone())
-            .await
+        if let Err(errors) = scheduler.apply(schedule.clone()).await
         {
             let errorlen = errors.len();
             handle_schedule_errors(errors);
@@ -149,10 +156,8 @@ async fn start_with_ai<T: Ai + Send + 'static>(
     //     };
     // }
 
-
-
     // let solvers_to_compiler: Vec<String> = initial_schedule.iter().map(|solver_info| solver_info.name.clone()).collect();
-    
+
     // let compile = compilation_manager.start_many(solver_names);
 
     let feature_timeout_duration =
@@ -168,8 +173,7 @@ async fn start_with_ai<T: Ai + Send + 'static>(
     };
     tokio::pin!(barrier);
 
-
-    let scheduler_task = scheduler.apply(initial_schedule.clone(), cancellation_token.clone());
+    let scheduler_task = scheduler.apply(initial_schedule.clone());
     tokio::pin!(scheduler_task);
 
     let (features_result, static_schedule_finished) = tokio::select! {
@@ -279,11 +283,11 @@ async fn start_without_ai(
     args: &RunArgs,
     scheduler: &mut Scheduler,
     schedule: Portfolio,
+    cancellation_token: CancellationToken,
 ) -> Result<Portfolio, Error> {
     let static_runtime = Duration::from_secs(args.static_runtime);
-    let cancellation_token = CancellationToken::new();
 
-    let fut = scheduler.apply(schedule.clone(), cancellation_token.clone());
+    let fut = scheduler.apply(schedule.clone());
     tokio::pin!(fut);
 
     let apply_result = tokio::select! {

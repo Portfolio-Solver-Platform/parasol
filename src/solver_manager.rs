@@ -92,6 +92,7 @@ pub struct SolverManager {
     objective_type: ObjectiveType,
     solver_args: HashMap<String, Vec<String>>,
     available_cores: Arc<Mutex<BTreeSet<usize>>>, // assume that smallest ids is fastest cores, hence we use btreeset to sort the core id's
+    cancellation_token: CancellationToken,
 }
 
 struct PipeCommand {
@@ -107,6 +108,7 @@ impl SolverManager {
         solver_info: Arc<solver_config::Solvers>,
         compilation_manager: Arc<CompilationManager>,
         program_cancellation_token: CancellationToken,
+        cancellation_token: CancellationToken,
     ) -> std::result::Result<Self, Error> {
         let objective_type = get_objective_type(&args.minizinc.minizinc_exe, &args.model).await?;
         let (tx, rx) = mpsc::unbounded_channel::<Msg>();
@@ -146,6 +148,7 @@ impl SolverManager {
             objective_type,
             solver_args,
             available_cores: Arc::new(Mutex::new(cores)),
+            cancellation_token,
         })
     }
 
@@ -248,12 +251,8 @@ impl SolverManager {
         cmd
     }
 
-    async fn start_solver(
-        &self,
-        elem: &ScheduleElement,
-        objective: Option<ObjectiveValue>,
-        cancellation_token: CancellationToken,
-    ) -> Result<()> {
+    async fn start_solver(&self, elem: &ScheduleElement, objective: Option<ObjectiveValue>) -> Result<()> {
+        let cancellation_token = self.cancellation_token.clone();
         let solver_name = &elem.info.name;
         let cores = elem.info.cores;
         self.mzn_to_fzn.start(solver_name.clone()).await;
@@ -478,11 +477,10 @@ impl SolverManager {
         &self,
         schedule: &[ScheduleElement],
         objective: Option<ObjectiveValue>,
-        cancellation_token: CancellationToken,
     ) -> std::result::Result<(), Vec<Error>> {
         let futures = schedule
             .iter()
-            .map(|elem| self.start_solver(elem, objective, cancellation_token.clone()));
+            .map(|elem| self.start_solver(elem, objective));
         let results = join_all(futures).await;
         let errors: Vec<Error> = results.into_iter().filter_map(Result::err).collect();
 
