@@ -421,6 +421,7 @@ impl Scheduler {
                     logging::info!("solver objectives: {:?}", solver_objectives);
                     logging::info!("solver to restart {:?}", to_restart);
                 }
+
                 self.solver_manager.stop_solvers(&to_restart).await?;
 
                 for id in &to_restart {

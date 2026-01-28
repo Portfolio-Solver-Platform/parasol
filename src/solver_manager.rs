@@ -309,6 +309,8 @@ impl SolverManager {
         map.insert(elem_id, solver_proccess);
         drop(map);
 
+        logging::info!("Solver {solver_name} now is running");
+
         #[allow(unused_mut)]
         let mut allocated_cores: Vec<usize> = Vec::new();
         #[cfg(target_os = "linux")]

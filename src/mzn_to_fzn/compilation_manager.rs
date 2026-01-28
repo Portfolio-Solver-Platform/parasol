@@ -95,9 +95,10 @@ impl CompilationManager {
                     //       self.compilations map, because the only way the compilation gets cancelled is in stop_all,
                     //       which also removes it from the map.
 
-                    let _ = tx
-                        .send(Some(compilation))
-                        .map_err(|e| logging::error!(Error::SendError(solver_name, e).into()));
+                    let _ = tx.send(Some(compilation)).map_err(|e| {
+                        logging::error!(Error::SendError(solver_name.clone(), e).into())
+                    });
+                    logging::info!("Compilation for solver '{solver_name}' is done");
                 });
 
                 (
