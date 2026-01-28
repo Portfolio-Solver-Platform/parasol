@@ -101,6 +101,7 @@ pub async fn sunny<T: Ai + Send + 'static>(
                 return Err(Error::SolverFailure);
             }
         }
+
         timer = sleep(restart_interval);
     }
 }

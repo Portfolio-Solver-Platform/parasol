@@ -1,4 +1,4 @@
-FROM rust:1.91 AS rust
+FROM rust:1.93 AS rust
 FROM rust AS builder
 
 # The number of make jobs used when `make` is called
@@ -125,7 +125,7 @@ RUN mkdir -p /opt/pumpkin/bin \
 FROM base AS minizinc-source
 
 WORKDIR /source
-ENV MINIZINC_SOURCE_VERSION=2.9.4
+ENV MINIZINC_SOURCE_VERSION=2.9.5
 RUN wget -qO minizinc.tgz https://github.com/MiniZinc/MiniZincIDE/releases/download/${MINIZINC_SOURCE_VERSION}/MiniZincIDE-${MINIZINC_SOURCE_VERSION}-bundle-linux-x86_64.tgz \
     && tar xf minizinc.tgz --strip-components=1 \
     && rm minizinc.tgz \

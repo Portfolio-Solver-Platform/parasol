@@ -53,14 +53,7 @@ impl CompilationManager {
 
     pub async fn start_many(&self, solver_names: impl Iterator<Item = String>) {
         let mut compilations = self.compilations.write().await;
-        let new_solvers = solver_names
-            .filter(|name| {
-                let is_compiling = compilations.contains_key(name);
-                if is_compiling {
-                    logging::info!("Attempted to start compiling for '{name}' even though it has already started compilation or is done compiling");
-                }
-                !is_compiling
-            });
+        let new_solvers = solver_names.filter(|name| !compilations.contains_key(name));
 
         let new_compilations: Vec<_> = new_solvers
             .map(|solver_name| {

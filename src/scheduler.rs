@@ -15,6 +15,15 @@ use sysinfo::System;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
+#[derive(Clone)]
+pub struct SchedulerChildCancellationToken(CancellationToken);
+
+impl SchedulerChildCancellationToken {
+    pub fn cancel(&self) {
+        self.0.cancel()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ScheduleElement {
     pub id: u64,
@@ -68,6 +77,7 @@ struct ScheduleChanges {
     to_resume: Vec<u64>,
 }
 
+#[derive(Debug)]
 struct MemoryEnforcerState {
     running_solvers: HashMap<u64, SolverInfo>,
     suspended_solvers: HashMap<u64, SolverInfo>,
@@ -179,8 +189,8 @@ impl Scheduler {
         })
     }
 
-    pub fn create_apply_token(&self) -> CancellationToken {
-        self.scheduler_cancellation_token.child_token()
+    pub fn create_apply_token(&self) -> SchedulerChildCancellationToken {
+        SchedulerChildCancellationToken(self.scheduler_cancellation_token.child_token())
     }
 
     fn get_memory_usage(state: &mut MemoryEnforcerState) -> (f64, f64) {
@@ -380,13 +390,13 @@ impl Scheduler {
         }
     }
 
-    /// precondition: the apply_cancellation_token should be from self.create_apply_token()
     pub async fn apply(
         &mut self,
         portfolio: Portfolio,
-        apply_cancellation_token: CancellationToken,
+        apply_cancellation_token: SchedulerChildCancellationToken,
         stop_other_compiling_solvers: bool,
     ) -> std::result::Result<(), Vec<Error>> {
+        dbg!(&self.state);
         if stop_other_compiling_solvers {
             let solver_to_keep_compiling =
                 portfolio.iter().map(|info| info.name.to_string()).collect();
@@ -411,6 +421,7 @@ impl Scheduler {
                 let solver_objectives = self.solver_manager.get_solver_objectives().await;
 
                 let objective_type = self.solver_manager.objective_type();
+                logging::info!("{:?}", solver_objectives);
                 let to_restart: Vec<u64> = solver_objectives
                     .iter()
                     .filter(|(_, best)| objective_type.is_better(**best, obj))
@@ -436,6 +447,8 @@ impl Scheduler {
             Self::categorize_schedule(schedule.clone(), &mut state, self.solver_manager.clone())
                 .await;
         Self::apply_changes_to_state(&mut state, &changes);
+
+        dbg!(&state);
 
         if state.debug_verbosity >= Verbosity::Info
             && (!changes.to_start.is_empty()
@@ -466,22 +479,20 @@ impl Scheduler {
                     }
                 }
             }
-            self.solver_manager
-                .start_solvers(
-                    &resume_elements,
-                    state.prev_objective,
-                    apply_cancellation_token.clone(),
-                )
-                .await?;
+            self.solver_manager.start_solvers(
+                &resume_elements,
+                state.prev_objective,
+                apply_cancellation_token.0.clone(),
+            );
         }
 
-        self.solver_manager
-            .start_solvers(
-                &changes.to_start,
-                state.prev_objective,
-                apply_cancellation_token,
-            )
-            .await
+        self.solver_manager.start_solvers(
+            &changes.to_start,
+            state.prev_objective,
+            apply_cancellation_token.0,
+        );
+
+        Ok(())
     }
 
     fn assign_ids(
