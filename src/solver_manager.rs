@@ -1,6 +1,5 @@
 use crate::args::RunArgs;
 use crate::insert_objective::ObjectiveInserter;
-use crate::is_cancelled::IsCancelled;
 use crate::model_parser::{ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type};
 use crate::mzn_to_fzn::compilation_manager::{self, CompilationManager};
 use crate::process_tree::{
@@ -94,7 +93,6 @@ pub struct SolverManager {
     objective_type: ObjectiveType,
     solver_args: HashMap<String, Vec<String>>,
     available_cores: Arc<Mutex<BTreeSet<usize>>>, // assume that smallest ids is fastest cores, hence we use btreeset to sort the core id's
-    cancellation_token: CancellationToken,
 }
 
 struct PipeCommand {
@@ -110,7 +108,6 @@ impl SolverManager {
         solver_info: Arc<solver_config::Solvers>,
         compilation_manager: Arc<CompilationManager>,
         program_cancellation_token: CancellationToken,
-        cancellation_token: CancellationToken,
     ) -> std::result::Result<Self, Error> {
         let objective_type = get_objective_type(&args.minizinc.minizinc_exe, &args.model).await?;
         let (tx, rx) = mpsc::unbounded_channel::<Msg>();
@@ -150,7 +147,6 @@ impl SolverManager {
             objective_type,
             solver_args,
             available_cores: Arc::new(Mutex::new(cores)),
-            cancellation_token,
         })
     }
 
@@ -313,6 +309,7 @@ impl SolverManager {
         map.insert(elem_id, solver_proccess);
         drop(map);
 
+        #[allow(unused_mut)]
         let mut allocated_cores: Vec<usize> = Vec::new();
         #[cfg(target_os = "linux")]
         if self.args.pin_yuck {
@@ -635,6 +632,7 @@ impl SolverManager {
         Self::_stop_solvers(self.solvers.clone(), ids).await
     }
 
+    #[allow(dead_code)]
     pub async fn stop_all_solvers(&self) -> std::result::Result<(), Vec<Error>> {
         Self::_stop_all_solvers(self.solvers.clone()).await
     }

@@ -28,11 +28,7 @@ pub struct RunArgs {
     pub data: Option<PathBuf>,
 
     /// The MiniZinc data file corresponding to the model file
-    #[arg(
-        long,
-        default_value = "None",
-        help_heading = "Input Files"
-    )]
+    #[arg(long, default_value = "None", help_heading = "Input Files")]
     pub solver_compiler_priority: Option<PathBuf>,
 
     // === AI Configuration ===
@@ -80,6 +76,14 @@ pub struct RunArgs {
     #[arg(long, short = 'f', help_heading = "Execution")]
     pub ignore_search: bool,
 
+    /// The ID of the solver that should be used for the MiniZinc to FlatZinc conversion for feature extraction.
+    #[arg(long, help_heading = "Execution", default_value = crate::solvers::GECODE_ID)]
+    pub feature_extraction_solver_id: String,
+
+    /// Whether to discover solvers at startup or load from a pre-generated cache. Loading from cache is faster.
+    #[arg(long, default_value = "discover", help_heading = "Execution")]
+    pub solver_config_mode: SolverConfigMode,
+
     // === Timing ===
     /// The minimum time (in seconds) the initial static schedule will be run before using the AI's schedule
     #[arg(long, default_value = "5", help_heading = "Timing")]
@@ -119,10 +123,6 @@ pub struct RunArgs {
         help_heading = "Debugging"
     )]
     pub verbosity: Verbosity,
-
-    /// Whether to discover solvers at startup or load from a pre-generated cache. Loading from cache is faster.
-    #[arg(long, default_value = "discover", help_heading = "Debugging")]
-    pub solver_config_mode: SolverConfigMode,
 }
 
 #[derive(clap::Args, Debug, Clone)]

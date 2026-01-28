@@ -4,7 +4,7 @@ use crate::{
     logging,
     model_parser::ObjectiveValue,
     mzn_to_fzn::compilation_manager::CompilationManager,
-    signal_handler::{SignalEvent, spawn_signal_handler},
+    signal_handler::SignalEvent,
     solver_config,
     solver_manager::{self, Error, SolverManager},
 };
@@ -113,7 +113,6 @@ impl Scheduler {
                 solver_info,
                 compilation_manager.clone(),
                 program_cancellation_token.clone(),
-                scheduler_cancellation_token.clone(),
             )
             .await?,
         );
@@ -386,11 +385,15 @@ impl Scheduler {
         &mut self,
         portfolio: Portfolio,
         apply_cancellation_token: CancellationToken,
+        stop_other_compiling_solvers: bool,
     ) -> std::result::Result<(), Vec<Error>> {
-        let solver_to_keep_compiling = portfolio.iter().map(|info| info.name.to_string()).collect();
-        self.compilation_manager
-            .stop_all_except(solver_to_keep_compiling)
-            .await;
+        if stop_other_compiling_solvers {
+            let solver_to_keep_compiling =
+                portfolio.iter().map(|info| info.name.to_string()).collect();
+            self.compilation_manager
+                .stop_all_except(solver_to_keep_compiling)
+                .await;
+        }
 
         let mut state = self.state.lock().await;
         let new_objective = self.solver_manager.get_best_objective().await;

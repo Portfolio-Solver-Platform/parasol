@@ -4,10 +4,10 @@ use std::{
     sync::Arc,
 };
 
+use tokio::sync::RwLock;
 use tokio::sync::watch;
 use tokio::sync::watch::Receiver;
 use tokio::sync::watch::error::SendError;
-use tokio::sync::{RwLock, RwLockWriteGuard};
 use tokio_util::sync::CancellationToken;
 
 use super::Conversion;
@@ -39,10 +39,10 @@ struct RunningCompilation {
 }
 
 impl CompilationManager {
-    pub fn new(args: Arc<RunArgs>, cancellation_token: CancellationToken) -> Self {
+    pub fn new(args: Arc<RunArgs>) -> Self {
         Self {
             args,
-            cancellation_token,
+            cancellation_token: CancellationToken::new(),
             compilations: Default::default(),
         }
     }
@@ -74,6 +74,7 @@ impl CompilationManager {
                 let (tx, rx) = watch::channel(None);
 
                 tokio::spawn(async move {
+                    logging::info!("starting compilation for solver '{solver_name}'");
                     let compilation =
                         compilation::convert_mzn(&args, &solver_name, cancellation_token_clone)
                             .await
@@ -172,12 +173,26 @@ impl CompilationManager {
             self.compilations
                 .read()
                 .await
-                .keys()
-                .filter(|name| !exception_solver_names.contains(*name))
+                .iter()
+                .filter(|(name, _)| !exception_solver_names.contains(*name))
+                .filter(|(_, compilation)| {
+                    if let Compilation::Done(_) = compilation {
+                        false
+                    } else {
+                        true
+                    }
+                })
+                .map(|(name, _)| name)
                 .cloned()
                 .collect::<Vec<_>>()
         };
         self.stop_many(solvers_to_stop.into_iter()).await;
+    }
+}
+
+impl Drop for CompilationManager {
+    fn drop(&mut self) {
+        self.cancellation_token.cancel()
     }
 }
 
@@ -218,7 +233,7 @@ impl IsCancelled for WaitForError {
 impl From<&compilation::Error> for WaitForError {
     fn from(value: &compilation::Error) -> Self {
         match value {
-            super::Error::Cancelled => Self::Cancelled,
+            super::Error::Cancelled(_) => Self::Cancelled,
             super::Error::Conversion(_) => Self::Conversion,
         }
     }

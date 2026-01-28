@@ -1,4 +1,3 @@
-pub mod cached_compiler;
 mod compilation;
 pub mod compilation_manager;
 

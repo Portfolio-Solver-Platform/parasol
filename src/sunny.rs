@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use crate::config::Config;
 use crate::fzn_to_features::{self, fzn_to_features};
+use crate::mzn_to_fzn;
 use crate::mzn_to_fzn::compilation_manager::CompilationManager;
-use crate::mzn_to_fzn::{self, convert_mzn};
 use crate::scheduler::{Portfolio, Scheduler};
 use crate::signal_handler::SignalEvent;
 use crate::static_schedule::{self, static_schedule, timeout_schedule};
@@ -11,7 +11,6 @@ use crate::{ai, logging, solver_config, solver_manager};
 use crate::{ai::Ai, args::RunArgs};
 use tokio::time::{Duration, sleep, timeout};
 use tokio_util::sync::CancellationToken;
-const FEATURES_SOLVER: &str = "gecode";
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -21,6 +20,8 @@ pub enum Error {
     FznToFeatures(#[from] fzn_to_features::Error),
     #[error("failed converting flatzinc to features")]
     MznToFzn(#[from] mzn_to_fzn::Error),
+    #[error("failed to wait for the compilation")]
+    WaitForMznToFzn(#[from] mzn_to_fzn::compilation_manager::WaitForError),
     #[error("Schedule error")]
     Schedule(#[from] static_schedule::Error),
     #[error("Ai error")]
@@ -41,10 +42,7 @@ pub async fn sunny<T: Ai + Send + 'static>(
     program_cancellation_token: CancellationToken,
     suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
 ) -> Result<(), Error> {
-    let compilation_manager = Arc::new(CompilationManager::new(
-        Arc::new(args.clone()),
-        program_cancellation_token.clone(),
-    ));
+    let compilation_manager = Arc::new(CompilationManager::new(Arc::new(args.clone())));
 
     let mut scheduler = Scheduler::new(
         args,
@@ -94,7 +92,7 @@ pub async fn sunny<T: Ai + Send + 'static>(
 
         let apply_cancellation_token = scheduler.create_apply_token();
         if let Err(errors) = scheduler
-            .apply(schedule.clone(), apply_cancellation_token)
+            .apply(schedule.clone(), apply_cancellation_token, true)
             .await
         {
             let errorlen = errors.len();
@@ -164,15 +162,18 @@ async fn start_with_ai<T: Ai + Send + 'static>(
         tokio::join!(
             timeout(
                 feature_timeout_duration,
-                get_features(args, cancellation_token.clone())
+                get_features(args, compilation_manager, cancellation_token.clone())
             ),
             sleep(static_runtime_duration)
         )
     };
     tokio::pin!(barrier);
     let apply_cancellation_token = scheduler.create_apply_token();
-    let scheduler_task =
-        scheduler.apply(initial_schedule.clone(), apply_cancellation_token.clone());
+    let scheduler_task = scheduler.apply(
+        initial_schedule.clone(),
+        apply_cancellation_token.clone(),
+        false,
+    );
     tokio::pin!(scheduler_task);
 
     let (features_result, static_schedule_finished) = tokio::select! {
@@ -287,7 +288,7 @@ async fn start_without_ai(
     let static_runtime = Duration::from_secs(args.static_runtime);
 
     let apply_cancellation_token = scheduler.create_apply_token();
-    let fut = scheduler.apply(schedule.clone(), apply_cancellation_token.clone());
+    let fut = scheduler.apply(schedule.clone(), apply_cancellation_token.clone(), true);
     tokio::pin!(fut);
 
     let apply_result = tokio::select! {
@@ -329,8 +330,18 @@ fn get_cores(args: &RunArgs, ai: &Option<impl Ai>) -> (usize, usize) {
     (cores, initial_solver_cores)
 }
 
-async fn get_features(args: &RunArgs, token: CancellationToken) -> Result<Vec<f32>, Error> {
-    let conversion = convert_mzn(args, FEATURES_SOLVER, token.clone()).await?;
+async fn get_features(
+    args: &RunArgs,
+    compilation_manager: Arc<CompilationManager>,
+    token: CancellationToken,
+) -> Result<Vec<f32>, Error> {
+    compilation_manager
+        .start(args.feature_extraction_solver_id.clone())
+        .await;
+    let conversion = token
+        .run_until_cancelled(compilation_manager.wait_for(&args.feature_extraction_solver_id))
+        .await
+        .ok_or(Error::Cancelled)??;
 
     tokio::select! {
         result = fzn_to_features(conversion.fzn()) => {

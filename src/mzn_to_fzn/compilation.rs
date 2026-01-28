@@ -60,7 +60,7 @@ async fn run_mzn_to_fzn_cmd(
 
     let status = tokio::select! {
         _ = cancellation_token.cancelled() => {
-            Err(Error::Cancelled)
+            Err(Error::Cancelled(solver_name.to_owned()))
         }
         result = child.wait() => {
             result.map_err(|e| Error::Conversion(ConversionError::from(e)))
@@ -105,8 +105,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("conversion was cancelled")]
-    Cancelled,
+    #[error("conversion was cancelled for solver '{0}'")]
+    Cancelled(String),
     #[error(transparent)]
     Conversion(#[from] ConversionError),
 }
@@ -124,7 +124,7 @@ pub enum ConversionError {
 impl IsCancelled for Error {
     fn is_cancelled(&self) -> bool {
         match self {
-            Error::Cancelled => true,
+            Error::Cancelled(_) => true,
             Error::Conversion(_) => false,
         }
     }
