@@ -9,6 +9,7 @@ use crate::scheduler::ScheduleElement;
 use crate::solver_config::SolverInputType;
 use crate::solver_output::{Output, Solution, Status};
 use crate::{logging, mzn_to_fzn, solver_config, solver_output};
+use async_tempfile::TempFile;
 use futures::future::join_all;
 use nix::errno::Errno;
 #[cfg(target_os = "linux")]
@@ -48,7 +49,7 @@ pub enum Error {
     SolverSetCoreAffinity(#[from] Errno),
     #[error("solver with ID '{0}' has input type of JSON but has no executable")]
     ExecutableMissingForJsonSolver(String),
-    #[error("pipeing failed for process: {0}")]
+    #[error("piping failed for process: {0}")]
     Pipe(String),
     #[error("task join failed")]
     JoinError(#[from] tokio::task::JoinError),
@@ -97,6 +98,14 @@ struct PipeCommand {
     pub left: Child,
     pub right: Child,
     pub pipe: JoinHandle<std::io::Result<u64>>,
+}
+
+struct PreparedSolver {
+    fzn: Child,
+    ozn: Child,
+    pipe: JoinHandle<std::io::Result<u64>>,
+    fzn_guard: Option<TempFile>,
+    allocated_cores: Vec<usize>,
 }
 
 impl SolverManager {
@@ -249,6 +258,117 @@ impl SolverManager {
         cmd
     }
 
+    #[allow(clippy::too_many_arguments)]
+    async fn prepare_solver_process(
+        solver_name: &str,
+        cores: usize,
+        elem_id: u64,
+        cancellation_token: &CancellationToken,
+        mzn_to_fzn: &CompilationManager,
+        solver_info: &solver_config::Solvers,
+        best_objective: &RwLock<Option<ObjectiveValue>>,
+        objective_type: ObjectiveType,
+        minizinc_exe: &Path,
+        solver_args: &HashMap<String, Vec<String>>,
+        solver_processes: &Mutex<HashMap<u64, SolverProcess>>,
+        #[cfg(target_os = "linux")] available_cores: &Arc<Mutex<BTreeSet<usize>>>,
+        #[cfg(target_os = "linux")] pin_yuck: bool,
+    ) -> std::result::Result<PreparedSolver, ()> {
+        mzn_to_fzn.start(solver_name.to_string()).await;
+
+        let Some(conversion_paths) = cancellation_token
+            .run_until_cancelled(mzn_to_fzn.wait_for(solver_name))
+            .await
+        else {
+            logging::info!("solver '{solver_name}' was cancelled while waiting for compilation");
+            return Err(());
+        };
+
+        let Ok(conversion_paths) = conversion_paths.map_err(|e| logging::error!(e.into())) else {
+            return Err(());
+        };
+
+        // Create ObjectiveInserter inside the spawn
+        let objective_inserter = ObjectiveInserter::new(Arc::new(solver_info.clone()));
+
+        let objective = *best_objective.read().await;
+        let (fzn_final_path, fzn_guard) = if let Some(obj) = objective {
+            if let Ok(new_temp_file) = objective_inserter
+                .insert_objective(solver_name, conversion_paths.fzn(), &objective_type, obj)
+                .await
+            {
+                (new_temp_file.file_path().to_path_buf(), Some(new_temp_file))
+            } else {
+                (conversion_paths.fzn().to_path_buf(), None)
+            }
+        } else {
+            (conversion_paths.fzn().to_path_buf(), None)
+        };
+
+        let Ok(mut fzn_cmd) = Self::get_solver_command(
+            &fzn_final_path,
+            solver_name,
+            cores,
+            solver_info,
+            minizinc_exe,
+            solver_args,
+        )
+        .map_err(|e| logging::error!(e.into())) else {
+            return Err(());
+        };
+
+        #[cfg(unix)]
+        fzn_cmd.process_group(0); // let OS give it a group process id
+        fzn_cmd.stderr(Stdio::piped());
+
+        let mut ozn_cmd = Self::get_ozn_command(minizinc_exe, conversion_paths.ozn());
+        ozn_cmd.stdout(Stdio::piped());
+        ozn_cmd.stderr(Stdio::piped());
+
+        // we lock on solvers to guarantee we dont in another thread try to stop them at the same time
+        let mut map = solver_processes.lock().await;
+        let Ok(PipeCommand {
+            left: fzn,
+            right: ozn,
+            pipe,
+        }) = pipe(fzn_cmd, ozn_cmd).map_err(|e| logging::error!(e.into()))
+        else {
+            return Err(());
+        };
+
+        let pid = fzn.id().expect("Child has no PID");
+        let solver_proccess = SolverProcess {
+            pid,
+            best_objective: objective,
+        };
+
+        map.insert(elem_id, solver_proccess);
+        drop(map);
+
+        logging::info!("Solver {solver_name} now is running");
+
+        #[allow(unused_mut)]
+        let mut allocated_cores: Vec<usize> = Vec::new();
+        #[cfg(target_os = "linux")]
+        if pin_yuck {
+            match pin_yuck_solver_to_cores(pid, cores, available_cores).await {
+                Ok(cores) => allocated_cores = cores,
+                Err(e) => {
+                    logging::error!(e.into());
+                    return Err(());
+                }
+            }
+        }
+
+        Ok(PreparedSolver {
+            fzn,
+            ozn,
+            pipe,
+            fzn_guard,
+            allocated_cores,
+        })
+    }
+
     async fn start_solver(&self, elem: &ScheduleElement, cancellation_token: CancellationToken) {
         {
             self.current_solvers.lock().await.insert(elem.id); // keep track of current running/suspended solvers
@@ -272,95 +392,38 @@ impl SolverManager {
         tokio::spawn(async move {
             let solver_name = &elem.info.name;
             let cores = elem.info.cores;
-            mzn_to_fzn.start(solver_name.clone()).await;
+            let elem_id = elem.id;
 
-            let Some(conversion_paths) = cancellation_token
-                .run_until_cancelled(mzn_to_fzn.wait_for(solver_name))
-                .await
-            else {
-                logging::info!(
-                    "solver '{solver_name}' was cancelled while waiting for compilation"
-                );
-                return;
-            };
-
-            let Ok(conversion_paths) = conversion_paths.map_err(|e| logging::error!(e.into()))
-            else {
-                return;
-            };
-
-            // Create ObjectiveInserter inside the spawn
-            let objective_inserter = ObjectiveInserter::new(solver_info.clone());
-
-            let objective = *best_objective.read().await;
-            let (fzn_final_path, fzn_guard) = if let Some(obj) = objective {
-                if let Ok(new_temp_file) = objective_inserter
-                    .insert_objective(solver_name, conversion_paths.fzn(), &objective_type, obj)
-                    .await
-                {
-                    (new_temp_file.file_path().to_path_buf(), Some(new_temp_file))
-                } else {
-                    (conversion_paths.fzn().to_path_buf(), None)
-                }
-            } else {
-                (conversion_paths.fzn().to_path_buf(), None)
-            };
-
-            let Ok(mut fzn_cmd) = Self::get_solver_command(
-                &fzn_final_path,
+            let result = Self::prepare_solver_process(
                 solver_name,
                 cores,
+                elem_id,
+                &cancellation_token,
+                &mzn_to_fzn,
                 &solver_info,
+                &best_objective,
+                objective_type,
                 &minizinc_exe,
                 &solver_args,
+                &solver_processes,
+                #[cfg(target_os = "linux")]
+                &available_cores,
+                #[cfg(target_os = "linux")]
+                pin_yuck,
             )
-            .map_err(|e| logging::error!(e.into())) else {
-                return;
-            };
+            .await;
 
-            #[cfg(unix)]
-            fzn_cmd.process_group(0); // let OS give it a group process id
-            fzn_cmd.stderr(Stdio::piped());
-
-            let mut ozn_cmd = Self::get_ozn_command(&minizinc_exe, conversion_paths.ozn());
-            ozn_cmd.stdout(Stdio::piped());
-            ozn_cmd.stderr(Stdio::piped());
-
-            let elem_id = elem.id;
-            // we lock on solvers to guarantee we dont in another thread try to stop them at the same time
-            let mut map = solver_processes.lock().await;
-            let Ok(PipeCommand {
-                left: mut fzn,
-                right: mut ozn,
+            let Ok(PreparedSolver {
+                mut fzn,
+                mut ozn,
                 pipe,
-            }) = pipe(fzn_cmd, ozn_cmd).map_err(|e| logging::error!(e.into()))
+                fzn_guard,
+                allocated_cores,
+            }) = result
             else {
+                current_solvers.lock().await.remove(&elem_id);
                 return;
             };
-
-            let pid = fzn.id().expect("Child has no PID");
-            let solver_proccess = SolverProcess {
-                pid,
-                best_objective: objective,
-            };
-
-            map.insert(elem_id, solver_proccess);
-            drop(map);
-
-            logging::info!("Solver {solver_name} now is running");
-
-            #[allow(unused_mut)]
-            let mut allocated_cores: Vec<usize> = Vec::new();
-            #[cfg(target_os = "linux")]
-            if pin_yuck {
-                match pin_yuck_solver_to_cores(pid, cores, &available_cores).await {
-                    Ok(cores) => allocated_cores = cores,
-                    Err(e) => {
-                        logging::error!(e.into());
-                        return;
-                    }
-                }
-            }
 
             let ozn_stdout = ozn.stdout.take().expect("Failed to take ozn stdout");
             let ozn_stderr = ozn.stderr.take().expect("Failed to take ozn stderr");
@@ -755,7 +818,7 @@ fn pipe(mut left: Command, mut right: Command) -> Result<PipeCommand> {
     let mut right_stdin = right_child
         .stdin
         .take()
-        .ok_or_else(|| Error::Pipe("Could not capture the rigts process' stdin".to_string()))?;
+        .ok_or_else(|| Error::Pipe("Could not capture the right process' stdin".to_string()))?;
 
     let pipe_task =
         tokio::spawn(async move { tokio::io::copy(&mut left_stdout, &mut right_stdin).await });

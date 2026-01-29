@@ -18,7 +18,7 @@ pub enum Error {
     Cancelled,
     #[error("failed converting flatzinc to features")]
     FznToFeatures(#[from] fzn_to_features::Error),
-    #[error("failed converting flatzinc to features")]
+    #[error("failed converting minizinc to flatzinc")]
     MznToFzn(#[from] mzn_to_fzn::Error),
     #[error("failed to wait for the compilation")]
     WaitForMznToFzn(#[from] mzn_to_fzn::compilation_manager::WaitForError),

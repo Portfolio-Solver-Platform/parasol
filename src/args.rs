@@ -28,8 +28,8 @@ pub struct RunArgs {
     /// The MiniZinc data file corresponding to the model file
     pub data: Option<PathBuf>,
 
-    /// The MiniZinc data file corresponding to the model file
-    #[arg(long, default_value = "None", help_heading = "Input Files")]
+    /// Optional path to a solver compiler priority configuration file
+    #[arg(long, help_heading = "Input Files")]
     pub solver_compiler_priority: Option<PathBuf>,
 
     // === AI Configuration ===
