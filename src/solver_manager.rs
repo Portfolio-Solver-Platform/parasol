@@ -49,7 +49,7 @@ pub enum Error {
     #[error("solver with ID '{0}' has input type of JSON but has no executable")]
     ExecutableMissingForJsonSolver(String),
     #[error("pipeing failed for process: {0}")]
-    PipeError(String),
+    Pipe(String),
     #[error("task join failed")]
     JoinError(#[from] tokio::task::JoinError),
     #[error("conversion was cancelled")]
@@ -550,7 +550,7 @@ impl SolverManager {
         solver_processes: tokio::sync::MutexGuard<'_, HashMap<u64, SolverProcess>>,
     ) -> std::result::Result<(), Vec<Error>> {
         let futures = ids.iter().map(async |id| {
-            let pid = match solver_processes.get(&id) {
+            let pid = match solver_processes.get(id) {
                 Some(state) => state.pid,
                 None => return Err(Error::InvalidSolver(format!("Solver {id} not running"))),
             };
@@ -742,18 +742,20 @@ fn pipe(mut left: Command, mut right: Command) -> Result<PipeCommand> {
     {
         let left_pid = left_child
             .id()
-            .ok_or_else(|| Error::PipeError("Could not get PID for process".to_string()))?;
+            .ok_or_else(|| Error::Pipe("Could not get PID for process".to_string()))?;
         right.process_group(left_pid as i32);
     }
 
     let mut right_child = right.stdin(Stdio::piped()).spawn()?;
 
-    let mut left_stdout = left_child.stdout.take().ok_or_else(|| {
-        Error::PipeError("Could not capture the left process' stdout".to_string())
-    })?;
-    let mut right_stdin = right_child.stdin.take().ok_or_else(|| {
-        Error::PipeError("Could not capture the rigts process' stdin".to_string())
-    })?;
+    let mut left_stdout = left_child
+        .stdout
+        .take()
+        .ok_or_else(|| Error::Pipe("Could not capture the left process' stdout".to_string()))?;
+    let mut right_stdin = right_child
+        .stdin
+        .take()
+        .ok_or_else(|| Error::Pipe("Could not capture the rigts process' stdin".to_string()))?;
 
     let pipe_task =
         tokio::spawn(async move { tokio::io::copy(&mut left_stdout, &mut right_stdin).await });

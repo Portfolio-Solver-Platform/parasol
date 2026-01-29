@@ -10,6 +10,7 @@ pub struct Cli {
     pub command: Command,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(clap::Subcommand, Debug, Clone)]
 pub enum Command {
     /// Run the parasol framework

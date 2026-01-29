@@ -148,7 +148,7 @@ impl Solver {
 
         let first = values
             .next()
-            .ok_or_else(|| SolverParseError::ExecutableArrayEmpty)?;
+            .ok_or(SolverParseError::ExecutableArrayEmpty)?;
 
         let rest = values.collect::<Vec<_>>();
         Ok(Executable(first.into(), rest))

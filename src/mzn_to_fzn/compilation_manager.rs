@@ -169,13 +169,7 @@ impl CompilationManager {
                 .await
                 .iter()
                 .filter(|(name, _)| !exception_solver_names.contains(*name))
-                .filter(|(_, compilation)| {
-                    if let Compilation::Done(_) = compilation {
-                        false
-                    } else {
-                        true
-                    }
-                })
+                .filter(|(_, compilation)| !matches!(compilation, Compilation::Done(_)))
                 .map(|(name, _)| name)
                 .cloned()
                 .collect::<Vec<_>>()
@@ -217,10 +211,7 @@ pub type WaitForResult = std::result::Result<Arc<Conversion>, WaitForError>;
 
 impl IsCancelled for WaitForError {
     fn is_cancelled(&self) -> bool {
-        match self {
-            Self::Cancelled => true,
-            _ => false,
-        }
+        matches!(self, Self::Cancelled)
     }
 }
 

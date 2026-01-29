@@ -154,7 +154,7 @@ async fn start_with_ai<T: Ai + Send + 'static>(
 
     let schedule = match features_result {
         Ok(features_result) => {
-            let features = features_result.map_err(Error::from)?;
+            let features = features_result?;
             tokio::task::spawn_blocking(move || ai.schedule(&features, cores)).await??
         }
         Err(_) => {
