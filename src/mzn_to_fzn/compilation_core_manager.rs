@@ -4,6 +4,7 @@ use crate::args::RunArgs;
 
 use super::compilation_manager::CompilationManager;
 
+// TODO: Find better name
 pub struct CompilationCoreManager {
     manager: CompilationManager,
 }
