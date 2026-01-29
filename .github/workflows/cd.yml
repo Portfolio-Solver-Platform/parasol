@@ -25,6 +25,6 @@ jobs:
       uses: docker/build-push-action@v6
       with:
         push: true
-        tags: ${{ vars.DOCKERHUB_USERNAME }}/framework:latest
-        cache-from: type=registry,ref=${{ vars.DOCKERHUB_USERNAME }}/framework:buildcache
-        cache-to: type=registry,ref=${{ vars.DOCKERHUB_USERNAME }}/framework:buildcache,mode=max
+        tags: ${{ vars.DOCKER_REPO }}:latest
+        cache-from: type=registry,ref=${{ vars.DOCKER_REPO }}:buildcache
+        cache-to: type=registry,ref=${{ vars.DOCKER_REPO }}:buildcache,mode=max

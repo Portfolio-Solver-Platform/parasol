@@ -61,11 +61,11 @@ jobs:
       with:
         target: ci
         load: true
-        tags: ${{ vars.DOCKERHUB_USERNAME }}/framework:latest
-        cache-from: type=registry,ref=${{ vars.DOCKERHUB_USERNAME }}/framework:buildcache
+        tags: ${{ vars.DOCKER_REPO }}:latest
+        cache-from: type=registry,ref=${{ vars.DOCKER_REPO }}:buildcache
 
     - name: Run tests
-      run: docker run -t ${{ vars.DOCKERHUB_USERNAME }}/framework:latest cargo test --release --locked
+      run: docker run -t ${{ vars.DOCKER_REPO }}:latest cargo test --release --locked
 
   end-to-end-tests:
     runs-on: ubuntu-latest
@@ -86,9 +86,9 @@ jobs:
       with:
         target: ci-end-to-end
         load: true
-        tags: ${{ vars.DOCKERHUB_USERNAME }}/framework:latest
-        cache-from: type=registry,ref=${{ vars.DOCKERHUB_USERNAME }}/framework:buildcache
-        cache-to: ${{ inputs.update_image_cache && format('type=registry,ref={0}/framework:buildcache,mode=max', vars.DOCKERHUB_USERNAME) || '' }}
+        tags: ${{ vars.DOCKER_REPO }}:latest
+        cache-from: type=registry,ref=${{ vars.DOCKER_REPO }}:buildcache
+        cache-to: ${{ inputs.update_image_cache && format('type=registry,ref={0}:buildcache,mode=max', vars.DOCKER_REPO) || '' }}
 
     - name: Run tests
-      run: docker run -t ${{ vars.DOCKERHUB_USERNAME }}/framework:latest cargo test --tests --release --locked
+      run: docker run -t ${{ vars.DOCKER_REPO }}:latest cargo test --tests --release --locked
