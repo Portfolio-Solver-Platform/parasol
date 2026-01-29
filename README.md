@@ -9,7 +9,7 @@ The easiest approach to using Parasol is through Docker. You run the official Do
 ```bash
 docker run -v /my/path/to/problems:/problems jobork/parasol <command>
 ```
-, where `-v /my/path/to/problems:/problems` allows you to include your own problems to solve in the container and `<command>` is the command you want to execute inside the container. An example of such a command is: `minizinc /problems/accap/accap.mzn /problems/accap/accap_instance3.dzn`.
+In this command, `-v /my/path/to/problems:/problems` allows you to include your own problems to solve in the container and `<command>` is the command you want to execute inside the container. An example of such a command is: `minizinc /problems/accap/accap.mzn /problems/accap/accap_instance3.dzn`.
 Parasol is set as the default solver to `minizinc` in the Dockerfile, so this example runs Parasol on the given model and data file.
 Alternatively, if you want to run Parasol directly, use the command `parasol run`, for example: `parasol run /problems/accap/accap.mzn /problems/accap/accap_instance3.dzn`. For additional information on usage, use `parasol --help`.
 
