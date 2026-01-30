@@ -65,7 +65,9 @@ RUN cargo build --release --quiet
 
 FROM base AS yuck
 
+ARG YUCK_SHA256=2c562fe76f7b25289dacf90a7688b8cdd2f7c7029676e1d32727f795ac653615
 RUN wget -q https://github.com/informarte/yuck/releases/download/20251106/yuck-20251106.zip \
+    && echo "${YUCK_SHA256}  yuck-20251106.zip" | sha256sum -c - \
     && unzip -q yuck-20251106.zip -d /opt \
     && mv /opt/yuck-20251106 /opt/yuck \
     && chmod +x /opt/yuck/bin/yuck \
@@ -74,7 +76,9 @@ RUN wget -q https://github.com/informarte/yuck/releases/download/20251106/yuck-2
 FROM base AS or-tools
 
 WORKDIR /or-tools
+ARG OR_TOOLS_SHA256=6f389320672cee00b78aacefb2bde33fef0bb988c3b2735573b9fffd1047fbda
 RUN wget -q https://github.com/google/or-tools/releases/download/v9.15/or-tools_amd64_ubuntu-24.04_cpp_v9.15.6755.tar.gz -O or-tools.tar.gz \
+    && echo "${OR_TOOLS_SHA256}  or-tools.tar.gz" | sha256sum -c - \
     && tar -xzf or-tools.tar.gz --strip-components=1 \
     && rm or-tools.tar.gz \
     && mkdir /opt/or-tools \
@@ -87,8 +91,12 @@ RUN wget -q https://github.com/google/or-tools/releases/download/v9.15/or-tools_
 
 FROM base AS choco
 
+ARG CHOCO_SRC_SHA256=9a6d8c465cc73752c085281f49c45793135d8545e57bc3f4effd15bde6d03de5
+ARG CHOCO_JAR_SHA256=767a8bdf872c3b9d2a3465bb37822e1f0a60904a54f0181dbf7c6a106415abdf
 RUN wget -q https://github.com/chocoteam/choco-solver/archive/refs/tags/v4.10.18.tar.gz -O choco.tar.gz \
+    && echo "${CHOCO_SRC_SHA256}  choco.tar.gz" | sha256sum -c - \
     && wget -q https://github.com/chocoteam/choco-solver/releases/download/v4.10.18/choco-solver-4.10.18-light.jar -O choco.jar \
+    && echo "${CHOCO_JAR_SHA256}  choco.jar" | sha256sum -c - \
     && tar -xzf choco.tar.gz \
     && rm choco.tar.gz \
     && mv choco-solver-4.10.18 /choco \
@@ -106,7 +114,9 @@ RUN wget -q https://github.com/chocoteam/choco-solver/archive/refs/tags/v4.10.18
 FROM base AS pumpkin
 
 # Version 0.2.2
+ARG PUMPKIN_SHA256=0abf3495945e31c7ebf731bcdc00bae978b6da0b59ff3a8830a0c9335e672ca3
 RUN wget -q https://github.com/ConSol-Lab/Pumpkin/archive/62b2f09f4b28d0065e4a274d7346f34598b44898.tar.gz -O pumpkin.tar.gz \
+    && echo "${PUMPKIN_SHA256}  pumpkin.tar.gz" | sha256sum -c - \
     && tar -xzf pumpkin.tar.gz \
     && rm pumpkin.tar.gz \
     && mv Pumpkin-62b2f09f4b28d0065e4a274d7346f34598b44898 /pumpkin
@@ -126,7 +136,9 @@ FROM base AS minizinc-source
 
 WORKDIR /source
 ENV MINIZINC_SOURCE_VERSION=2.9.5
+ARG MINIZINC_SHA256=591f70e49e49ddead9a4c091ad2450f972abde8de3acdff544d3bed50b279e44
 RUN wget -qO minizinc.tgz https://github.com/MiniZinc/MiniZincIDE/releases/download/${MINIZINC_SOURCE_VERSION}/MiniZincIDE-${MINIZINC_SOURCE_VERSION}-bundle-linux-x86_64.tgz \
+    && echo "${MINIZINC_SHA256}  minizinc.tgz" | sha256sum -c - \
     && tar xf minizinc.tgz --strip-components=1 \
     && rm minizinc.tgz \
     && rm bin/minizinc bin/mzn2doc bin/MiniZincIDE
@@ -157,12 +169,16 @@ RUN mkdir bin \
 FROM base AS scip
 
 WORKDIR /opt/scip
-RUN wget -qO package.deb https://www.scipopt.org/download/release/SCIPOptSuite-9.2.4-Linux-ubuntu24.deb
+ARG SCIP_SHA256=de64b7c9f109d0e83dc7d7a7e8e6eb2036254c536100a5866a58e5898b3b36b4
+RUN wget -qO package.deb https://www.scipopt.org/download/release/SCIPOptSuite-9.2.4-Linux-ubuntu24.deb \
+    && echo "${SCIP_SHA256}  package.deb" | sha256sum -c -
 
 FROM base AS dexter
 
 WORKDIR /source
+ARG DEXTER_SHA256=583a5ef689e189a568bd4e691096156fdc1974a0beb9721703f02ba61515b75f
 RUN wget -qO source.tar.gz https://github.com/ddxter/gecode-dexter/archive/b46a6f557977c7b1863dc6b5885b69ebf9edcc14.tar.gz \
+    && echo "${DEXTER_SHA256}  source.tar.gz" | sha256sum -c - \
     && tar xf source.tar.gz --strip-components=1 \
     && rm source.tar.gz \
     && cmake . \
@@ -201,7 +217,9 @@ FROM base AS mzn2feat
 WORKDIR /opt/mzn2feat
 
 ARG MZN2FEAT_COMMIT=3f92db18a88ba73403238e0ca6be4e9367f4773d
+ARG MZN2FEAT_SHA256=c5a07a8d4e3d266735302220268bb6e41f136a68e8c3d0bc5c6ee9ec02c8ec2b
 RUN wget -qO source.tar.gz https://github.com/CP-Unibo/mzn2feat/archive/${MZN2FEAT_COMMIT}.tar.gz \
+    && echo "${MZN2FEAT_SHA256}  source.tar.gz" | sha256sum -c - \
     && tar -xzf source.tar.gz --strip-components=1 \
     && rm source.tar.gz
 RUN bash install --no-xcsp
@@ -217,7 +235,9 @@ RUN wget -qO picat.tar.gz https://picat-lang.org/download/picat394_linux64.tar.g
 
 WORKDIR /opt/fzn_picat
 ARG FZN_PICAT_COMMIT=8b6ba4517669bbf856f8b2661b2e8e52d5ad081d
+ARG FZN_PICAT_SHA256=0ed8995177bd1251ad0433f8c5e7806e0a5a82d96ecc2e20d10b840c4f330b9e
 RUN wget -qO source.tar.gz https://github.com/nfzhou/fzn_picat/archive/${FZN_PICAT_COMMIT}.tar.gz \
+    && echo "${FZN_PICAT_SHA256}  source.tar.gz" | sha256sum -c - \
     && tar -xzf source.tar.gz --strip-components=1 \
     && rm source.tar.gz
 
