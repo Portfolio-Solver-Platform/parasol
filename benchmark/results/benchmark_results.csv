@@ -1,0 +1,10 @@
+schedule,name,model,time_ms,objective,status
+cpsat8,test_unsat,test_unsat,644,,Unsat
+cpsat8,test_unsat,test_unsat,631,,Unsat
+cpsat8,sudoku_p20,sudoku_fixed,1269,,Optimal
+cpsat8,sudoku_p20,sudoku_fixed,1168,,Optimal
+cpsat8,accap_instance6,accap,4300,82,Optimal
+cpsat8,accap_instance6,accap,5150,82,Optimal
+cpsat8,00,rcpsp,1134,53,Optimal
+cpsat8,00,rcpsp,1127,53,Optimal
+cpsat8,UD2-gbac,gbac,20023,151,Unknown

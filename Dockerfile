@@ -317,6 +317,9 @@ COPY Cargo.toml Cargo.lock ./
 COPY ./src ./src
 COPY ./tests ./tests
 
+FROM final AS benchmark
+
+COPY ./benchmark ./benchmark
+
 # Make the 'final' image the default image
 FROM final
-
