@@ -8,6 +8,8 @@ import sys
 import time
 from pathlib import Path
 
+from discover import discover_problems
+
 PROBLEMS = [
     # # --- Original problems ---
     # ("test_unsat/test_unsat.mzn", None),
@@ -57,6 +59,14 @@ PROBLEMS = [
 ]
 
 
+SOLVERS = ["cp-sat", "gecode", "chuffed", "huub", "cplex", "choco", "picat"]
+
+
+def kill_solvers():
+    for solver in SOLVERS:
+        subprocess.run(["pkill", "-9", solver], capture_output=True)
+
+
 def resolve_schedules(args: list[str]) -> list[Path]:
     files = []
     for arg in args:
@@ -104,7 +114,7 @@ def run_parasol(model: Path, data: Path | None, schedule: Path, cores: int,
     return elapsed_ms, objective, status, stdout
 
 
-def run_benchmark(problems_base: Path, schedules: list[Path], cores: int,
+def run_benchmark(problems: list[tuple[Path, Path | None]], schedules: list[Path], cores: int,
                   timeout: int | None, runs: int, solver: str, output: Path):
     output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -115,22 +125,21 @@ def run_benchmark(problems_base: Path, schedules: list[Path], cores: int,
         for schedule in schedules:
             print(f"\nSchedule: {schedule.name}")
 
-            for model_rel, data_rel in PROBLEMS:
-                model = problems_base / model_rel
-                data = problems_base / data_rel if data_rel else None
-                problem = Path(model_rel).parts[0]  # Folder name
-                name = data.stem if data else Path(model_rel).stem
-                model_name = Path(model_rel).stem
+            for model, data in problems:
+                problem = model.parent.name
+                name = data.stem if data else model.stem
+                model_name = model.stem
 
                 print(f"  {name}: ", end="", flush=True)
 
                 for run in range(runs):
+                    kill_solvers()
                     time_ms, objective, status, stdout = run_parasol(model, data, schedule, cores, timeout, solver)
                     writer.writerow([schedule.stem, problem, name, model_name, f"{time_ms:.0f}", objective or "", status])
                     f.flush()
                     short = "US" if status == "Unsat" else status[0]
                     print(f"{time_ms/1000:.1f}s({short}) ", end="", flush=True)
-                    print(f"\n--- stdout ---\n{stdout}--- end ---")
+                    # print(f"\n--- stdout ---\n{stdout}--- end ---")
 
                 print()
 
@@ -145,7 +154,8 @@ def main():
     parser.add_argument("-r", "--runs", type=int, default=3)
     parser.add_argument("-o", "--output", type=Path, default=Path("results/benchmark_results.csv"))
     parser.add_argument("--solver", default="parasol")
-    parser.add_argument("--problems-base", type=Path, default=Path("/problems"))
+    parser.add_argument("--problems-path", type=Path, default=Path("/problems"))
+    parser.add_argument("--discover", action="store_true", help="Discover problems from --problems-path instead of using hardcoded list")
     args = parser.parse_args()
 
     schedules = resolve_schedules(args.schedules)
@@ -153,8 +163,13 @@ def main():
         print("No schedule files found", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Schedules: {len(schedules)}, Problems: {len(PROBLEMS)}, Runs: {args.runs}")
-    run_benchmark(args.problems_base, schedules, args.cores, args.timeout, args.runs, args.solver, args.output)
+    if args.discover:
+        problems = discover_problems(args.problems_path)
+    else:
+        problems = [(args.problems_path / m, args.problems_path / d if d else None) for m, d in PROBLEMS]
+
+    print(f"Schedules: {len(schedules)}, Problems: {len(problems)}, Runs: {args.runs}")
+    run_benchmark(problems, schedules, args.cores, args.timeout, args.runs, args.solver, args.output)
 
 
 if __name__ == "__main__":
