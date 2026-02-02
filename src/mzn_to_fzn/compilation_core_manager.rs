@@ -5,7 +5,10 @@ use crate::{
     args::RunArgs,
     is_cancelled::IsCancelled,
     logging,
-    mzn_to_fzn::compilation_manager::{CompilationStatus, WaitForResult},
+    mzn_to_fzn::{
+        compilation,
+        compilation_manager::{self, CompilationStatus, WaitForResult},
+    },
 };
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -80,50 +83,79 @@ impl CompilationCoreManager {
     }
 
     pub async fn start(&self, solver_id: String, cores: Cores) {
+        // TODO: Lock on a `state` (maybe just the queue) for the entire function to avoid race conditions
         match self.manager.status(&solver_id).await {
-            // Ignore compilations that are done or running
-            // TODO: What should happen if the cores are different but the solver is the same?
             CompilationStatus::Done => {
                 logging::info!(
                     "did not start the compilation of solver '{solver_id}' because it was already done",
                 );
                 return;
             }
-            CompilationStatus::NotStarted | CompilationStatus::Running => {}
+            CompilationStatus::Running => {
+                // TODO: Handle a possible difference in the cores if it was a main compilation.
+                //       Also, handle if it was an extra compilation.
+            }
+            CompilationStatus::NotStarted => {}
         }
 
-        let solver_id = SolverId(solver_id);
-        self.queue
-            .write()
-            .await
-            .register_main_compilation(solver_id, cores);
+        // TODO: Remove the solver_id from the queue, so if it was already in the queue,
+        //       it will not be attempted to be started later as an extra compilation.
+
+        self.manager.start(solver_id.clone()).await;
+
+        let extra_compilations = self.queue.write().await.take_next_to_start(cores - 1);
+        let extra_compilations_count = extra_compilations.len();
+        self.manager
+            .start_many(extra_compilations.iter().map(|id| id.to_string()))
+            .await;
 
         let manager = Arc::clone(&self.manager);
         let queue = Arc::clone(&self.queue);
-        Self::do_extra_compilations_work(manager, queue).await;
+        tokio::spawn(async move {
+            // Wait for main compilation and stop as many solvers as before
+            let _ = manager.wait_for(&solver_id).await;
+            let to_stop = queue
+                .write()
+                .await
+                .take_next_to_stop(extra_compilations_count as u64);
 
-        // self.queue.write().await.take_to_start(&solver_id);
-        // self.manager.start(solver_id.to_string()).await;
-        //
-        // let extra_compilations_count = cores - 1;
-        // let extra_compilations = self
-        //     .queue
-        //     .write()
-        //     .await
-        //     .take_next_to_start(extra_compilations_count);
-        // for solver_id in extra_compilations {
-        //     let manager = Arc::clone(&self.manager);
-        //     let queue = Arc::clone(&self.queue);
-        //     tokio::spawn(async move {
-        //         Self::extra_compilation(manager, queue, solver_id).await;
-        //     });
-        // }
-        //
-        // let manager = Arc::clone(&self.manager);
-        // let queue = Arc::clone(&self.queue);
-        // tokio::spawn(async move {
-        //     Self::main_compilation(manager, queue, solver_id, extra_compilations_count).await;
-        // });
+            manager
+                .stop_many(to_stop.iter().map(|id| id.to_string()))
+                .await;
+        });
+
+        for solver_id in extra_compilations {
+            let manager = Arc::clone(&self.manager);
+            let queue = Arc::clone(&self.queue);
+            tokio::spawn(async move {
+                let mut solver_id_string = solver_id.to_string();
+                loop {
+                    let result = manager.wait_for(&solver_id_string).await;
+
+                    let mut queue = queue.write().await;
+
+                    if let Err(error) = result
+                        && (error.is_cancelled()
+                            || !matches!(error, compilation_manager::WaitForError::Conversion))
+                    {
+                        queue.compilation_stopped(&solver_id);
+                        break;
+                    }
+
+                    // It might have failed, but we don't want to repeat it so we still mark it as done
+                    queue.compilation_finished(&solver_id);
+
+                    match queue.take_next_to_start(1).as_slice() {
+                        [id] => solver_id_string = id.to_string(),
+                        [] => break,
+                        _ => {
+                            logging::error_msg!("queue returned more than 1");
+                            break;
+                        }
+                    }
+                }
+            });
+        }
     }
 
     pub fn stop(&self, solver_id: &str) {
@@ -137,59 +169,6 @@ impl CompilationCoreManager {
     pub async fn wait_for(&self, solver_name: &str) -> WaitForResult {
         todo!()
     }
-
-    async fn extra_compilation(
-        manager: Arc<CompilationManager>,
-        queue: Arc<RwLock<CompilationPriority>>,
-        solver_id: SolverId,
-    ) {
-        manager.start(solver_id.0.clone()).await;
-        let result = manager.wait_for(&solver_id.0).await;
-
-        if let Err(error) = result
-            && error.is_cancelled()
-        {
-            queue.write().await.compilation_stopped(&solver_id);
-            return;
-        }
-
-        // It might have failed, but we don't want to repeat it so we still mark it as done
-        queue.write().await.compilation_finished(&solver_id);
-
-        Box::pin(Self::do_extra_compilations_work(manager, queue)).await;
-    }
-
-    /// Precondition: the solver has been started in the self.queue.
-    async fn main_compilation(
-        manager: Arc<CompilationManager>,
-        queue: Arc<RwLock<CompilationPriority>>,
-        solver_id: SolverId,
-    ) {
-        // We are not interested in the result because we in either case
-        // want to stop the extra compilations.
-        let _ = manager.wait_for(&solver_id.to_string()).await;
-
-        // and stops the extra compilations when done.
-        Self::do_extra_compilations_work(manager, queue).await;
-    }
-
-    async fn do_extra_compilations_work(
-        manager: Arc<CompilationManager>,
-        queue: Arc<RwLock<CompilationPriority>>,
-    ) {
-        let work = queue.write().await.take_compilation_work();
-
-        // Compilations should happen in a different thread
-        let manager = Arc::clone(&manager);
-        let queue = Arc::clone(&queue);
-        tokio::spawn(async move {
-            Self::extra_compilation(manager, queue, SolverId("hello".to_string())).await;
-        });
-
-        // TODO: Perform the work
-
-        todo!()
-    }
 }
 
 struct SolverId(String);
@@ -198,22 +177,10 @@ struct Priority(u64);
 
 type Cores = u64;
 
-enum RunningCompilation {
-    Main(Cores, Option<Priority>),
-    Extra(Priority),
-}
-
 /// Not thread-safe
 struct CompilationPriority {
-    extra_compilations_queue: BTreeMap<Priority, SolverId>,
-    main_compilations_to_run: Vec<(SolverId, Cores, Option<Priority>)>,
-    running_compilations: HashMap<SolverId, RunningCompilation>,
-    available_cores: Cores,
-}
-
-enum ExtraCompilationWork {
-    Start(SolverId),
-    Stop(SolverId),
+    compilations_queue: BTreeMap<Priority, SolverId>,
+    running_compilations: BTreeMap<Priority, SolverId>,
 }
 
 impl CompilationPriority {
@@ -225,33 +192,31 @@ impl CompilationPriority {
             .map(|(index, solver_id)| (Priority(index as u64), SolverId(solver_id)));
 
         Self {
-            extra_compilations_queue: BTreeMap::from_iter(priorities),
-            main_compilations_to_run: Vec::new(),
-            running_compilations: Default::default(),
-            available_cores: 0,
+            compilations_queue: BTreeMap::from_iter(priorities),
+            running_compilations: BTreeMap::new(),
         }
     }
 
-    pub fn register_main_compilation(&mut self, solver: SolverId, cores: Cores) {
-        // Remember to check whether it is already running
-
-        // self.available_cores += cores (_not_ cores - 1)
+    #[must_use = "the returned solvers needs to be started"]
+    pub fn take_next_to_start(&mut self, amount: u64) -> Vec<SolverId> {
+        // Pop from compilations_queue and push to running_compilations
         todo!()
     }
 
-    /// Assumes the work is performed after this call
-    #[must_use = "the returned work has to be performed after calling this function"]
-    pub fn take_compilation_work(&mut self) -> Vec<ExtraCompilationWork> {
-        // Prioritise main compilations
-        // If there is not enough cores for all main compilations
+    #[must_use = "the returned solvers needs to be stopped"]
+    pub fn take_next_to_stop(&mut self, amount: u64) -> Vec<SolverId> {
+        // Pop from running_compilations and push to compilations_queue
+        // (maybe this is the same as calling self.compilation_stopped though)
         todo!()
     }
 
     pub fn compilation_finished(&mut self, solver: &SolverId) {
+        // Find in running_compilations and remove
         todo!()
     }
 
     pub fn compilation_stopped(&mut self, solver: &SolverId) {
+        // Pop from running_compilations and push to compilations_queue
         todo!()
     }
 }

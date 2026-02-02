@@ -82,7 +82,7 @@ impl CompilationManager {
                         compilation::convert_mzn(&args, &solver_name, cancellation_token_clone)
                             .await
                             .map_err(|e| {
-                                let error = WaitForError::from(&e);
+                                let error = WaitForError::from_compilation_lossy(&e);
                                 logging::error!(e.into());
                                 error
                             })
@@ -225,8 +225,8 @@ impl IsCancelled for WaitForError {
     }
 }
 
-impl From<&compilation::Error> for WaitForError {
-    fn from(value: &compilation::Error) -> Self {
+impl WaitForError {
+    pub fn from_compilation_lossy(value: &compilation::Error) -> Self {
         match value {
             super::Error::Cancelled(_) => Self::Cancelled,
             super::Error::Conversion(_) => Self::Conversion,
