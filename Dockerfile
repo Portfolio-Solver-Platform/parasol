@@ -243,8 +243,6 @@ RUN wget -qO source.tar.gz https://github.com/nfzhou/fzn_picat/archive/${FZN_PIC
 
 FROM base-small AS final
 
-WORKDIR /app
-
 # Install Python
 RUN apt-get update -qq && apt-get install -qq -y --no-install-recommends \
     software-properties-common \
@@ -299,7 +297,7 @@ RUN echo "/opt/gecode/lib" > /etc/ld.so.conf.d/gecode.conf \
 # NOTE: For CPLEX support:
 #       1. Copy the cplex/bin/libcplexXXXX.so file from your CPLEX installation into the root of this repository and rename it to libcplex.so (this requires the Linux installation of CPLEX).
 #       2. Uncomment the following line of code:
-COPY ./libcplex.so .
+# COPY ./libcplex.so .
 
 
 # NOTE: For FICO Xpress support:
@@ -339,10 +337,6 @@ COPY Cargo.toml Cargo.lock ./
 COPY ./src ./src
 COPY ./tests ./tests
 
-FROM final AS benchmark
-
-COPY ./benchmark ./benchmark
-
-
 # Make the 'final' image the default image
 FROM final
+

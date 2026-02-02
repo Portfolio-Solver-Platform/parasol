@@ -95,7 +95,7 @@ pub struct RunArgs {
     pub static_runtime: u64,
 
     /// Number of seconds between how often the solvers are restarted to share the upper bound found
-    #[arg(long, default_value = "5", help_heading = "Timing")]
+    #[arg(long, default_value = "7", help_heading = "Timing")]
     pub restart_interval: u64,
 
     /// The time (in seconds) before we skip extracting the features and stop using the static schedule, and instead use the timeout schedule.
