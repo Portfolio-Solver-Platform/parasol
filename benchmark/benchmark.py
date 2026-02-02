@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import argparse
+import atexit
 import csv
 import glob
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -59,12 +61,23 @@ PROBLEMS = [
 ]
 
 
-SOLVERS = ["fzn-cp-sat", "fzn-gecode", "fzn-chuffed", "fzn-huub", "cplex", "choco", "fzn-choco.sh", "picat", "fzn-picat", "java", "minizinc"]
+SOLVERS = ["fzn-cp-sat", "fzn-gecode", "fzn-chuffed", "fzn-huub", "cplex", "choco", "fzn-choco.sh", "picat", "fzn-picat", "java", "minizinc", "parasol"]
 
 
 def kill_solvers():
     for solver in SOLVERS:
         subprocess.run(["pkill", "-9", solver], capture_output=True)
+
+
+def signal_handler(sig, frame):
+    print("\nInterrupted, killing solvers...")
+    kill_solvers()
+    sys.exit(1)
+
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+atexit.register(kill_solvers)
 
 
 def resolve_schedules(args: list[str]) -> list[Path]:
