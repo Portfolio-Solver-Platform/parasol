@@ -13,7 +13,7 @@ from pathlib import Path
 from discover import discover_problems
 
 PROBLEMS = [
-    # # --- Original problems ---
+    # --- Original problems ---
     ("sudoku_fixed/sudoku_fixed.mzn", "sudoku_fixed/sudoku_p20.dzn"),
     ("accap/accap.mzn", "accap/accap_instance6.dzn"),
     ("rcpsp/rcpsp.mzn", "rcpsp/00.dzn"),
@@ -21,7 +21,7 @@ PROBLEMS = [
     ("amaze/amaze.mzn", "amaze/2012-03-08.dzn"),
     ("bacp/bacp-1.mzn", None),
     ("bacp/bacp-2.mzn", None),
-    # ("steelmillslab/steelmillslab.mzn", "steelmillslab/bench_2_0.dzn"),
+    ("steelmillslab/steelmillslab.mzn", "steelmillslab/bench_2_0.dzn"),
 
     # --- Stress tests (specifically designed to stress solvers) ---
     ("search_stress/search_stress.mzn", "search_stress/08_08.dzn"),  # Search stress
@@ -98,13 +98,14 @@ def run_parasol(model: Path, data: Path | None, schedule: Path, cores: int,
     if timeout:
         cmd.extend(["timeout", str(timeout)])
     cmd.append("minizinc")
-    
+
     if solver != "":
         cmd.extend(["--solver", solver])
     cmd.append(str(model))
     if data:
         cmd.append(str(data))
     cmd.extend(["--static-schedule", str(schedule), "-p", str(cores), "--ai", "none", "--verbosity", "quiet", "--solver-config-mode", "cache"])
+
     if pin:
         cmd.append("--pin-java-solvers")
 
