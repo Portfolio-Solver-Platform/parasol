@@ -6,7 +6,7 @@ use crate::{
     mzn_to_fzn::compilation_manager::CompilationManager,
     signal_handler::SignalEvent,
     solver_config,
-    solver_manager::{self, Error, SolverManager},
+    solver_manager::{Error, SolverManager},
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -135,17 +135,22 @@ impl Scheduler {
                     _ = scheduler_cancellation_token_clone.cancelled() => break,
                     event = suspend_and_resume_signal_rx.recv() => {
                         let Some(event) = event else { break };
-                        let result = match event {
+                        match event {
                             SignalEvent::Suspend => {
                                 let res = solver_manager_clone.suspend_all_solvers().await;
-                                nix::sys::signal::raise(nix::sys::signal::Signal::SIGSTOP).ok();
-                                res
+                                if let Err(e) = res {
+                                    logging::error_msg!("errors when suspending solvers");
+                                    logging::errors(e);
+                                }
+                                let _ = nix::sys::signal::raise(nix::sys::signal::Signal::SIGSTOP).map_err(|error_number| logging::error_msg!("failed to suspend terminal. Error number was {error_number}"));
                             }
-                            SignalEvent::Resume => solver_manager_clone.resume_all_solvers().await,
+                            SignalEvent::Resume => {
+                                let result = solver_manager_clone.resume_all_solvers().await; if let Err(e) = result {
+                                    logging::error_msg!("errors when resuming solvers");
+                                    logging::errors(e);
+                                }
+                            },
                         };
-                        if let Err(e) = result {
-                            handle_schedule_errors(e);
-                        }
                     }
                 }
             }
@@ -270,7 +275,7 @@ impl Scheduler {
                 // use number of cores a process has to decide if it uses more that its fair share
                 state.running_solvers.remove(&id);
                 if let Err(e) = solver_manager.stop_solver(id).await {
-                    logging::error_msg!("failed to stop running solver: {e}");
+                    logging::error_with_msg!(e.into(), "failed to stop running solver");
                 } else {
                     used_memory -= solver_mem as f64;
                 }
@@ -284,7 +289,7 @@ impl Scheduler {
             let (mem, id) = remaining.remove(0);
             state.running_solvers.remove(&id);
             if let Err(e) = solver_manager.stop_solver(id).await {
-                logging::error_msg!("failed to stop running solver: {e}");
+                logging::error_with_msg!(e.into(), "failed to stop running solver");
             } else {
                 used_memory -= mem as f64;
             }
@@ -460,14 +465,16 @@ impl Scheduler {
             .suspend_solvers(&changes.to_suspend)
             .await
         {
-            logging::error_msg!("failed to suspend solvers: {:?}", e);
+            logging::error_msg!("failed to suspend solvers");
+            logging::errors(e);
             self.solver_manager
                 .stop_solvers(&changes.to_suspend)
                 .await?;
         }
 
         if let Err(e) = self.solver_manager.resume_solvers(&changes.to_resume).await {
-            logging::error_msg!("Failed to resume solvers: {e:?}");
+            logging::error_msg!("failed to resume solvers");
+            logging::errors(e);
             let mut resume_elements = Vec::new();
             for schedule_elem in &schedule {
                 for resume_id in &changes.to_resume {
@@ -529,9 +536,4 @@ impl Scheduler {
 
         schedule
     }
-}
-
-fn handle_schedule_errors(errors: Vec<solver_manager::Error>) {
-    logging::error_msg!("got the following errors when applying the schedule:");
-    errors.into_iter().for_each(|e| logging::error!(e.into()));
 }

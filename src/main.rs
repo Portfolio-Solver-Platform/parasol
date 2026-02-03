@@ -40,7 +40,7 @@ async fn main() {
                 solver_config::cache::build_solvers_config_cache(&cache_args.minizinc.minizinc_exe)
                     .await
             {
-                logging::error_msg!("Failed to build solver cache: {e}");
+                logging::error_with_msg!(e.into(), "Failed to build solver cache");
                 exit(1);
             }
         }
