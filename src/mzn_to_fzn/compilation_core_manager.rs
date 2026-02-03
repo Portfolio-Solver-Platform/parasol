@@ -5,77 +5,22 @@ use crate::{
     args::RunArgs,
     is_cancelled::IsCancelled,
     logging,
-    mzn_to_fzn::{
-        compilation,
-        compilation_manager::{self, CompilationStatus, WaitForResult},
-    },
+    mzn_to_fzn::compilation_manager::{self, CompilationStatus, WaitForResult},
 };
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     sync::Arc,
 };
 
 // TODO: Find better name (remember to replace file name as well)
 pub struct CompilationCoreManager {
     manager: Arc<CompilationManager>,
-    queue: Arc<RwLock<CompilationPriority>>,
+    queue: Arc<RwLock<CompilationPriorityQueue>>,
 }
 
-// New way of keeping track:
-//
-// General idea is to keep track of available extra compilations in CompilationPriority.
-//
-// register_main_compilation(solver, cores)
-// take_next_extra_compilation() -> solver
-// Whenever an extra compilation or main compilation is done, it should
-// run a common function that keeps calling take_next_extra_compilation() and starting it.
-// This common function should perhaps also be called right after registering a main compilation.
-// This is because register_main_compilation will let CompilationPriority register
-// that new extra compilations can be performed.
-//
-// take_next_extra_compilation() should register the extra compilation as being run,
-// such that subsequent executions of the function doesn't return the same compilation.
-// There should also be a "compilation_stopped(solver)" that allows you to register
-// that a compilation stopped, and there should be "compilation_finished(solver)" to
-// register that a compilation finished. Note that "stopped" here means it stopped
-// before being finished.
-//
-// Note that when registering main compilation, it should check whether it is
-// in the queue of upcoming compilations, as well as checking if it is already
-// being compiled as an extra compilation.
-// If the compilation is already registered as a main compilation, then also
-// make sure that the cores are the same. If they are not, and the new cores are smaller,
-// then stop as many extra compilations as the difference, or if there now are more cores,
-// then instead start more extra compilations.
-//
-// Important things to handle:
-// - The same main compilation being started multiple times, and with different cores.
-// - Main compilation being started, but it is already running as an extra compilation.
-
-//
-//
-// General procedure:
-//
-// Create a CompilationPriority struct that manages which compilation
-// should be done next. The next compilations should be stored in a btree.
-//
-// Start the solver through the self.manager.
-// If cores > 1, then start cores - 1 compilations and register these
-// in the CompilationPriority struct.
-// Then, start threads that wait for the extra compilations.
-//  - In these threads, when it is done, it should start a new one
-//    by registering the compilation as done in the CompilationPriority
-//    and then starting a new compilation.
-// Then, wait for the compilation.
-// Then, stop cores - 1 compilations.
-//
-// TODO: Handle main compilations should not be able to be stopped.
-//       Currently, they can be stopped when another main compilation is finished, and it has low
-//       priority.
-//       - Should be handled by registering it as a main compilation.
 impl CompilationCoreManager {
     pub fn new(args: Arc<RunArgs>, compilation_priorities: Vec<String>) -> Self {
-        let queue = CompilationPriority::from_vec(compilation_priorities);
+        let queue = CompilationPriorityQueue::from_vec(compilation_priorities);
         Self {
             manager: Arc::new(CompilationManager::new(args)),
             queue: Arc::new(RwLock::new(queue)),
@@ -159,31 +104,41 @@ impl CompilationCoreManager {
     }
 
     pub fn stop(&self, solver_id: &str) {
+        // Only stop if the solver is a main compilation.
+        // If it is an extra compilation, ignore the call.
+        //
+        // The main compilation thread should handle being cancelled, such that
+        // it also stops the relevant extra compilations.
         todo!()
     }
 
     pub async fn stop_all_except(&self, exception_solver_ids: HashSet<String>) {
+        // Only stop main compilations, ignore extra compilations when deciding
+        // which compilations to stop.
         todo!()
     }
 
     pub async fn wait_for(&self, solver_name: &str) -> WaitForResult {
+        // Should this be able to wait for extra compilations?
+        // or only main compilations?
         todo!()
     }
 }
 
+#[derive(PartialEq, Eq)]
 struct SolverId(String);
-#[derive(PartialOrd, PartialEq, Eq, Ord)]
+#[derive(PartialOrd, PartialEq, Eq, Ord, Clone)]
 struct Priority(u64);
 
 type Cores = u64;
 
 /// Not thread-safe
-struct CompilationPriority {
+struct CompilationPriorityQueue {
     compilations_queue: BTreeMap<Priority, SolverId>,
     running_compilations: BTreeMap<Priority, SolverId>,
 }
 
-impl CompilationPriority {
+impl CompilationPriorityQueue {
     pub fn from_vec(solvers: Vec<String>) -> Self {
         let priorities = solvers
             .into_iter()
@@ -195,6 +150,25 @@ impl CompilationPriority {
             compilations_queue: BTreeMap::from_iter(priorities),
             running_compilations: BTreeMap::new(),
         }
+    }
+
+    pub fn insert(&mut self, solver: SolverId, priority: Priority) {
+        self.compilations_queue.insert(priority, solver);
+    }
+
+    pub fn remove(&mut self, solver: &SolverId) -> Option<(SolverId, Priority)> {
+        let priority = self
+            .compilations_queue
+            .iter()
+            .find_map(|(priority, solver_id)| (solver == solver_id).then_some(priority.clone()));
+
+        priority
+            .map(|priority| {
+                self.compilations_queue
+                    .remove(&priority)
+                    .map(|solver_id| (solver_id, priority))
+            })
+            .flatten()
     }
 
     #[must_use = "the returned solvers needs to be started"]
