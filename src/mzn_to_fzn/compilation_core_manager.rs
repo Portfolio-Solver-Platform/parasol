@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use tokio::sync::RwLock;
 
 use super::compilation_manager::CompilationManager;
@@ -45,6 +46,8 @@ impl CompilationCoreManager {
 
         // TODO: Remove the solver_id from the queue, so if it was already in the queue,
         //       it will not be attempted to be started later as an extra compilation.
+
+        // TODO: Handle if it is already running as an extra compilation.
 
         self.manager.start(solver_id.clone()).await;
 
