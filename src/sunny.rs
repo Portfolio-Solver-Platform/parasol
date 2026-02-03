@@ -217,7 +217,7 @@ async fn start_without_ai(
 fn get_cores(args: &RunArgs, ai: &Option<impl Ai>) -> (usize, usize) {
     let mut cores = args.cores;
 
-    let initial_solver_cores = if args.pin_yuck && ai.is_some() {
+    let initial_solver_cores = if args.pin_java_solvers && ai.is_some() {
         if cores <= 1 {
             logging::warning!("Too few cores are set. Using 2 cores");
             cores = 2;

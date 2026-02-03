@@ -10,7 +10,7 @@
     ["--ai-config", "Configuration for the AI in format: <key1>=<value1>,<key2>=<value2>,...", "string", ""],
     ["--output-mode", "Output solutions in DZN format", "string", "dzn"],
     ["--output-objective", "Output the objective value as _objective for optimisation problems", "bool", ""],
-    ["--pin-yuck", "Pin the yuck solver processes to specific CPU cores", "bool", ""],
+    ["--pin-java-solvers", "Pin the Java-based solvers (yuck, choco) to specific CPU cores", "bool", ""],
     ["--ignore-search", "Enable free search for all solvers", "bool", ""],
     ["--static-runtime", "Minimum time (in seconds) the initial static schedule will be run before using AI schedule", "int", "5"],
     ["--restart-interval", "Seconds between solver restarts to share the upper bound found", "int", "5"],
