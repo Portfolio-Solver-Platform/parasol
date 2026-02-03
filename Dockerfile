@@ -307,6 +307,8 @@ RUN echo "/opt/gecode/lib" > /etc/ld.so.conf.d/gecode.conf \
 
 RUN parasol build-solver-cache
 
+COPY ./static-schedules/ ./static-schedules/
+
 FROM builder AS ci
 
 FROM final AS ci-end-to-end
