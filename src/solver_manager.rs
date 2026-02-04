@@ -479,7 +479,7 @@ impl SolverManager {
                 PrepareResult::Error(error_msg) => {
                     current_solvers.lock().await.remove(&elem_id);
                     let _ = error_tx.send(SolverError {
-                        solver_name: solver_name.clone(),
+                        solver_name: solver_name.to_owned(),
                         error: error_msg,
                     });
                     return;
