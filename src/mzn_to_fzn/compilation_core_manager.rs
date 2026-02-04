@@ -54,8 +54,13 @@ impl CompilationCoreManager {
     }
 
     pub async fn wait_for(&self, solver_name: &str) -> WaitForResult {
-        // TODO: It should only be able to wait for main compilations.
-        self.manager.wait_for(solver_name).await
+        if self.state.read().await.is_main_compilation(solver_name) {
+            self.manager.wait_for(solver_name).await
+        } else {
+            Err(super::compilation_manager::WaitForError::NotStarted(
+                solver_name.to_string(),
+            ))
+        }
     }
 
     async fn wait_for_compile(
@@ -169,6 +174,11 @@ impl State {
         }
     }
 
+    pub fn is_main_compilation(&self, solver: &str) -> bool {
+        // Check unstarted_main_compilation and running_compilations
+        todo!()
+    }
+
     pub fn register_main_compilation(&mut self, solver: SolverId, cores: Cores) {
         let running_compilation = self.running_compilations.remove(&solver);
 
@@ -199,11 +209,19 @@ impl State {
 
     /// Assumes the work is performed after this call
     #[must_use = "the returned work has to be performed after calling this function"]
-    pub fn take_compilation_work(&mut self) -> impl Iterator<Item = CompilationWork> + use<> {
+    pub fn take_compilation_work(&mut self) -> Vec<CompilationWork> {
+        let mut work = Vec::new();
         // Prioritise main compilations.
+        self.unstarted_main_compilations
+            .drain(..)
+            .for_each(|(solver, compilation)| {
+                work.push(CompilationWork::Start(solver.clone()));
+                self.running_compilations
+                    .insert(solver, RunningCompilation::Main(compilation));
+            });
         // If there is not enough cores for all main compilations, stop extra compilations.
         todo!();
-        Vec::new().into_iter()
+        work
     }
 
     pub fn compilation_finished(&mut self, solver: &SolverId) {
