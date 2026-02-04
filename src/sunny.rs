@@ -88,19 +88,14 @@ pub async fn sunny<T: Ai + Send + 'static>(
             }
         }
 
-        let schedule_len = schedule.len();
+        if scheduler.solver_manager.all_solvers_failed(&schedule).await {
+            return Err(Error::SolverFailure);
+        }
 
         let apply_cancellation_token = scheduler.create_apply_token();
-        if let Err(errors) = scheduler
+        scheduler
             .apply(schedule.clone(), apply_cancellation_token, true)
-            .await
-        {
-            let errorlen = errors.len();
-            handle_schedule_errors(errors);
-            if errorlen == schedule_len {
-                return Err(Error::SolverFailure);
-            }
-        }
+            .await;
 
         timer = sleep(restart_interval);
     }
@@ -140,15 +135,15 @@ async fn start_with_ai<T: Ai + Send + 'static>(
     let (features_result, static_schedule_finished) = tokio::select! {
         (feat_res, _sleep_res) = &mut barrier => {
             apply_cancellation_token.cancel();
-            (feat_res, None)
+            (feat_res, false)
         }
 
-        sched_res = &mut scheduler_task => {
+        _ = &mut scheduler_task => {
             let feat_res = tokio::select! {
                 (feat_res, _sleep_res) = barrier => feat_res,
                 _ = cancellation_token.cancelled() => return Err(Error::Cancelled),
             };
-            (feat_res, Some(sched_res))
+            (feat_res, true)
         }
     };
 
@@ -163,19 +158,10 @@ async fn start_with_ai<T: Ai + Send + 'static>(
         }
     };
 
-    match static_schedule_finished {
-        Some(Ok(())) => {}
-        Some(Err(errors)) => {
-            let error_len = errors.len();
-            handle_schedule_errors(errors);
-            if error_len == initial_schedule.len() {
-                return Err(Error::SolverFailure);
-            }
-        }
-        None => {
-            logging::info!("applying static schedule timed out");
-        }
+    if !static_schedule_finished {
+        logging::info!("applying static schedule timed out");
     }
+
     Ok(schedule)
 }
 
@@ -190,27 +176,15 @@ async fn start_without_ai(
     let fut = scheduler.apply(schedule.clone(), apply_cancellation_token.clone(), true);
     tokio::pin!(fut);
 
-    let apply_result = tokio::select! {
-        result = &mut fut => {
-            result
-        }
+    tokio::select! {
+        _ = &mut fut => {}
         _ = sleep(static_runtime) => {
             apply_cancellation_token.cancel();
             logging::info!("applying static schedule timed out");
-            fut.await
+            fut.await;
         }
     };
 
-    match apply_result {
-        Ok(()) => {}
-        Err(errors) => {
-            let error_len = errors.len();
-            handle_schedule_errors(errors);
-            if error_len == schedule.len() {
-                return Err(Error::SolverFailure);
-            }
-        }
-    }
     Ok(schedule)
 }
 
@@ -248,9 +222,4 @@ async fn get_features(
         },
         _ = token.cancelled() => Err(Error::Cancelled)
     }
-}
-
-fn handle_schedule_errors(errors: Vec<solver_manager::Error>) {
-    logging::error_msg!("got the following errors when applying the schedule:");
-    errors.into_iter().for_each(|e| logging::error!(e.into()));
 }
