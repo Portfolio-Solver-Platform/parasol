@@ -58,12 +58,18 @@ impl CompilationManager {
     }
 
     pub async fn start(&self, solver_name: String) {
-        self.start_many([solver_name].into_iter()).await
+        self.start_many([solver_name]).await
     }
 
-    pub async fn start_many(&self, solver_names: impl Iterator<Item = String>) {
+    pub async fn stop(&self, solver_name: String) {
+        self.stop_many([solver_name]).await
+    }
+
+    pub async fn start_many(&self, solver_names: impl IntoIterator<Item = String>) {
         let mut compilations = self.compilations.write().await;
-        let new_solvers = solver_names.filter(|name| !compilations.contains_key(name));
+        let new_solvers = solver_names
+            .into_iter()
+            .filter(|name| !compilations.contains_key(name));
 
         let new_compilations: Vec<_> = new_solvers
             .map(|solver_name| {
@@ -148,7 +154,7 @@ impl CompilationManager {
         }
     }
 
-    pub async fn stop_many(&self, solver_names: impl Iterator<Item = String>) {
+    pub async fn stop_many(&self, solver_names: impl IntoIterator<Item = String>) {
         let mut compilations = self.compilations.write().await;
 
         for solver_name in solver_names {

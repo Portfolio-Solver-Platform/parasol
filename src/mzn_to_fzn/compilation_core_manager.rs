@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use tokio::sync::RwLock;
 
 use super::compilation_manager::CompilationManager;
@@ -15,255 +16,221 @@ use std::{
 // TODO: Find better name (remember to replace file name as well)
 pub struct CompilationCoreManager {
     manager: Arc<CompilationManager>,
-    queue: Arc<RwLock<CompilationPriority>>,
+    state: Arc<RwLock<State>>,
 }
 
-// New way of keeping track:
-//
-// General idea is to keep track of available extra compilations in CompilationPriority.
-//
-// register_main_compilation(solver, cores)
-// take_next_extra_compilation() -> solver
-// Whenever an extra compilation or main compilation is done, it should
-// run a common function that keeps calling take_next_extra_compilation() and starting it.
-// This common function should perhaps also be called right after registering a main compilation.
-// This is because register_main_compilation will let CompilationPriority register
-// that new extra compilations can be performed.
-//
-// take_next_extra_compilation() should register the extra compilation as being run,
-// such that subsequent executions of the function doesn't return the same compilation.
-// There should also be a "compilation_stopped(solver)" that allows you to register
-// that a compilation stopped, and there should be "compilation_finished(solver)" to
-// register that a compilation finished. Note that "stopped" here means it stopped
-// before being finished.
-//
-// Note that when registering main compilation, it should check whether it is
-// in the queue of upcoming compilations, as well as checking if it is already
-// being compiled as an extra compilation.
-// If the compilation is already registered as a main compilation, then also
-// make sure that the cores are the same. If they are not, and the new cores are smaller,
-// then stop as many extra compilations as the difference, or if there now are more cores,
-// then instead start more extra compilations.
-//
-// Important things to handle:
-// - The same main compilation being started multiple times, and with different cores.
-// - Main compilation being started, but it is already running as an extra compilation.
-
-//
-//
-// General procedure:
-//
-// Create a CompilationPriority struct that manages which compilation
-// should be done next. The next compilations should be stored in a btree.
-//
-// Start the solver through the self.manager.
-// If cores > 1, then start cores - 1 compilations and register these
-// in the CompilationPriority struct.
-// Then, start threads that wait for the extra compilations.
-//  - In these threads, when it is done, it should start a new one
-//    by registering the compilation as done in the CompilationPriority
-//    and then starting a new compilation.
-// Then, wait for the compilation.
-// Then, stop cores - 1 compilations.
-//
-// TODO: Handle main compilations should not be able to be stopped.
-//       Currently, they can be stopped when another main compilation is finished, and it has low
-//       priority.
-//       - Should be handled by registering it as a main compilation.
 impl CompilationCoreManager {
-    pub fn new(args: Arc<RunArgs>, compilation_priorities: Vec<String>) -> Self {
-        let queue = CompilationPriority::from_vec(compilation_priorities);
+    pub fn new(args: Arc<RunArgs>, compilation_priorities: SolverPriority) -> Self {
+        let queue = State::from_vec(compilation_priorities);
         Self {
             manager: Arc::new(CompilationManager::new(args)),
-            queue: Arc::new(RwLock::new(queue)),
+            state: Arc::new(RwLock::new(queue)),
         }
     }
 
     pub async fn start(&self, solver_id: String, cores: Cores) {
-        match self.manager.status(&solver_id).await {
-            // Ignore compilations that are done or running
-            // TODO: What should happen if the cores are different but the solver is the same?
-            CompilationStatus::Done => {
-                logging::info!(
-                    "did not start the compilation of solver '{solver_id}' because it was already done",
-                );
-                return;
-            }
-            CompilationStatus::NotStarted | CompilationStatus::Running => {}
+        let status = self.manager.status(&solver_id).await;
+        if matches!(status, CompilationStatus::Done) {
+            logging::info!(
+                "did not start the compilation of solver '{solver_id}' because it was already done",
+            );
+            return;
         }
 
-        let solver_id = SolverId(solver_id);
-        self.queue
+        self.state
             .write()
             .await
             .register_main_compilation(solver_id, cores);
 
         let manager = Arc::clone(&self.manager);
-        let queue = Arc::clone(&self.queue);
-        Self::do_extra_compilations_work(manager, queue).await;
-
-        // self.queue.write().await.take_to_start(&solver_id);
-        // self.manager.start(solver_id.to_string()).await;
-        //
-        // let extra_compilations_count = cores - 1;
-        // let extra_compilations = self
-        //     .queue
-        //     .write()
-        //     .await
-        //     .take_next_to_start(extra_compilations_count);
-        // for solver_id in extra_compilations {
-        //     let manager = Arc::clone(&self.manager);
-        //     let queue = Arc::clone(&self.queue);
-        //     tokio::spawn(async move {
-        //         Self::extra_compilation(manager, queue, solver_id).await;
-        //     });
-        // }
-        //
-        // let manager = Arc::clone(&self.manager);
-        // let queue = Arc::clone(&self.queue);
-        // tokio::spawn(async move {
-        //     Self::main_compilation(manager, queue, solver_id, extra_compilations_count).await;
-        // });
+        let state = Arc::clone(&self.state);
+        Self::spawn_compilation_worker_thread(manager, state);
     }
 
-    pub fn stop(&self, solver_id: &str) {
-        todo!()
-    }
-
-    pub async fn stop_all_except(&self, exception_solver_ids: HashSet<String>) {
-        todo!()
+    pub async fn stop_all_except(&self, exception_solver_ids: HashSet<SolverId>) {
+        let state = self.state.read().await;
+        let exception_solvers = state.get_main_compilations_except(&exception_solver_ids);
+        self.manager.stop_many(exception_solvers).await;
     }
 
     pub async fn wait_for(&self, solver_name: &str) -> WaitForResult {
-        todo!()
+        // TODO: It should only be able to wait for main compilations.
+        self.manager.wait_for(solver_name).await
     }
 
-    async fn extra_compilation(
+    async fn wait_for_compile(
         manager: Arc<CompilationManager>,
-        queue: Arc<RwLock<CompilationPriority>>,
+        state: Arc<RwLock<State>>,
         solver_id: SolverId,
     ) {
-        manager.start(solver_id.0.clone()).await;
-        let result = manager.wait_for(&solver_id.0).await;
-
+        let result = manager.wait_for(&solver_id).await;
         if let Err(error) = result
             && error.is_cancelled()
         {
-            queue.write().await.compilation_stopped(&solver_id);
-            return;
+            state.write().await.compilation_stopped(&solver_id);
+        } else {
+            // NOTE: we don't handle the error if one occurred because the user can handle it themselves when they wait for the compilation.
+
+            // It might have failed, but we don't want to repeat it so we still mark it as done
+            state.write().await.compilation_finished(&solver_id);
         }
 
-        // It might have failed, but we don't want to repeat it so we still mark it as done
-        queue.write().await.compilation_finished(&solver_id);
-
-        Box::pin(Self::do_extra_compilations_work(manager, queue)).await;
+        Self::spawn_compilation_worker_thread(manager, state);
     }
 
-    /// Precondition: the solver has been started in the self.queue.
-    async fn main_compilation(
+    fn spawn_compilation_worker_thread(
         manager: Arc<CompilationManager>,
-        queue: Arc<RwLock<CompilationPriority>>,
-        solver_id: SolverId,
+        state: Arc<RwLock<State>>,
     ) {
-        // We are not interested in the result because we in either case
-        // want to stop the extra compilations.
-        let _ = manager.wait_for(&solver_id.to_string()).await;
-
-        // and stops the extra compilations when done.
-        Self::do_extra_compilations_work(manager, queue).await;
-    }
-
-    async fn do_extra_compilations_work(
-        manager: Arc<CompilationManager>,
-        queue: Arc<RwLock<CompilationPriority>>,
-    ) {
-        let work = queue.write().await.take_compilation_work();
-
-        // Compilations should happen in a different thread
-        let manager = Arc::clone(&manager);
-        let queue = Arc::clone(&queue);
         tokio::spawn(async move {
-            Self::extra_compilation(manager, queue, SolverId("hello".to_string())).await;
+            let mut state_lock = state.write().await;
+            let work_list = state_lock.take_compilation_work();
+
+            // TODO: Collect all Stop variants and use stop_many instead
+            for work in work_list {
+                match work {
+                    CompilationWork::Start(solver_id) => {
+                        manager.start(solver_id.clone()).await;
+                        let manager = Arc::clone(&manager);
+                        let state = Arc::clone(&state);
+                        tokio::spawn(async move {
+                            Self::wait_for_compile(manager, state, solver_id).await;
+                        });
+                    }
+                    CompilationWork::Stop(solver_id) => {
+                        manager.stop(solver_id).await;
+                    }
+                }
+            }
         });
-
-        // TODO: Perform the work
-
-        todo!()
     }
 }
 
-struct SolverId(String);
+type SolverId = String;
 #[derive(PartialOrd, PartialEq, Eq, Ord)]
 struct Priority(u64);
 
-type Cores = u64;
+type Cores = usize;
 
 enum RunningCompilation {
-    Main(Cores, Option<Priority>),
+    Main(MainCompilation),
     Extra(Priority),
 }
 
-/// Not thread-safe
-struct CompilationPriority {
-    extra_compilations_queue: BTreeMap<Priority, SolverId>,
-    main_compilations_to_run: Vec<(SolverId, Cores, Option<Priority>)>,
-    running_compilations: HashMap<SolverId, RunningCompilation>,
-    available_cores: Cores,
-}
-
-enum ExtraCompilationWork {
+enum CompilationWork {
     Start(SolverId),
     Stop(SolverId),
 }
 
-impl CompilationPriority {
-    pub fn from_vec(solvers: Vec<String>) -> Self {
+pub struct SolverPriority(BTreeMap<Priority, SolverId>);
+
+impl SolverPriority {
+    pub fn from_descending_priority(solvers: impl IntoIterator<Item = String>) -> Self {
         let priorities = solvers
             .into_iter()
-            .rev()
             .enumerate()
-            .map(|(index, solver_id)| (Priority(index as u64), SolverId(solver_id)));
+            .map(|(index, solver_id)| (Priority(index as u64), solver_id));
+        Self(BTreeMap::from_iter(priorities))
+    }
 
+    fn take_next(&mut self) -> Option<(SolverId, Priority)> {
+        self.0
+            .pop_first()
+            .map(|(priority, solver)| (solver, priority))
+    }
+
+    fn remove_by_solver_id(&mut self, id: &SolverId) -> Option<Priority> {
+        todo!()
+    }
+}
+
+struct MainCompilation {
+    cores: Cores,
+    priority: Option<Priority>,
+}
+
+/// Not thread-safe
+struct State {
+    unstarted_main_compilations: Vec<(SolverId, MainCompilation)>,
+    extra_compilations_queue: SolverPriority,
+    running_compilations: HashMap<SolverId, RunningCompilation>,
+    available_cores: Cores,
+    used_cores: Cores,
+}
+
+impl State {
+    pub fn from_vec(priority: SolverPriority) -> Self {
         Self {
-            extra_compilations_queue: BTreeMap::from_iter(priorities),
-            main_compilations_to_run: Vec::new(),
+            extra_compilations_queue: priority,
+            unstarted_main_compilations: Vec::new(),
             running_compilations: Default::default(),
             available_cores: 0,
+            used_cores: 0,
         }
     }
 
     pub fn register_main_compilation(&mut self, solver: SolverId, cores: Cores) {
-        // Remember to check whether it is already running
+        let running_compilation = self.running_compilations.remove(&solver);
 
-        // self.available_cores += cores (_not_ cores - 1)
-        todo!()
+        match running_compilation {
+            None => {
+                let optional_priority = self.extra_compilations_queue.remove_by_solver_id(&solver);
+                self.available_cores += cores;
+                self.unstarted_main_compilations
+                    .push((solver, MainCompilation::new(cores, optional_priority)));
+            }
+            Some(RunningCompilation::Main(old_compilation)) => {
+                let core_change = (cores as isize) - (old_compilation.cores as isize);
+                self.available_cores = self.available_cores.saturating_add_signed(core_change);
+                self.running_compilations.insert(
+                    solver,
+                    RunningCompilation::Main(MainCompilation::new(cores, old_compilation.priority)),
+                );
+            }
+            Some(RunningCompilation::Extra(priority)) => {
+                self.available_cores += cores;
+                self.running_compilations.insert(
+                    solver,
+                    RunningCompilation::Main(MainCompilation::new(cores, Some(priority))),
+                );
+            }
+        }
     }
 
     /// Assumes the work is performed after this call
     #[must_use = "the returned work has to be performed after calling this function"]
-    pub fn take_compilation_work(&mut self) -> Vec<ExtraCompilationWork> {
-        // Prioritise main compilations
-        // If there is not enough cores for all main compilations
-        todo!()
+    pub fn take_compilation_work(&mut self) -> impl Iterator<Item = CompilationWork> + use<> {
+        // Prioritise main compilations.
+        // If there is not enough cores for all main compilations, stop extra compilations.
+        todo!();
+        Vec::new().into_iter()
     }
 
     pub fn compilation_finished(&mut self, solver: &SolverId) {
+        // Remove from running solvers.
+        // If a main compilation, remove cores from available cores.
+        // Remove 1 core from used_cores.
         todo!()
     }
 
     pub fn compilation_stopped(&mut self, solver: &SolverId) {
+        // Remove from running solvers.
+        // If a main compilation, remove cores from available cores.
+        // If an extra compilation, add to queue again.
+        // Remove 1 core from used_cores.
+        todo!()
+    }
+
+    pub fn get_main_compilations_except(
+        &self,
+        exception_solvers: &HashSet<SolverId>,
+    ) -> HashSet<SolverId> {
         todo!()
     }
 }
 
-impl ToString for SolverId {
-    fn to_string(&self) -> String {
-        self.0.clone()
-    }
-}
-
-impl SolverId {
-    pub fn into_string(self) -> String {
-        self.0
+impl MainCompilation {
+    pub const fn new(cores: Cores, priority: Option<Priority>) -> Self {
+        Self { cores, priority }
     }
 }
