@@ -64,6 +64,7 @@ pub struct SolverError {
     pub error: String,
 }
 
+#[allow(clippy::large_enum_variant)]
 enum PrepareResult {
     Success(PreparedSolver),
     Cancelled,
