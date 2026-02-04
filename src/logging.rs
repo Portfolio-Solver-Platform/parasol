@@ -57,10 +57,36 @@ macro_rules! error_msg {
     };
 }
 
+macro_rules! error_with_msg {
+    ($e:expr, $($arg:tt)*) => {
+        $crate::logging::log_error_with_msg_impl(
+            format_args!($($arg)*),
+            &$e,
+            file!(),
+            line!()
+        )
+    };
+}
+
 // This function is purely used to force the anyhow::Error type
 // to avoid forgetting to convert it to that type before printing
 pub(crate) fn log_error_impl(e: &anyhow::Error, file: &str, line: u32) {
     log_msg_impl(LEVEL_ERROR, "ERROR", format_args!("{e:#}"), file, line);
+}
+
+pub(crate) fn log_error_with_msg_impl(
+    prefix: std::fmt::Arguments,
+    e: &anyhow::Error,
+    file: &str,
+    line: u32,
+) {
+    log_msg_impl(
+        LEVEL_ERROR,
+        "ERROR",
+        format_args!("{prefix}: {e:#}"),
+        file,
+        line,
+    );
 }
 
 macro_rules! error {
@@ -69,8 +95,13 @@ macro_rules! error {
     };
 }
 
+pub(crate) fn errors(errors: impl IntoIterator<Item = impl Into<anyhow::Error>>) {
+    errors.into_iter().for_each(|e| error!(e.into()));
+}
+
 pub(crate) use error;
 pub(crate) use error_msg;
+pub(crate) use error_with_msg;
 pub(crate) use info;
 pub(crate) use warning;
 

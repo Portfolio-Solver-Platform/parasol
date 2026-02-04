@@ -14,7 +14,10 @@ pub async fn load(mode: &SolverConfigMode, minizinc_exe: &Path) -> Solvers {
         SolverConfigMode::Cache => match cache::load_solvers_config() {
             Ok(solvers) => return solvers,
             Err(e) => {
-                logging::error_msg!("Failed to load solver cache: {e}. Falling back to discovery");
+                logging::error_with_msg!(
+                    e.into(),
+                    "Failed to load solver cache. Falling back to discovery"
+                );
             }
         },
         SolverConfigMode::Discover => {}
@@ -74,5 +77,9 @@ impl Executable {
         let mut cmd = Command::new(self.0);
         cmd.args(self.1);
         cmd
+    }
+
+    pub fn path_is_relative(&self) -> bool {
+        self.0.is_relative()
     }
 }

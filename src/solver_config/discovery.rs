@@ -23,7 +23,18 @@ impl Solvers {
         let mut solvers: Vec<Solver> = vec![];
         for solver_json in array {
             match Solver::from_json(solver_json) {
-                Ok(solver) => solvers.push(solver),
+                Ok(solver) => {
+                    if matches!(solver.input_type(), SolverInputType::Json)
+                        && let Some(exe) = solver.executable()
+                        && exe.path_is_relative()
+                    {
+                        logging::error_msg!(
+                            "solver '{}' has input type JSON and has the executable set to a relative path. Please set the executable for this solver to an absolute path instead.",
+                            solver.id()
+                        );
+                    }
+                    solvers.push(solver);
+                }
                 Err(SolverParseError::UnknownInputType {
                     solver_id,
                     input_type,

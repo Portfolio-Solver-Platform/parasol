@@ -23,7 +23,6 @@ PROBLEMS = [
     ("bacp/bacp-2.mzn", None),
     ("steelmillslab/steelmillslab.mzn", "steelmillslab/bench_2_0.dzn"),
 
-
     # --- Stress tests (specifically designed to stress solvers) ---
     ("search_stress/search_stress.mzn", "search_stress/08_08.dzn"),  # Search stress
     ("slow_convergence/slow_convergence.mzn", "slow_convergence/0300.dzn"),  # Slow bound convergence
@@ -57,7 +56,7 @@ PROBLEMS = [
     ("black-hole/black-hole.mzn", "black-hole/4.dzn"),  # Card game (global constraints)
 
     # --- Classic puzzles ---
-    ("mqueens/mqueens2.mzn", "mqueens/n12.dzn"),  # N-queens variant
+    ("mqueens/mqueens2.mzn", "mqueens/n13.dzn"),  # N-queens variant
 ]
 
 
@@ -94,7 +93,7 @@ def resolve_schedules(args: list[str]) -> list[Path]:
 
 
 def run_parasol(model: Path, data: Path | None, schedule: Path, cores: int,
-                timeout: int | None, solver: str) -> tuple[float, str | None, str, str]:
+                timeout: int | None, solver: str, pin: bool) -> tuple[float, str | None, str, str]:
     cmd = []
     if timeout:
         cmd.extend(["timeout", str(timeout)])
@@ -105,8 +104,7 @@ def run_parasol(model: Path, data: Path | None, schedule: Path, cores: int,
     cmd.append(str(model))
     if data:
         cmd.append(str(data))
-    cmd.extend(["--static-schedule", str(schedule), "-p", str(cores), "--ai", "none", "--verbosity", "quiet", "--solver-config-mode", "cache"])
-
+    cmd.extend(["--static-schedule", str(schedule), "-p", str(cores), "--ai", "none", "--verbosity", "info", "--solver-config-mode", "cache"])
     if pin:
         cmd.append("--pin-java-solvers")
 
@@ -133,7 +131,7 @@ def run_parasol(model: Path, data: Path | None, schedule: Path, cores: int,
 
 
 def run_benchmark(problems: list[tuple[Path, Path | None]], schedules: list[Path], cores: int,
-                  timeout: int | None, runs: int, solver: str, output: Path):
+                  timeout: int | None, runs: int, solver: str, output: Path, pin: bool):
     output.parent.mkdir(parents=True, exist_ok=True)
 
     with open(output, "w", newline="") as f:
@@ -152,7 +150,7 @@ def run_benchmark(problems: list[tuple[Path, Path | None]], schedules: list[Path
 
                 for run in range(runs):
                     kill_solvers()
-                    time_ms, objective, status, stdout = run_parasol(model, data, schedule, cores, timeout, solver)
+                    time_ms, objective, status, stdout = run_parasol(model, data, schedule, cores, timeout, solver, pin)
                     writer.writerow([schedule.stem, problem, name, model_name, f"{time_ms:.0f}", objective or "", status])
                     f.flush()
                     short = "US" if status == "Unsat" else status[0]
@@ -174,6 +172,7 @@ def main():
     parser.add_argument("--solver", default="parasol")
     parser.add_argument("--problems-path", type=Path, default=Path("/problems"))
     parser.add_argument("--discover", action="store_true", help="Discover problems from --problems-path instead of using hardcoded list")
+    parser.add_argument("--pin", action="store_true", help="Pass --pin-java-solvers to the solver")
     args = parser.parse_args()
 
     schedules = resolve_schedules(args.schedules)
@@ -187,7 +186,7 @@ def main():
         problems = [(args.problems_path / m, args.problems_path / d if d else None) for m, d in PROBLEMS]
 
     print(f"Schedules: {len(schedules)}, Problems: {len(problems)}, Runs: {args.runs}")
-    run_benchmark(problems, schedules, args.cores, args.timeout, args.runs, args.solver, args.output)
+    run_benchmark(problems, schedules, args.cores, args.timeout, args.runs, args.solver, args.output, args.pin)
 
 
 if __name__ == "__main__":
