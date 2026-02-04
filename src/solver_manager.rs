@@ -8,7 +8,7 @@ use crate::process_tree::{
 use crate::scheduler::ScheduleElement;
 use crate::solver_config::SolverInputType;
 use crate::solver_output::{Output, Solution, Status};
-use crate::{logging, mzn_to_fzn, solver_config, solver_output};
+use crate::{logging, mzn_to_fzn, solver_config, solver_output, solvers};
 use async_tempfile::TempFile;
 use futures::future::join_all;
 use nix::errno::Errno;
@@ -395,8 +395,10 @@ impl SolverManager {
         #[allow(unused_mut)]
         let mut allocated_cores: Vec<usize> = Vec::new();
         #[cfg(target_os = "linux")]
-        if pin_yuck {
-            match pin_yuck_solver_to_cores(pid, cores, available_cores).await {
+        let is_java_solver = solver_name == solvers::YUCK_ID || solver_name == solvers::CHOCO_ID;
+        #[cfg(target_os = "linux")]
+        if pin_java_solvers && is_java_solver {
+            match pin_solver_to_cores(pid, cores, available_cores).await {
                 Ok(cores) => allocated_cores = cores,
                 Err(e) => {
                     logging::error!(e.into());
@@ -434,7 +436,7 @@ impl SolverManager {
         let elem = elem.clone();
         let current_solvers = self.current_solvers.clone();
         #[cfg(target_os = "linux")]
-        let pin_yuck = self.args.pin_yuck;
+        let pin_java_solvers = self.args.pin_java_solvers;
         let best_objective = self.best_objective.clone();
 
         tokio::spawn(async move {
@@ -457,7 +459,7 @@ impl SolverManager {
                 #[cfg(target_os = "linux")]
                 &available_cores,
                 #[cfg(target_os = "linux")]
-                pin_yuck,
+                pin_java_solvers,
             )
             .await;
 
@@ -894,7 +896,7 @@ fn pipe(mut left: Command, mut right: Command) -> Result<PipeCommand> {
 }
 
 #[cfg(target_os = "linux")]
-async fn pin_yuck_solver_to_cores(
+async fn pin_solver_to_cores(
     pid: u32,
     cores: usize,
     available_cores: &Arc<Mutex<BTreeSet<usize>>>,
