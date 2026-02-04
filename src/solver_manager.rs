@@ -464,7 +464,7 @@ impl SolverManager {
                                 logging::info!("Solver '{}' exited with status: {}", solver_name_for_wait, status);
                             }
                             Err(e) => {
-                                logging::error_msg!("Error waiting for solver '{}': {}", solver_name_for_wait, e);
+                                logging::error_with_msg!(e.into(), "Error waiting for solver '{}'", solver_name_for_wait);
                             }
                             _ => {}
                         }
@@ -578,7 +578,7 @@ impl SolverManager {
         let mut lines = reader.lines();
 
         while let Some(line) = lines.next_line().await.unwrap_or_else(|e| {
-            logging::error_msg!("Error reading solver stderr: {}", e);
+            logging::error_with_msg!(e.into(), "Error reading solver stderr");
             None
         }) {
             logging::error_msg!("Solver stderr: {}", line);

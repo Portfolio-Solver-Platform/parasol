@@ -1,4 +1,4 @@
-use crate::logging::error_msg;
+use crate::logging;
 use tokio::{
     signal::unix::{SignalKind, signal},
     sync::mpsc,
@@ -22,7 +22,7 @@ pub fn spawn_signal_handler(
                 match signal($kind) {
                     Ok(s) => s,
                     Err(e) => {
-                        error_msg!("Failed to register signal handler: {e}");
+                        logging::error_with_msg!(e.into(), "Failed to register signal handler");
                         return;
                     }
                 }
