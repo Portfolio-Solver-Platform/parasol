@@ -145,7 +145,8 @@ impl Scheduler {
                                 let _ = nix::sys::signal::raise(nix::sys::signal::Signal::SIGSTOP).map_err(|error_number| logging::error_msg!("failed to suspend terminal. Error number was {error_number}"));
                             }
                             SignalEvent::Resume => {
-                                let result = solver_manager_clone.resume_all_solvers().await; if let Err(e) = result {
+                                let result = solver_manager_clone.resume_all_solvers().await;
+                                if let Err(e) = result {
                                     logging::error_msg!("errors when resuming solvers");
                                     logging::errors(e);
                                 }
