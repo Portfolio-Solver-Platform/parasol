@@ -439,7 +439,8 @@ impl Scheduler {
                 }
 
                 if let Err(e) = self.solver_manager.stop_solvers(&to_restart).await {
-                    logging::error_msg!("failed to stop solvers for restart: {:?}", e);
+                    logging::error_msg!("failed to stop solvers for restart");
+                    logging::errors(e);
                 }
 
                 for id in &to_restart {
@@ -470,9 +471,10 @@ impl Scheduler {
         {
             logging::error_msg!("failed to suspend solvers");
             logging::errors(e);
-            self.solver_manager
-                .stop_solvers(&changes.to_suspend)
-                .await?;
+            if let Err(e) = self.solver_manager.stop_solvers(&changes.to_suspend).await {
+                logging::error_msg!("failed to stop solvers after suspending failed");
+                logging::errors(e);
+            }
         }
 
         if let Err(e) = self.solver_manager.resume_solvers(&changes.to_resume).await {
