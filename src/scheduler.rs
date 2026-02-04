@@ -401,7 +401,7 @@ impl Scheduler {
         portfolio: Portfolio,
         apply_cancellation_token: SchedulerChildCancellationToken,
         stop_other_compiling_solvers: bool,
-    ) -> std::result::Result<(), Vec<Error>> {
+    ) {
         if stop_other_compiling_solvers {
             let solver_to_keep_compiling =
                 portfolio.iter().map(|info| info.name.to_string()).collect();
@@ -438,7 +438,10 @@ impl Scheduler {
                     logging::info!("solver to restart {:?}", to_restart);
                 }
 
-                self.solver_manager.stop_solvers(&to_restart).await?;
+                if let Err(e) = self.solver_manager.stop_solvers(&to_restart).await {
+                    logging::error_msg!("failed to stop solvers for restart");
+                    logging::errors(e);
+                }
 
                 for id in &to_restart {
                     state.running_solvers.remove(id);
@@ -468,9 +471,10 @@ impl Scheduler {
         {
             logging::error_msg!("failed to suspend solvers");
             logging::errors(e);
-            self.solver_manager
-                .stop_solvers(&changes.to_suspend)
-                .await?;
+            if let Err(e) = self.solver_manager.stop_solvers(&changes.to_suspend).await {
+                logging::error_msg!("failed to stop solvers after suspending failed");
+                logging::errors(e);
+            }
         }
 
         if let Err(e) = self.solver_manager.resume_solvers(&changes.to_resume).await {
@@ -492,8 +496,6 @@ impl Scheduler {
         self.solver_manager
             .start_solvers(&changes.to_start, apply_cancellation_token.0)
             .await;
-
-        Ok(())
     }
 
     fn assign_ids(

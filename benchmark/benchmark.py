@@ -13,50 +13,49 @@ from pathlib import Path
 from discover import discover_problems
 
 PROBLEMS = [
-    # # # --- Original problems ---
-    # # ("test_unsat/test_unsat.mzn", None),
-    # # ("sudoku_fixed/sudoku_fixed.mzn", "sudoku_fixed/sudoku_p20.dzn"),
-    # # ("accap/accap.mzn", "accap/accap_instance6.dzn"),
-    # # ("rcpsp/rcpsp.mzn", "rcpsp/00.dzn"),
-    # # ("gbac/gbac.mzn", "gbac/UD2-gbac.dzn"),
-    # # ("amaze/amaze.mzn", "amaze/2012-03-08.dzn"),
-    # # ("bacp/bacp-1.mzn", None),
-    # # ("bacp/bacp-2.mzn", None),
-    # # ("steelmillslab/steelmillslab.mzn", "steelmillslab/bench_2_0.dzn"),
+    # --- Original problems ---
+    ("sudoku_fixed/sudoku_fixed.mzn", "sudoku_fixed/sudoku_p20.dzn"),
+    ("accap/accap.mzn", "accap/accap_instance6.dzn"),
+    ("rcpsp/rcpsp.mzn", "rcpsp/00.dzn"),
+    ("gbac/gbac.mzn", "gbac/UD2-gbac.dzn"),
+    ("amaze/amaze.mzn", "amaze/2012-03-08.dzn"),
+    ("bacp/bacp-1.mzn", None),
+    ("bacp/bacp-2.mzn", None),
+    ("steelmillslab/steelmillslab.mzn", "steelmillslab/bench_2_0.dzn"),
 
-    # # --- Stress tests (specifically designed to stress solvers) ---
-    # ("search_stress/search_stress.mzn", "search_stress/08_08.dzn"),  # Search stress
-    # ("slow_convergence/slow_convergence.mzn", "slow_convergence/0300.dzn"),  # Slow bound convergence
+    # --- Stress tests (specifically designed to stress solvers) ---
+    ("search_stress/search_stress.mzn", "search_stress/08_08.dzn"),  # Search stress
+    ("slow_convergence/slow_convergence.mzn", "slow_convergence/0300.dzn"),  # Slow bound convergence
 
-    # # --- Pure SAT puzzles (different constraint structures) ---
-    # ("hitori/hitori.mzn", "hitori/h11-1.dzn"),  # Grid-based SAT
-    # ("nonogram/non.mzn", "nonogram/non_fast_3.dzn"),  # Line-based constraints
-    # ("fillomino/fillomino.mzn", "fillomino/6x6_0.dzn"),  # Region-based SAT
+    # --- Pure SAT puzzles (different constraint structures) ---
+    ("hitori/hitori.mzn", "hitori/h11-1.dzn"),  # Grid-based SAT
+    ("nonogram/non.mzn", "nonogram/non_fast_3.dzn"),  # Line-based constraints
+    ("fillomino/fillomino.mzn", "fillomino/6x6_0.dzn"),  # Region-based SAT
 
-    # # --- Hard combinatorial problems ---
-    # ("costas-array/CostasArray.mzn", "costas-array/14.dzn"),  # All-different + math
-    # ("ghoulomb/ghoulomb.mzn", "ghoulomb/3-8-20.dzn"),  # Golomb ruler variant
+    # --- Hard combinatorial problems ---
+    ("costas-array/CostasArray.mzn", "costas-array/14.dzn"),  # All-different + math
+    ("ghoulomb/ghoulomb.mzn", "ghoulomb/3-8-20.dzn"),  # Golomb ruler variant
 
-    # # --- Geometric/packing problems ---
-    # ("rectangle-packing/rect_packing.mzn", "rectangle-packing/rpp09_false.dzn"),  # 2D packing (UNSAT)
-    # ("rectangle-packing/rect_packing.mzn", "rectangle-packing/rpp12_true.dzn"),  # 2D packing (SAT)
-    # ("pentominoes/pentominoes-int.mzn", "pentominoes/03.dzn"),  # Polyomino placement
+    # --- Geometric/packing problems ---
+    ("rectangle-packing/rect_packing.mzn", "rectangle-packing/rpp09_false.dzn"),  # 2D packing (UNSAT)
+    ("rectangle-packing/rect_packing.mzn", "rectangle-packing/rpp12_true.dzn"),  # 2D packing (SAT)
+    ("pentominoes/pentominoes-int.mzn", "pentominoes/03.dzn"),  # Polyomino placement
 
-    # # --- Routing/TSP variants ---
-    # ("atsp/atsp.mzn", "atsp/instance5_0p15.dzn"),  # Asymmetric TSP
-    # ("cvrp/cvrp.mzn", "cvrp/simple2.dzn"),  # Capacitated VRP (small)
-    # ("tsptw/tsptw.mzn", "tsptw/n20w160.001.dzn"),  # TSP with time windows
+    # --- Routing/TSP variants ---
+    ("atsp/atsp.mzn", "atsp/instance5_0p15.dzn"),  # Asymmetric TSP
+    ("cvrp/cvrp.mzn", "cvrp/simple2.dzn"),  # Capacitated VRP (small)
+    ("tsptw/tsptw.mzn", "tsptw/n20w160.001.dzn"),  # TSP with time windows
 
-    # # --- Job shop scheduling variants ---
-    # ("fjsp/fjsp.mzn", "fjsp/easy01.dzn"),  # Flexible job shop (easy)
-    # ("fjsp/fjsp.mzn", "fjsp/med04.dzn"),  # Flexible job shop (medium)
-    # ("openshop/openshop.mzn", "openshop/gp10-4.dzn"),  # Open shop scheduling
+    # --- Job shop scheduling variants ---
+    ("fjsp/fjsp.mzn", "fjsp/easy01.dzn"),  # Flexible job shop (easy)
+    ("fjsp/fjsp.mzn", "fjsp/med04.dzn"),  # Flexible job shop (medium)
+    ("openshop/openshop.mzn", "openshop/gp10-4.dzn"),  # Open shop scheduling
 
-    # # --- Global constraint heavy ---
-    # ("multi-knapsack/mknapsack.mzn", "multi-knapsack/mknap1-5.dzn"),  # Multi-dim knapsack
-    # ("black-hole/black-hole.mzn", "black-hole/4.dzn"),  # Card game (global constraints)
+    # --- Global constraint heavy ---
+    ("multi-knapsack/mknapsack.mzn", "multi-knapsack/mknap1-5.dzn"),  # Multi-dim knapsack
+    ("black-hole/black-hole.mzn", "black-hole/4.dzn"),  # Card game (global constraints)
 
-    # # --- Classic puzzles ---
+    # --- Classic puzzles ---
     ("mqueens/mqueens2.mzn", "mqueens/n13.dzn"),  # N-queens variant
 ]
 
@@ -99,8 +98,7 @@ def run_parasol(model: Path, data: Path | None, schedule: Path, cores: int,
     if timeout:
         cmd.extend(["timeout", str(timeout)])
     cmd.append("minizinc")
-    # cmd.append("target/release/parasol")
-    # cmd.append("run")
+
     if solver != "":
         cmd.extend(["--solver", solver])
     cmd.append(str(model))
@@ -109,6 +107,7 @@ def run_parasol(model: Path, data: Path | None, schedule: Path, cores: int,
     cmd.extend(["--static-schedule", str(schedule), "-p", str(cores), "--ai", "none", "--verbosity", "info", "--solver-config-mode", "cache"])
     if pin:
         cmd.append("--pin-java-solvers")
+
 
     start = time.perf_counter()
     result = subprocess.run(cmd, capture_output=True, text=True)
