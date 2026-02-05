@@ -184,6 +184,7 @@ impl CompilationManager {
     }
 
     /// Stop all running compilations except for the given solvers.
+    #[allow(dead_code)]
     pub async fn stop_all_except(&self, exception_solver_names: HashSet<String>) {
         let solvers_to_stop = {
             self.compilations

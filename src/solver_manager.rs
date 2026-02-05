@@ -2,7 +2,7 @@ use crate::args::RunArgs;
 use crate::insert_objective::ObjectiveInserter;
 use crate::model_parser::{ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type};
 use crate::mzn_to_fzn::compilation_core_manager::CompilationCoreManager;
-use crate::mzn_to_fzn::compilation_manager::{self, CompilationManager};
+use crate::mzn_to_fzn::compilation_manager;
 use crate::process_tree::{
     get_process_tree_memory, recursive_force_kill, send_signals_to_process_tree,
 };
