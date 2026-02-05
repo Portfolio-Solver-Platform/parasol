@@ -37,18 +37,17 @@ impl CompilationCoreManager {
             return;
         }
 
-        // TODO: Start main compilation here myself to make sure
-        //       it has started before exiting this function call.
-        //       Also call wait_for_compile to wait for it (which will call
-        //       compilation_stopped and compilation_finished).
-        //       Also, modify register_main_compilation to assume it has already
-        //       been started. This means that unstarted_main_compilations
-        //       probably should be removed.
+        let mut state = self.state.write().await;
 
-        self.state
-            .write()
-            .await
-            .register_main_compilation(solver_id, cores);
+        self.manager.start(solver_id.clone()).await;
+
+        state.register_main_compilation(solver_id.clone(), cores);
+
+        let manager = Arc::clone(&self.manager);
+        let state = Arc::clone(&self.state);
+        tokio::spawn(async move {
+            Self::wait_for_compile(manager, state, &solver_id).await;
+        });
 
         let manager = Arc::clone(&self.manager);
         let state = Arc::clone(&self.state);
@@ -74,18 +73,18 @@ impl CompilationCoreManager {
     async fn wait_for_compile(
         manager: Arc<CompilationManager>,
         state: Arc<RwLock<State>>,
-        solver_id: SolverId,
+        solver_id: &SolverId,
     ) {
-        let result = manager.wait_for(&solver_id).await;
+        let result = manager.wait_for(solver_id).await;
         if let Err(error) = result
             && error.is_cancelled()
         {
-            state.write().await.compilation_stopped(&solver_id);
+            state.write().await.compilation_stopped(solver_id);
         } else {
             // NOTE: we don't handle the error if one occurred because the user can handle it themselves when they wait for the compilation.
 
             // It might have failed, but we don't want to repeat it so we still mark it as done
-            state.write().await.compilation_finished(&solver_id);
+            state.write().await.compilation_finished(solver_id);
         }
 
         Self::spawn_compilation_worker_thread(manager, state);
@@ -107,7 +106,7 @@ impl CompilationCoreManager {
                         let manager = Arc::clone(&manager);
                         let state = Arc::clone(&state);
                         tokio::spawn(async move {
-                            Self::wait_for_compile(manager, state, solver_id).await;
+                            Self::wait_for_compile(manager, state, &solver_id).await;
                         });
                     }
                     CompilationWork::Stop(solver_id) => {
@@ -181,7 +180,6 @@ struct MainCompilation {
 
 /// Not thread-safe
 struct State {
-    unstarted_main_compilations: Vec<(SolverId, MainCompilation)>,
     extra_compilations_queue: SolverPriority,
     running_compilations: HashMap<SolverId, RunningCompilation>,
     available_cores: Cores,
@@ -192,7 +190,6 @@ impl State {
     pub fn from_vec(priority: SolverPriority) -> Self {
         Self {
             extra_compilations_queue: priority,
-            unstarted_main_compilations: Vec::new(),
             running_compilations: Default::default(),
             available_cores: 0,
             used_cores: 0,
@@ -204,59 +201,34 @@ impl State {
             return true;
         }
 
-        if self
-            .unstarted_main_compilations
-            .iter()
-            .any(|(id, _)| id == solver)
-        {
-            return true;
-        }
-
         false
     }
 
+    /// Precondition: The solver should be started.
     pub fn register_main_compilation(&mut self, solver: SolverId, cores: Cores) {
-        let running_compilation = self.running_compilations.remove(&solver);
+        self.used_cores += 1;
+        self.available_cores += cores;
 
-        match running_compilation {
-            None => {
-                let optional_priority = self.extra_compilations_queue.remove_by_solver_id(&solver);
-                self.available_cores += cores;
-                self.unstarted_main_compilations
-                    .push((solver, MainCompilation::new(cores, optional_priority)));
-            }
+        let running_compilation = self.running_compilations.remove(&solver);
+        let priority = match running_compilation {
+            None => self.extra_compilations_queue.remove_by_solver_id(&solver),
+            Some(RunningCompilation::Extra(priority)) => Some(priority),
             Some(RunningCompilation::Main(old_compilation)) => {
-                let core_change = (cores as isize) - (old_compilation.cores as isize);
-                self.available_cores = self.available_cores.saturating_add_signed(core_change);
-                self.running_compilations.insert(
-                    solver,
-                    RunningCompilation::Main(MainCompilation::new(cores, old_compilation.priority)),
-                );
+                self.available_cores = self.available_cores.saturating_sub(old_compilation.cores);
+                old_compilation.priority
             }
-            Some(RunningCompilation::Extra(priority)) => {
-                self.available_cores += cores;
-                self.running_compilations.insert(
-                    solver,
-                    RunningCompilation::Main(MainCompilation::new(cores, Some(priority))),
-                );
-            }
-        }
+        };
+
+        self.running_compilations.insert(
+            solver,
+            RunningCompilation::Main(MainCompilation::new(cores, priority)),
+        );
     }
 
     /// Assumes the work is performed after this call
     #[must_use = "the returned work has to be performed after calling this function"]
     pub fn take_compilation_work(&mut self) -> Vec<CompilationWork> {
         let mut work = Vec::new();
-        // Prioritise main compilations.
-        self.unstarted_main_compilations
-            .drain(..)
-            .for_each(|(solver, compilation)| {
-                work.push(CompilationWork::Start(solver.clone()));
-                self.running_compilations
-                    .insert(solver, RunningCompilation::Main(compilation));
-
-                self.used_cores += 1;
-            });
 
         while self.used_cores > self.available_cores {
             let candidate_to_stop = self
@@ -341,12 +313,6 @@ impl State {
 
         for (id, run) in &self.running_compilations {
             if matches!(run, RunningCompilation::Main(_)) && !exception_solvers.contains(id) {
-                result.insert(id.clone());
-            }
-        }
-
-        for (id, _) in &self.unstarted_main_compilations {
-            if !exception_solvers.contains(id) {
                 result.insert(id.clone());
             }
         }
