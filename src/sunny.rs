@@ -67,6 +67,7 @@ pub async fn sunny<T: Ai + Send + 'static>(
     let static_runtime = Duration::from_secs(args.static_runtime);
     let mut timer = sleep(static_runtime);
 
+    let mut extra_compilations_are_enabled = true;
     let start_cancellation_token = program_cancellation_token.child_token();
     let schedule = if let Some(ai) = ai {
         start_with_ai(
@@ -76,11 +77,12 @@ pub async fn sunny<T: Ai + Send + 'static>(
             initial_schedule,
             cores,
             start_cancellation_token,
-            compilation_manager,
+            Arc::clone(&compilation_manager),
         )
         .await
     } else {
         compilation_manager.disable_extra_compilations().await;
+        extra_compilations_are_enabled = false;
         start_without_ai(args, &mut scheduler, initial_schedule).await
     }?;
 
@@ -92,6 +94,11 @@ pub async fn sunny<T: Ai + Send + 'static>(
             _ = program_cancellation_token.cancelled() => {
                 return Err(Error::Cancelled)
             }
+        }
+
+        if extra_compilations_are_enabled {
+            compilation_manager.disable_extra_compilations().await;
+            extra_compilations_are_enabled = false;
         }
 
         let schedule_len = schedule.len();
