@@ -11,3 +11,5 @@ command-line-ai/data/*
 
 libcplex.so
 xpressmp/
+
+benchmark/results/

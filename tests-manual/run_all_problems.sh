@@ -4,7 +4,7 @@
 # PROBLEMS_DIR_CONTAINER="/problems"
 # TIMEOUT_SECONDS=15
 # # SOLVER_PATH="./../target/release/portfolio-solver-framework"
-# SOLVER_PATH="docker run -v ${PROBLEMS_DIR_HOST}:${PROBLEMS_DIR_CONTAINER} framework minizinc"
+# SOLVER_PATH="docker run -v ${PROBLEMS_DIR_HOST}:${PROBLEMS_DIR_CONTAINER} parasol minizinc"
 # if command -v timeout &> /dev/null; then
 #     TIMEOUT_CMD="timeout"
 # elif command -v gtimeout &> /dev/null; then
@@ -24,7 +24,7 @@
 
 # echo "Building solver in release mode..."
 # # cargo build --release
-# docker build -t framework:latest ..
+# docker build -t parasol:latest ..
 # if [ $? -ne 0 ]; then
 #     echo -e "${RED}Build failed!${NC}"
 #     exit 1
@@ -129,7 +129,7 @@
 
 
 
-# #!/bin/bash
+# # #!/bin/bash
 
 PROBLEMS_DIR="../../../psp/problems"
 TIMEOUT_SECONDS=15

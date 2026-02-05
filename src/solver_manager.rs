@@ -9,7 +9,7 @@ use crate::process_tree::{
 use crate::scheduler::ScheduleElement;
 use crate::solver_config::SolverInputType;
 use crate::solver_output::{Output, Solution, Status};
-use crate::{logging, mzn_to_fzn, solver_config, solver_output};
+use crate::{logging, mzn_to_fzn, solver_config, solver_output, solvers};
 use async_tempfile::TempFile;
 use futures::future::join_all;
 use nix::errno::Errno;
@@ -59,6 +59,19 @@ pub enum Error {
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct SolverError {
+    pub solver_name: String,
+    pub error: String,
+}
+
+#[allow(clippy::large_enum_variant)]
+enum PrepareResult {
+    Success(PreparedSolver),
+    Cancelled,
+    Error(String),
+}
+
 #[derive(Debug)]
 enum Msg {
     Solution(Solution),
@@ -84,8 +97,10 @@ impl Drop for SolverProcess {
 
 pub struct SolverManager {
     tx: mpsc::UnboundedSender<Msg>,
+    error_tx: mpsc::UnboundedSender<SolverError>,
     solver_processes: Arc<Mutex<HashMap<u64, SolverProcess>>>,
     current_solvers: Arc<Mutex<HashSet<u64>>>,
+    solver_errors: Arc<Mutex<HashSet<SolverError>>>,
     args: RunArgs,
     mzn_to_fzn: Arc<CompilationCoreManager>,
     best_objective: Arc<RwLock<Option<ObjectiveValue>>>,
@@ -119,6 +134,7 @@ impl SolverManager {
     ) -> std::result::Result<Self, Error> {
         let objective_type = get_objective_type(&args.minizinc.minizinc_exe, &args.model).await?;
         let (tx, rx) = mpsc::unbounded_channel::<Msg>();
+        let (error_tx, error_rx) = mpsc::unbounded_channel::<SolverError>();
         let solvers = Arc::new(Mutex::new(HashMap::new()));
 
         let best_objective: Arc<RwLock<Option<i64>>> = Arc::new(RwLock::new(None));
@@ -133,6 +149,11 @@ impl SolverManager {
             )
             .await
         });
+
+        let solver_errors = Arc::new(Mutex::new(HashSet::new()));
+        let solver_errors_clone = solver_errors.clone();
+        tokio::spawn(async move { Self::error_receiver(error_rx, solver_errors_clone).await });
+
         let mut cores = BTreeSet::new();
         if let Some(core_ids) = core_affinity::get_core_ids() {
             for core in core_ids {
@@ -146,10 +167,12 @@ impl SolverManager {
 
         Ok(Self {
             tx,
+            error_tx,
             solver_processes: solvers,
             solver_info: solver_info.clone(),
             mzn_to_fzn: compilation_manager,
             current_solvers: Default::default(),
+            solver_errors,
             args,
             best_objective,
             objective_type,
@@ -202,6 +225,27 @@ impl SolverManager {
                 }
             }
         }
+    }
+
+    async fn error_receiver(
+        mut rx: mpsc::UnboundedReceiver<SolverError>,
+        solver_errors: Arc<Mutex<HashSet<SolverError>>>,
+    ) {
+        while let Some(error) = rx.recv().await {
+            logging::error_msg!("Solver '{}' failed: {}", error.solver_name, error.error);
+            solver_errors.lock().await.insert(error);
+        }
+    }
+
+    /// Returns true if all solvers in the given schedule have failed.
+    /// Errors are assumed to be irrecoverable - if a solver fails once, it won't work again.
+    pub async fn all_solvers_failed(&self, schedule: &[crate::scheduler::SolverInfo]) -> bool {
+        let errors = self.solver_errors.lock().await;
+        let failed_solver_names: std::collections::HashSet<_> =
+            errors.iter().map(|e| &e.solver_name).collect();
+        schedule
+            .iter()
+            .all(|s| failed_solver_names.contains(&s.name))
     }
 
     fn get_solver_command(
@@ -273,8 +317,8 @@ impl SolverManager {
         solver_args: &HashMap<String, Vec<String>>,
         solver_processes: &Mutex<HashMap<u64, SolverProcess>>,
         #[cfg(target_os = "linux")] available_cores: &Arc<Mutex<BTreeSet<usize>>>,
-        #[cfg(target_os = "linux")] pin_yuck: bool,
-    ) -> std::result::Result<PreparedSolver, ()> {
+        #[cfg(target_os = "linux")] pin_java_solvers: bool,
+    ) -> PrepareResult {
         mzn_to_fzn.start(solver_name.to_string(), cores).await;
 
         let Some(conversion_paths) = cancellation_token
@@ -282,11 +326,11 @@ impl SolverManager {
             .await
         else {
             logging::info!("solver '{solver_name}' was cancelled while waiting for compilation");
-            return Err(());
+            return PrepareResult::Cancelled;
         };
 
         let Ok(conversion_paths) = conversion_paths.map_err(|e| logging::error!(e.into())) else {
-            return Err(());
+            return PrepareResult::Error(format!("Compilation failed for solver '{solver_name}'"));
         };
 
         // Create ObjectiveInserter inside the spawn
@@ -315,7 +359,9 @@ impl SolverManager {
             solver_args,
         )
         .map_err(|e| logging::error!(e.into())) else {
-            return Err(());
+            return PrepareResult::Error(format!(
+                "Failed to get solver command for '{solver_name}'"
+            ));
         };
 
         #[cfg(unix)]
@@ -334,7 +380,7 @@ impl SolverManager {
             pipe,
         }) = pipe(fzn_cmd, ozn_cmd).map_err(|e| logging::error!(e.into()))
         else {
-            return Err(());
+            return PrepareResult::Error(format!("Piping failed for solver '{solver_name}'"));
         };
 
         let pid = fzn.id().expect("Child has no PID");
@@ -351,17 +397,21 @@ impl SolverManager {
         #[allow(unused_mut)]
         let mut allocated_cores: Vec<usize> = Vec::new();
         #[cfg(target_os = "linux")]
-        if pin_yuck {
-            match pin_yuck_solver_to_cores(pid, cores, available_cores).await {
+        let is_java_solver = solver_name == solvers::YUCK_ID || solver_name == solvers::CHOCO_ID;
+        #[cfg(target_os = "linux")]
+        if pin_java_solvers && is_java_solver {
+            match pin_solver_to_cores(pid, cores, available_cores).await {
                 Ok(cores) => allocated_cores = cores,
                 Err(e) => {
                     logging::error!(e.into());
-                    return Err(());
+                    return PrepareResult::Error(format!(
+                        "Failed to pin solver '{solver_name}' to cores"
+                    ));
                 }
             }
         }
 
-        Ok(PreparedSolver {
+        PrepareResult::Success(PreparedSolver {
             fzn,
             ozn,
             pipe,
@@ -382,12 +432,13 @@ impl SolverManager {
         let solver_args = self.solver_args.clone();
         let solver_processes = self.solver_processes.clone();
         let tx = self.tx.clone();
+        let error_tx = self.error_tx.clone();
         let available_cores = self.available_cores.clone();
         let objective_type = self.objective_type;
         let elem = elem.clone();
         let current_solvers = self.current_solvers.clone();
         #[cfg(target_os = "linux")]
-        let pin_yuck = self.args.pin_yuck;
+        let pin_java_solvers = self.args.pin_java_solvers;
         let best_objective = self.best_objective.clone();
 
         tokio::spawn(async move {
@@ -410,20 +461,30 @@ impl SolverManager {
                 #[cfg(target_os = "linux")]
                 &available_cores,
                 #[cfg(target_os = "linux")]
-                pin_yuck,
+                pin_java_solvers,
             )
             .await;
 
-            let Ok(PreparedSolver {
+            let PreparedSolver {
                 mut fzn,
                 mut ozn,
                 pipe,
                 fzn_guard,
                 allocated_cores,
-            }) = result
-            else {
-                current_solvers.lock().await.remove(&elem_id);
-                return;
+            } = match result {
+                PrepareResult::Success(prepared_solver) => prepared_solver,
+                PrepareResult::Cancelled => {
+                    current_solvers.lock().await.remove(&elem_id);
+                    return;
+                }
+                PrepareResult::Error(error_msg) => {
+                    current_solvers.lock().await.remove(&elem_id);
+                    let _ = error_tx.send(SolverError {
+                        solver_name: solver_name.to_owned(),
+                        error: error_msg,
+                    });
+                    return;
+                }
             };
 
             let ozn_stdout = ozn.stdout.take().expect("Failed to take ozn stdout");
@@ -453,6 +514,7 @@ impl SolverManager {
             tokio::spawn(async move { Self::handle_solver_stderr(fzn_stderr).await });
             tokio::spawn(async move { Self::handle_solver_stderr(ozn_stderr).await });
 
+            let error_tx_for_wait = error_tx.clone();
             tokio::spawn(async move {
                 let _keep_alive = fzn_guard;
 
@@ -463,7 +525,11 @@ impl SolverManager {
                                 logging::info!("Solver '{}' exited with status: {}", solver_name_for_wait, status);
                             }
                             Err(e) => {
-                                logging::error_msg!("Error waiting for solver '{}': {}", solver_name_for_wait, e);
+                                let _ = error_tx_for_wait.send(SolverError {
+                                    solver_name: solver_name_for_wait.clone(),
+                                    error: format!("Wait error: {}", e),
+                                });
+                                logging::error_with_msg!(e.into(), "Error waiting for solver '{}'", solver_name_for_wait);
                             }
                             _ => {}
                         }
@@ -577,7 +643,7 @@ impl SolverManager {
         let mut lines = reader.lines();
 
         while let Some(line) = lines.next_line().await.unwrap_or_else(|e| {
-            logging::error_msg!("Error reading solver stderr: {}", e);
+            logging::error_with_msg!(e.into(), "Error reading solver stderr");
             None
         }) {
             logging::error_msg!("Solver stderr: {}", line);
@@ -832,7 +898,7 @@ fn pipe(mut left: Command, mut right: Command) -> Result<PipeCommand> {
 }
 
 #[cfg(target_os = "linux")]
-async fn pin_yuck_solver_to_cores(
+async fn pin_solver_to_cores(
     pid: u32,
     cores: usize,
     available_cores: &Arc<Mutex<BTreeSet<usize>>>,

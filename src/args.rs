@@ -70,9 +70,9 @@ pub struct RunArgs {
     #[arg(short = 'p', default_value = "2", help_heading = "Execution")]
     pub cores: usize,
 
-    /// Pin the yuck solver processes to specific CPU cores. The yuck is written in java, hence it can use more cpu than it was given. This guarantees that we never use more than the allowed cpu (except for printing to stdout)
+    /// Pin the java based solvers to specific CPU cores as the java runtime makes them use extra cpu. The current solvers it pins is yuck and choco. Note: this degrades the performance of the two solvers
     #[arg(long, help_heading = "Execution")]
-    pub pin_yuck: bool,
+    pub pin_java_solvers: bool,
 
     /// Enable free search for all solvers
     #[arg(long, short = 'f', help_heading = "Execution")]
@@ -96,7 +96,7 @@ pub struct RunArgs {
     pub static_runtime: u64,
 
     /// Number of seconds between how often the solvers are restarted to share the upper bound found
-    #[arg(long, default_value = "7", help_heading = "Timing")]
+    #[arg(long, default_value = "5", help_heading = "Timing")]
     pub restart_interval: u64,
 
     /// The time (in seconds) before we skip extracting the features and stop using the static schedule, and instead use the timeout schedule.
