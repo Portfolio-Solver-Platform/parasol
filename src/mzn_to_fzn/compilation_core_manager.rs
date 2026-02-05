@@ -61,13 +61,7 @@ impl CompilationCoreManager {
     }
 
     pub async fn wait_for(&self, solver_name: &str) -> WaitForResult {
-        if self.state.read().await.is_main_compilation(solver_name) {
-            self.manager.wait_for(solver_name).await
-        } else {
-            Err(super::compilation_manager::WaitForError::NotStarted(
-                solver_name.to_string(),
-            ))
-        }
+        self.manager.wait_for(solver_name).await
     }
 
     async fn wait_for_compile(
@@ -194,13 +188,6 @@ impl State {
             available_cores: 0,
             used_cores: 0,
         }
-    }
-
-    pub fn is_main_compilation(&self, solver: &str) -> bool {
-        matches!(
-            self.running_compilations.get(solver),
-            Some(RunningCompilation::Main(_))
-        )
     }
 
     /// Precondition: The solver should be started.
