@@ -93,7 +93,9 @@ impl CompilationManager {
                             .await
                             .map_err(|e| {
                                 let error = WaitForError::from(&e);
-                                logging::error!(e.into());
+                                if !e.is_cancelled() {
+                                    logging::error!(e.into());
+                                }
                                 error
                             })
                             .map(Arc::new);
@@ -103,6 +105,7 @@ impl CompilationManager {
                             .write()
                             .await
                             .insert(solver_name.clone(), Compilation::Done(compilation.clone()));
+                        logging::info!("Compilation for solver '{solver_name}' is done");
                     }
                     // NOTE: If the compilation is cancelled, we do not here remove the started compilation from the
                     //       self.compilations map, because the only way the compilation gets cancelled is in stop_all,
@@ -111,7 +114,6 @@ impl CompilationManager {
                     let _ = tx.send(Some(compilation)).map_err(|e| {
                         logging::error!(Error::SendError(solver_name.clone(), e).into())
                     });
-                    logging::info!("Compilation for solver '{solver_name}' is done");
                 });
 
                 (

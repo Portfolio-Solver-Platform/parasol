@@ -1,0 +1,15 @@
+# This is based on the results from the MiniZinc challenge 2025.
+# The ones with the global best results are first in the list.
+cp-sat
+org.chuffed.chuffed
+solutions.huub
+org.picat-lang.picat
+org.choco.choco
+org.gecode.gecode
+org.minizinc.mip.gurobi
+org.minizinc.mip.cplex
+nl.tudelft.algorithmics.pumpkin
+yuck
+org.minizinc.mip.scip
+org.minizinc.mip.highs
+org.minizinc.mip.coin-bc

@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use crate::config::Config;
 use crate::fzn_to_features::{self, fzn_to_features};
-use crate::mzn_to_fzn;
 use crate::mzn_to_fzn::compilation_core_manager::{CompilationCoreManager, SolverPriority};
 use crate::scheduler::{Portfolio, Scheduler};
 use crate::signal_handler::SignalEvent;
 use crate::static_schedule::{self, static_schedule, timeout_schedule};
 use crate::{ai, logging, solver_config, solver_manager};
 use crate::{ai::Ai, args::RunArgs};
+use crate::{args, mzn_to_fzn};
 use tokio::time::{Duration, sleep, timeout};
 use tokio_util::sync::CancellationToken;
 
@@ -32,6 +32,8 @@ pub enum Error {
     SolverManager(#[from] solver_manager::Error),
     #[error("All solvers failed, could not continue")]
     SolverFailure,
+    #[error("an IO error occurred")]
+    TokioIo(#[from] tokio::io::Error),
 }
 
 pub async fn sunny<T: Ai + Send + 'static>(
@@ -42,9 +44,10 @@ pub async fn sunny<T: Ai + Send + 'static>(
     program_cancellation_token: CancellationToken,
     suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
 ) -> Result<(), Error> {
+    let compilation_priority = get_compiler_priority(args).await?;
     let compilation_manager = Arc::new(CompilationCoreManager::new(
         Arc::new(args.clone()),
-        SolverPriority::empty(),
+        compilation_priority,
     ));
 
     let mut scheduler = Scheduler::new(
@@ -58,7 +61,6 @@ pub async fn sunny<T: Ai + Send + 'static>(
     .await?;
 
     let (cores, initial_solver_cores) = get_cores(args, &ai);
-    // let solver_priority_order = get_priority_schedule()
 
     let initial_schedule = static_schedule(args, initial_solver_cores).await?;
 
@@ -220,7 +222,7 @@ async fn start_without_ai(
 fn get_cores(args: &RunArgs, ai: &Option<impl Ai>) -> (usize, usize) {
     let mut cores = args.cores;
 
-    let initial_solver_cores = if args.pin_yuck && ai.is_some() {
+    let initial_solver_cores = if ai.is_some() {
         if cores <= 1 {
             logging::warning!("Too few cores are set. Using 2 cores");
             cores = 2;
@@ -256,4 +258,12 @@ async fn get_features(
 fn handle_schedule_errors(errors: Vec<solver_manager::Error>) {
     logging::error_msg!("got the following errors when applying the schedule:");
     errors.into_iter().for_each(|e| logging::error!(e.into()));
+}
+
+async fn get_compiler_priority(args: &RunArgs) -> tokio::io::Result<SolverPriority> {
+    if let Some(path) = &args.compilation_priority {
+        args::read_solver_compiler_priority(path).await
+    } else {
+        Ok(SolverPriority::empty())
+    }
 }

@@ -1,7 +1,12 @@
 use clap::{Parser, ValueEnum};
-use std::{collections::HashMap, fmt, path::PathBuf, process::exit};
+use std::{
+    collections::HashMap,
+    fmt,
+    path::{Path, PathBuf},
+    process::exit,
+};
 
-use crate::logging;
+use crate::{logging, mzn_to_fzn::compilation_core_manager::SolverPriority};
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about)]
@@ -30,7 +35,7 @@ pub struct RunArgs {
 
     /// Optional path to a solver compiler priority configuration file
     #[arg(long, help_heading = "Input Files")]
-    pub solver_compiler_priority: Option<PathBuf>,
+    pub compilation_priority: Option<PathBuf>,
 
     // === AI Configuration ===
     /// The AI used to determine the solver schedule dynamically
@@ -194,4 +199,24 @@ pub fn parse_ai_config(config: Option<&str>) -> HashMap<String, String> {
             (key.to_owned(), value.to_owned())
         })
         .collect()
+}
+
+pub async fn read_solver_compiler_priority(path: &Path) -> tokio::io::Result<SolverPriority> {
+    let s = tokio::fs::read_to_string(path).await?;
+    Ok(parse_solver_compiler_priority(&s))
+}
+
+pub fn parse_solver_compiler_priority(mut s: &str) -> SolverPriority {
+    let mut solvers = Vec::new();
+    while let Some((line, rest)) = s.split_once('\n') {
+        let line = line.trim();
+        if !line.starts_with("#") && !line.is_empty() {
+            solvers.push(line.to_string());
+        }
+        s = rest;
+    }
+    logging::info!(
+        "parsed the following solver compilation priority (first has highest priority): {solvers:?}"
+    );
+    SolverPriority::from_descending_priority(solvers)
 }

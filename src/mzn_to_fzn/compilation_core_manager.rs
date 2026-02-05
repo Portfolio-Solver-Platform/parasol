@@ -113,16 +113,18 @@ impl CompilationCoreManager {
 }
 
 type SolverId = String;
-#[derive(PartialOrd, PartialEq, Eq, Ord, Clone)]
+#[derive(Debug, PartialOrd, PartialEq, Eq, Ord, Clone)]
 struct Priority(u64);
 
 type Cores = usize;
 
+#[derive(Debug)]
 enum RunningCompilation {
     Main(MainCompilation),
     Extra(Priority),
 }
 
+#[derive(Debug)]
 enum CompilationWork {
     Start(SolverId),
     Stop(SolverId),
@@ -167,6 +169,7 @@ impl SolverPriority {
     }
 }
 
+#[derive(Debug)]
 struct MainCompilation {
     cores: Cores,
     priority: Option<Priority>,
@@ -192,6 +195,7 @@ impl State {
 
     /// Precondition: The solver should be started.
     pub fn register_main_compilation(&mut self, solver: SolverId, cores: Cores) {
+        logging::info!("registering main compilation for solver '{solver}' with cores '{cores}'");
         self.used_cores += 1;
         self.available_cores += cores;
 
@@ -216,6 +220,11 @@ impl State {
     pub fn take_compilation_work(&mut self) -> Vec<CompilationWork> {
         let mut work = Vec::new();
 
+        logging::info!(
+            "deciding on extra compilations based on used cores ({}) and available cores ({})",
+            self.used_cores,
+            self.available_cores
+        );
         while self.used_cores > self.available_cores {
             let candidate_to_stop = self
                 .running_compilations
@@ -227,7 +236,7 @@ impl State {
                 .max_by_key(|(_, priority)| priority.clone());
 
             if let Some((solver_id, priority)) = candidate_to_stop {
-                logging::info!("stopping extra compilation for solver '{solver_id}'");
+                logging::info!("decided to stop extra compilation for solver '{solver_id}'");
                 self.running_compilations.remove(&solver_id);
                 self.used_cores -= 1;
 
@@ -247,7 +256,7 @@ impl State {
 
         while self.used_cores < self.available_cores {
             if let Some((solver_id, priority)) = self.extra_compilations_queue.take_next() {
-                logging::info!("starting extra compilation for solver '{solver_id}'");
+                logging::info!("decided to start extra compilation for solver '{solver_id}'");
                 self.running_compilations.insert(
                     solver_id.clone(),
                     RunningCompilation::Extra(Priority(priority.0)),
