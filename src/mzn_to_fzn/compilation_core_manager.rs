@@ -112,7 +112,7 @@ impl CompilationCoreManager {
 }
 
 type SolverId = String;
-#[derive(PartialOrd, PartialEq, Eq, Ord)]
+#[derive(PartialOrd, PartialEq, Eq, Ord, Clone)]
 struct Priority(u64);
 
 type Cores = usize;
@@ -145,7 +145,20 @@ impl SolverPriority {
     }
 
     fn remove_by_solver_id(&mut self, id: &SolverId) -> Option<Priority> {
-        todo!()
+        let priority = self
+            .0
+            .iter()
+            .find_map(|(priority, solver_id)| (solver_id == id).then_some(priority))
+            .cloned();
+
+        if let Some(p) = &priority {
+            self.0.remove(p);
+        }
+        priority
+    }
+
+    fn insert(&mut self, solver_id: SolverId, priority: Priority) {
+        self.0.insert(priority, solver_id);
     }
 }
 
@@ -175,8 +188,19 @@ impl State {
     }
 
     pub fn is_main_compilation(&self, solver: &str) -> bool {
-        // Check unstarted_main_compilation and running_compilations
-        todo!()
+        if let Some(RunningCompilation::Main(_)) = self.running_compilations.get(solver) {
+            return true;
+        }
+
+        if self
+            .unstarted_main_compilations
+            .iter()
+            .any(|(id, _)| id == solver)
+        {
+            return true;
+        }
+
+        false
     }
 
     pub fn register_main_compilation(&mut self, solver: SolverId, cores: Cores) {
@@ -218,32 +242,104 @@ impl State {
                 work.push(CompilationWork::Start(solver.clone()));
                 self.running_compilations
                     .insert(solver, RunningCompilation::Main(compilation));
+
+                self.used_cores += 1;
             });
-        // If there is not enough cores for all main compilations, stop extra compilations.
-        todo!();
+
+        while self.used_cores > self.available_cores {
+            let candidate_to_stop = self
+                .running_compilations
+                .iter()
+                .filter_map(|(id, run)| match run {
+                    RunningCompilation::Extra(priority) => Some((id.clone(), priority.clone())),
+                    _ => None,
+                })
+                .max_by_key(|(_, priority)| priority.clone());
+
+            if let Some((solver_id, priority)) = candidate_to_stop {
+                logging::info!("stopping extra compilation for solver '{solver_id}'");
+                self.running_compilations.remove(&solver_id);
+                self.used_cores -= 1;
+
+                // Re-queue it so it can run later when cores are free
+                self.extra_compilations_queue
+                    .insert(solver_id.clone(), priority);
+
+                work.push(CompilationWork::Stop(solver_id));
+            } else {
+                // We cannot stop Main compilations, so we break.
+                logging::error_msg!(
+                    "no extra compilations left to stop, but still over core budget"
+                );
+                break;
+            }
+        }
+
+        while self.used_cores < self.available_cores {
+            if let Some((solver_id, priority)) = self.extra_compilations_queue.take_next() {
+                logging::info!("starting extra compilation for solver '{solver_id}'");
+                self.running_compilations.insert(
+                    solver_id.clone(),
+                    RunningCompilation::Extra(Priority(priority.0)),
+                );
+                self.used_cores += 1;
+                work.push(CompilationWork::Start(solver_id));
+            } else {
+                break;
+            }
+        }
+
         work
     }
 
     pub fn compilation_finished(&mut self, solver: &SolverId) {
-        // Remove from running solvers.
-        // If a main compilation, remove cores from available cores.
-        // Remove 1 core from used_cores.
-        todo!()
+        if let Some(compilation) = self.running_compilations.remove(solver) {
+            self.used_cores -= 1;
+
+            if let RunningCompilation::Main(compilation) = compilation {
+                self.available_cores -= compilation.cores;
+            }
+        }
     }
 
     pub fn compilation_stopped(&mut self, solver: &SolverId) {
-        // Remove from running solvers.
-        // If a main compilation, remove cores from available cores.
-        // If an extra compilation, add to queue again.
-        // Remove 1 core from used_cores.
-        todo!()
+        if let Some(compilation) = self.running_compilations.remove(solver) {
+            self.used_cores -= 1;
+
+            let priority = match compilation {
+                RunningCompilation::Main(compilation) => {
+                    self.available_cores -= compilation.cores;
+                    compilation.priority
+                }
+                RunningCompilation::Extra(priority) => Some(priority),
+            };
+
+            if let Some(priority) = priority {
+                self.extra_compilations_queue
+                    .insert(solver.clone(), priority);
+            }
+        }
     }
 
     pub fn get_main_compilations_except(
         &self,
         exception_solvers: &HashSet<SolverId>,
     ) -> HashSet<SolverId> {
-        todo!()
+        let mut result = HashSet::new();
+
+        for (id, run) in &self.running_compilations {
+            if matches!(run, RunningCompilation::Main(_)) && !exception_solvers.contains(id) {
+                result.insert(id.clone());
+            }
+        }
+
+        for (id, _) in &self.unstarted_main_compilations {
+            if !exception_solvers.contains(id) {
+                result.insert(id.clone());
+            }
+        }
+
+        result
     }
 }
 
