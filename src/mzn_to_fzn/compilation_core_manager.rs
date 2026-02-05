@@ -197,11 +197,10 @@ impl State {
     }
 
     pub fn is_main_compilation(&self, solver: &str) -> bool {
-        if let Some(RunningCompilation::Main(_)) = self.running_compilations.get(solver) {
-            return true;
-        }
-
-        false
+        matches!(
+            self.running_compilations.get(solver),
+            Some(RunningCompilation::Main(_))
+        )
     }
 
     /// Precondition: The solver should be started.
