@@ -54,7 +54,11 @@ impl CompilationManager {
     }
 
     pub async fn status(&self, solver_name: &str) -> CompilationStatus {
-        todo!()
+        match self.compilations.read().await.get(solver_name) {
+            None => CompilationStatus::NotStarted,
+            Some(Compilation::Running(_)) => CompilationStatus::Running,
+            Some(Compilation::Done(_)) => CompilationStatus::Done,
+        }
     }
 
     pub async fn start(&self, solver_name: String) {

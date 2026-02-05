@@ -37,6 +37,14 @@ impl CompilationCoreManager {
             return;
         }
 
+        // TODO: Start main compilation here myself to make sure
+        //       it has started before exiting this function call.
+        //       Also call wait_for_compile to wait for it (which will call
+        //       compilation_stopped and compilation_finished).
+        //       Also, modify register_main_compilation to assume it has already
+        //       been started. This means that unstarted_main_compilations
+        //       probably should be removed.
+
         self.state
             .write()
             .await
@@ -130,6 +138,10 @@ enum CompilationWork {
 pub struct SolverPriority(BTreeMap<Priority, SolverId>);
 
 impl SolverPriority {
+    pub fn empty() -> Self {
+        Self(BTreeMap::new())
+    }
+
     pub fn from_descending_priority(solvers: impl IntoIterator<Item = String>) -> Self {
         let priorities = solvers
             .into_iter()

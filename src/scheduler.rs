@@ -3,7 +3,9 @@ use crate::{
     config::Config,
     logging,
     model_parser::ObjectiveValue,
-    mzn_to_fzn::compilation_manager::CompilationManager,
+    mzn_to_fzn::{
+        compilation_core_manager::CompilationCoreManager, compilation_manager::CompilationManager,
+    },
     signal_handler::SignalEvent,
     solver_config,
     solver_manager::{self, Error, SolverManager},
@@ -93,7 +95,7 @@ pub struct Scheduler {
     state: Arc<Mutex<State>>,
     pub solver_manager: Arc<SolverManager>,
     scheduler_cancellation_token: CancellationToken,
-    compilation_manager: Arc<CompilationManager>,
+    compilation_manager: Arc<CompilationCoreManager>,
 }
 
 impl Drop for Scheduler {
@@ -111,7 +113,7 @@ impl Scheduler {
         args: &RunArgs,
         config: &Config,
         solver_info: Arc<solver_config::Solvers>,
-        compilation_manager: Arc<CompilationManager>,
+        compilation_manager: Arc<CompilationCoreManager>,
         program_cancellation_token: CancellationToken,
         mut suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
     ) -> std::result::Result<Self, Error> {

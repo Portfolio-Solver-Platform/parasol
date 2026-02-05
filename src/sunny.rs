@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::config::Config;
 use crate::fzn_to_features::{self, fzn_to_features};
 use crate::mzn_to_fzn;
-use crate::mzn_to_fzn::compilation_manager::CompilationManager;
+use crate::mzn_to_fzn::compilation_core_manager::{CompilationCoreManager, SolverPriority};
 use crate::scheduler::{Portfolio, Scheduler};
 use crate::signal_handler::SignalEvent;
 use crate::static_schedule::{self, static_schedule, timeout_schedule};
@@ -42,7 +42,10 @@ pub async fn sunny<T: Ai + Send + 'static>(
     program_cancellation_token: CancellationToken,
     suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
 ) -> Result<(), Error> {
-    let compilation_manager = Arc::new(CompilationManager::new(Arc::new(args.clone())));
+    let compilation_manager = Arc::new(CompilationCoreManager::new(
+        Arc::new(args.clone()),
+        SolverPriority::empty(),
+    ));
 
     let mut scheduler = Scheduler::new(
         args,
@@ -113,7 +116,7 @@ async fn start_with_ai<T: Ai + Send + 'static>(
     initial_schedule: Portfolio,
     cores: usize,
     cancellation_token: CancellationToken,
-    compilation_manager: Arc<CompilationManager>,
+    compilation_manager: Arc<CompilationCoreManager>,
 ) -> Result<Portfolio, Error> {
     let static_runtime_duration = Duration::from_secs(args.static_runtime);
 
@@ -231,11 +234,11 @@ fn get_cores(args: &RunArgs, ai: &Option<impl Ai>) -> (usize, usize) {
 
 async fn get_features(
     args: &RunArgs,
-    compilation_manager: Arc<CompilationManager>,
+    compilation_manager: Arc<CompilationCoreManager>,
     token: CancellationToken,
 ) -> Result<Vec<f32>, Error> {
     compilation_manager
-        .start(args.feature_extraction_solver_id.clone())
+        .start(args.feature_extraction_solver_id.clone(), 1)
         .await;
     let conversion = token
         .run_until_cancelled(compilation_manager.wait_for(&args.feature_extraction_solver_id))

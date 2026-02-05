@@ -1,6 +1,7 @@
 use crate::args::RunArgs;
 use crate::insert_objective::ObjectiveInserter;
 use crate::model_parser::{ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type};
+use crate::mzn_to_fzn::compilation_core_manager::CompilationCoreManager;
 use crate::mzn_to_fzn::compilation_manager::{self, CompilationManager};
 use crate::process_tree::{
     get_process_tree_memory, recursive_force_kill, send_signals_to_process_tree,
@@ -86,7 +87,7 @@ pub struct SolverManager {
     solver_processes: Arc<Mutex<HashMap<u64, SolverProcess>>>,
     current_solvers: Arc<Mutex<HashSet<u64>>>,
     args: RunArgs,
-    mzn_to_fzn: Arc<CompilationManager>,
+    mzn_to_fzn: Arc<CompilationCoreManager>,
     best_objective: Arc<RwLock<Option<ObjectiveValue>>>,
     solver_info: Arc<solver_config::Solvers>,
     objective_type: ObjectiveType,
@@ -113,7 +114,7 @@ impl SolverManager {
         args: RunArgs,
         solver_args: HashMap<String, Vec<String>>,
         solver_info: Arc<solver_config::Solvers>,
-        compilation_manager: Arc<CompilationManager>,
+        compilation_manager: Arc<CompilationCoreManager>,
         program_cancellation_token: CancellationToken,
     ) -> std::result::Result<Self, Error> {
         let objective_type = get_objective_type(&args.minizinc.minizinc_exe, &args.model).await?;
@@ -264,7 +265,7 @@ impl SolverManager {
         cores: usize,
         elem_id: u64,
         cancellation_token: &CancellationToken,
-        mzn_to_fzn: &CompilationManager,
+        mzn_to_fzn: &CompilationCoreManager,
         solver_info: &solver_config::Solvers,
         best_objective: &RwLock<Option<ObjectiveValue>>,
         objective_type: ObjectiveType,
@@ -274,7 +275,7 @@ impl SolverManager {
         #[cfg(target_os = "linux")] available_cores: &Arc<Mutex<BTreeSet<usize>>>,
         #[cfg(target_os = "linux")] pin_yuck: bool,
     ) -> std::result::Result<PreparedSolver, ()> {
-        mzn_to_fzn.start(solver_name.to_string()).await;
+        mzn_to_fzn.start(solver_name.to_string(), cores).await;
 
         let Some(conversion_paths) = cancellation_token
             .run_until_cancelled(mzn_to_fzn.wait_for(solver_name))
