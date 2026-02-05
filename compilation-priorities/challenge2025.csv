@@ -1,5 +1,4 @@
-# This is based on the results from the MiniZinc challenge 2025.
-# The ones with the global best results are first in the list.
+# This is based on the global results from the MiniZinc challenge 2025.
 
 cp-sat
 org.chuffed.chuffed
@@ -9,8 +8,11 @@ org.choco.choco
 org.gecode.gecode
 org.minizinc.mip.gurobi
 org.minizinc.mip.cplex
+dexter
 nl.tudelft.algorithmics.pumpkin
 yuck
 org.minizinc.mip.scip
 org.minizinc.mip.highs
 org.minizinc.mip.coin-bc
+# XPress wasn't in the challenge so it is put at the bottom
+org.minizinc.mip.xpress

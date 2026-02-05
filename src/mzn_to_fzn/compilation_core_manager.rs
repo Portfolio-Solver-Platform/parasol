@@ -19,10 +19,6 @@ pub struct CompilationCoreManager {
     state: Arc<RwLock<State>>,
 }
 
-// TODO: Make it possible to stop starting extra compilations.
-//       This is because when the final schedule has been decided on,
-//       there's no reason to waste computation power for the extra compilations.
-
 impl CompilationCoreManager {
     pub fn new(args: Arc<RunArgs>, compilation_priorities: SolverPriority) -> Self {
         let queue = State::from_vec(compilation_priorities);
@@ -50,7 +46,7 @@ impl CompilationCoreManager {
         let manager = Arc::clone(&self.manager);
         let state = Arc::clone(&self.state);
         tokio::spawn(async move {
-            Self::wait_for_compile(manager, state, &solver_id).await;
+            Self::wait_for_compilation(manager, state, &solver_id).await;
         });
 
         let manager = Arc::clone(&self.manager);
@@ -68,7 +64,15 @@ impl CompilationCoreManager {
         self.manager.wait_for(solver_name).await
     }
 
-    async fn wait_for_compile(
+    pub async fn disable_extra_compilations(&self) {
+        self.state.write().await.disable();
+
+        let manager = Arc::clone(&self.manager);
+        let state = Arc::clone(&self.state);
+        Self::spawn_compilation_worker_thread(manager, state);
+    }
+
+    async fn wait_for_compilation(
         manager: Arc<CompilationManager>,
         state: Arc<RwLock<State>>,
         solver_id: &SolverId,
@@ -104,7 +108,7 @@ impl CompilationCoreManager {
                         let manager = Arc::clone(&manager);
                         let state = Arc::clone(&state);
                         tokio::spawn(async move {
-                            Self::wait_for_compile(manager, state, &solver_id).await;
+                            Self::wait_for_compilation(manager, state, &solver_id).await;
                         });
                     }
                     CompilationWork::Stop(solver_id) => {
@@ -185,6 +189,7 @@ struct State {
     running_compilations: HashMap<SolverId, RunningCompilation>,
     available_cores: Cores,
     used_cores: Cores,
+    is_enabled: bool,
 }
 
 impl State {
@@ -194,6 +199,7 @@ impl State {
             running_compilations: Default::default(),
             available_cores: 0,
             used_cores: 0,
+            is_enabled: true,
         }
     }
 
@@ -222,14 +228,20 @@ impl State {
     /// Assumes the work is performed after this call
     #[must_use = "the returned work has to be performed after calling this function"]
     pub fn take_compilation_work(&mut self) -> Vec<CompilationWork> {
+        logging::info!(
+            "deciding on extra compilations based on used cores ({}) and available cores ({}){}",
+            self.used_cores,
+            self.available_cores,
+            if self.is_enabled {
+                ""
+            } else {
+                " (extra compilations are disabled, so if there are any, it will stop them all)"
+            }
+        );
+
         let mut work = Vec::new();
 
-        logging::info!(
-            "deciding on extra compilations based on used cores ({}) and available cores ({})",
-            self.used_cores,
-            self.available_cores
-        );
-        while self.used_cores > self.available_cores {
+        while !self.is_enabled || self.used_cores > self.available_cores {
             let candidate_to_stop = self
                 .running_compilations
                 .iter()
@@ -251,20 +263,20 @@ impl State {
                 work.push(CompilationWork::Stop(solver_id));
             } else {
                 // We cannot stop Main compilations, so we break.
-                logging::error_msg!(
-                    "no extra compilations left to stop, but still over core budget"
-                );
+                if self.is_enabled {
+                    logging::error_msg!(
+                        "no extra compilations left to stop, but still over core budget"
+                    );
+                }
                 break;
             }
         }
 
-        while self.used_cores < self.available_cores {
+        while self.is_enabled && self.used_cores < self.available_cores {
             if let Some((solver_id, priority)) = self.extra_compilations_queue.take_next() {
                 logging::info!("decided to start extra compilation for solver '{solver_id}'");
-                self.running_compilations.insert(
-                    solver_id.clone(),
-                    RunningCompilation::Extra(Priority(priority.0)),
-                );
+                self.running_compilations
+                    .insert(solver_id.clone(), RunningCompilation::Extra(priority));
                 self.used_cores += 1;
                 work.push(CompilationWork::Start(solver_id));
             } else {
@@ -317,6 +329,11 @@ impl State {
         }
 
         result
+    }
+
+    pub fn disable(&mut self) {
+        self.is_enabled = false;
+        logging::info!("disabled extra compilations");
     }
 }
 

@@ -44,7 +44,7 @@ pub async fn sunny<T: Ai + Send + 'static>(
     program_cancellation_token: CancellationToken,
     suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
 ) -> Result<(), Error> {
-    let compilation_priority = get_compiler_priority(args).await?;
+    let compilation_priority = get_compilation_priority(args).await?;
     let compilation_manager = Arc::new(CompilationCoreManager::new(
         Arc::new(args.clone()),
         compilation_priority,
@@ -80,6 +80,7 @@ pub async fn sunny<T: Ai + Send + 'static>(
         )
         .await
     } else {
+        compilation_manager.disable_extra_compilations().await;
         start_without_ai(args, &mut scheduler, initial_schedule).await
     }?;
 
@@ -260,7 +261,7 @@ fn handle_schedule_errors(errors: Vec<solver_manager::Error>) {
     errors.into_iter().for_each(|e| logging::error!(e.into()));
 }
 
-async fn get_compiler_priority(args: &RunArgs) -> tokio::io::Result<SolverPriority> {
+async fn get_compilation_priority(args: &RunArgs) -> tokio::io::Result<SolverPriority> {
     if let Some(path) = &args.compilation_priority {
         args::read_solver_compiler_priority(path).await
     } else {
