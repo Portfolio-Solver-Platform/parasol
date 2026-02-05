@@ -19,6 +19,10 @@ pub struct CompilationCoreManager {
     state: Arc<RwLock<State>>,
 }
 
+// TODO: Make it possible to stop starting extra compilations.
+//       This is because when the final schedule has been decided on,
+//       there's no reason to waste computation power for the extra compilations.
+
 impl CompilationCoreManager {
     pub fn new(args: Arc<RunArgs>, compilation_priorities: SolverPriority) -> Self {
         let queue = State::from_vec(compilation_priorities);

@@ -1,5 +1,6 @@
 # This is based on the results from the MiniZinc challenge 2025.
 # The ones with the global best results are first in the list.
+
 cp-sat
 org.chuffed.chuffed
 solutions.huub

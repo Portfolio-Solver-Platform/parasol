@@ -33,10 +33,6 @@ pub struct RunArgs {
     /// The MiniZinc data file corresponding to the model file
     pub data: Option<PathBuf>,
 
-    /// Optional path to a solver compiler priority configuration file
-    #[arg(long, help_heading = "Input Files")]
-    pub compilation_priority: Option<PathBuf>,
-
     // === AI Configuration ===
     /// The AI used to determine the solver schedule dynamically
     #[arg(
@@ -123,6 +119,14 @@ pub struct RunArgs {
     /// If not provided, a default timeout schedule will be used.
     #[arg(long, help_heading = "Paths")]
     pub timeout_schedule: Option<PathBuf>,
+
+    /// Optional path to a compilation priority configuration CSV file.
+    /// When possible without a runtime cost, the problem model and data will be compiled for the
+    /// solvers in this file in the order they are given.
+    /// The path should be to a CSV file which supports # at the beginning of lines for comments,
+    /// and empty lines.
+    #[arg(long, help_heading = "Paths")]
+    pub compilation_priority: Option<PathBuf>,
 
     // === Debugging ===
     #[arg(
