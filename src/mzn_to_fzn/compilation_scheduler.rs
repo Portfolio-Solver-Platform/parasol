@@ -25,9 +25,12 @@ impl CompilationScheduler {
         let queue = State::from_vec(compilation_priorities);
         let cancellation_token = CancellationToken::new();
         Self {
-            executor: Arc::new(CompilationExecutor::new(args, cancellation_token.child_token())),
+            executor: Arc::new(CompilationExecutor::new(
+                args,
+                cancellation_token.child_token(),
+            )),
             state: Arc::new(RwLock::new(queue)),
-            cancellation_token
+            cancellation_token,
         }
     }
 
@@ -235,17 +238,7 @@ impl State {
     /// Assumes the work is performed after this call
     #[must_use = "the returned work has to be performed after calling this function"]
     pub fn take_compilation_work(&mut self) -> Vec<CompilationWork> {
-        logging::info!(
-            "deciding on extra compilations based on used cores ({}) and available cores ({}){}",
-            self.used_cores,
-            self.available_cores,
-            if self.is_enabled {
-                ""
-            } else {
-                " (extra compilations are disabled, so if there are any, it will stop them all)"
-            }
-        );
-
+        let used_cores_original = self.used_cores;
         let mut work = Vec::new();
 
         while !self.is_enabled || self.used_cores > self.available_cores {
@@ -259,7 +252,6 @@ impl State {
                 .max_by_key(|(_, priority)| priority.clone());
 
             if let Some((solver_id, priority)) = candidate_to_stop {
-                logging::info!("decided to stop extra compilation for solver '{solver_id}'");
                 self.running_compilations.remove(&solver_id);
                 self.used_cores -= 1;
 
@@ -281,7 +273,6 @@ impl State {
 
         while self.is_enabled && self.used_cores < self.available_cores {
             if let Some((solver_id, priority)) = self.extra_compilations_queue.take_next() {
-                logging::info!("decided to start extra compilation for solver '{solver_id}'");
                 self.running_compilations
                     .insert(solver_id.clone(), RunningCompilation::Extra(priority));
                 self.used_cores += 1;
@@ -289,6 +280,19 @@ impl State {
             } else {
                 break;
             }
+        }
+
+        if logging::is_log_level(logging::LEVEL_INFO) {
+            let (to_stop, to_start): (Vec<_>, Vec<_>) = work.iter().partition_map(|w| match w {
+                CompilationWork::Stop(solver) => Either::Left(solver),
+                CompilationWork::Start(solver) => Either::Right(solver),
+            });
+
+            logging::info!(
+                "For extra compilations, based on used cores ({used_cores_original}), available cores ({}) and whether enabled ({}), decided to stop compilations for {to_stop:?} and start for {to_start:?}",
+                self.available_cores,
+                self.is_enabled
+            );
         }
 
         work

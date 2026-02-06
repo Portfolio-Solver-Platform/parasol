@@ -95,6 +95,11 @@ macro_rules! error {
     };
 }
 
+pub(crate) fn is_log_level(level: u8) -> bool {
+    let current_level = CURRENT_VERBOSITY.load(Ordering::Relaxed);
+    current_level >= level
+}
+
 pub(crate) fn errors(errors: impl IntoIterator<Item = impl Into<anyhow::Error>>) {
     errors.into_iter().for_each(|e| error!(e.into()));
 }
