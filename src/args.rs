@@ -123,8 +123,8 @@ pub struct RunArgs {
     /// Optional path to a compilation priority configuration CSV file.
     /// When possible without a runtime cost, the problem model and data will be compiled for the
     /// solvers in this file in the order they are given.
-    /// The path should be to a CSV file which supports # at the beginning of lines for comments,
-    /// and empty lines.
+    /// The path should be to a text file with one solver ID per line.
+    /// Lines starting with # are treated as comments, and empty lines are ignored.
     #[arg(long, help_heading = "Paths")]
     pub compilation_priority: Option<PathBuf>,
 
@@ -205,12 +205,12 @@ pub fn parse_ai_config(config: Option<&str>) -> HashMap<String, String> {
         .collect()
 }
 
-pub async fn read_solver_compiler_priority(path: &Path) -> tokio::io::Result<SolverPriority> {
+pub async fn read_compilation_priority(path: &Path) -> tokio::io::Result<SolverPriority> {
     let s = tokio::fs::read_to_string(path).await?;
-    Ok(parse_solver_compiler_priority(&s))
+    Ok(parse_compilation_priority(&s))
 }
 
-pub fn parse_solver_compiler_priority(s: &str) -> SolverPriority {
+pub fn parse_compilation_priority(s: &str) -> SolverPriority {
     let solvers = s
         .lines()
         .map(str::trim)

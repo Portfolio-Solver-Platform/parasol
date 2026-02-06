@@ -239,7 +239,7 @@ async fn get_features(
 
 async fn get_compilation_priority(args: &RunArgs) -> tokio::io::Result<SolverPriority> {
     if let Some(path) = &args.compilation_priority {
-        args::read_solver_compiler_priority(path).await
+        args::read_compilation_priority(path).await
     } else {
         Ok(SolverPriority::empty())
     }
