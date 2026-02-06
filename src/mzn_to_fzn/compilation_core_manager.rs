@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use tokio::sync::RwLock;
 
 use super::compilation_manager::CompilationManager;

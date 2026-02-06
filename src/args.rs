@@ -210,15 +210,14 @@ pub async fn read_solver_compiler_priority(path: &Path) -> tokio::io::Result<Sol
     Ok(parse_solver_compiler_priority(&s))
 }
 
-pub fn parse_solver_compiler_priority(mut s: &str) -> SolverPriority {
-    let mut solvers = Vec::new();
-    while let Some((line, rest)) = s.split_once('\n') {
-        let line = line.trim();
-        if !line.starts_with("#") && !line.is_empty() {
-            solvers.push(line.to_string());
-        }
-        s = rest;
-    }
+pub fn parse_solver_compiler_priority(s: &str) -> SolverPriority {
+    let solvers = s
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.starts_with('#') && !line.is_empty())
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>();
+
     logging::info!(
         "parsed the following solver compilation priority (first has highest priority): {solvers:?}"
     );
