@@ -1,3 +1,4 @@
+use itertools::{Either, Itertools};
 use tokio::sync::RwLock;
 
 use super::compilation_executor::CompilationExecutor;
@@ -98,21 +99,21 @@ impl CompilationScheduler {
             let mut state_lock = state.write().await;
             let work_list = state_lock.take_compilation_work();
 
-            // TODO: Collect all Stop variants and use stop_many instead
-            for work in work_list {
-                match work {
-                    CompilationWork::Start(solver_id) => {
-                        executor.start(solver_id.clone()).await;
-                        let executor = Arc::clone(&executor);
-                        let state = Arc::clone(&state);
-                        tokio::spawn(async move {
-                            Self::wait_for_compilation(executor, state, &solver_id).await;
-                        });
-                    }
-                    CompilationWork::Stop(solver_id) => {
-                        executor.stop(solver_id).await;
-                    }
-                }
+            let (to_start, to_stop): (Vec<_>, Vec<_>) =
+                work_list.into_iter().partition_map(|work| match work {
+                    CompilationWork::Start(solver_id) => Either::Left(solver_id),
+                    CompilationWork::Stop(solver_id) => Either::Right(solver_id),
+                });
+
+            executor.stop_many(to_stop).await;
+
+            executor.start_many(to_start.clone()).await;
+            for solver_id in to_start {
+                let executor = Arc::clone(&executor);
+                let state = Arc::clone(&state);
+                tokio::spawn(async move {
+                    Self::wait_for_compilation(executor, state, &solver_id).await;
+                });
             }
         });
     }
