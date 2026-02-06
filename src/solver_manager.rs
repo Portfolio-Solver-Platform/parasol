@@ -1,7 +1,7 @@
 use crate::args::RunArgs;
 use crate::insert_objective::ObjectiveInserter;
 use crate::model_parser::{ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type};
-use crate::mzn_to_fzn::compilation_core_manager::CompilationCoreManager;
+use crate::mzn_to_fzn::compilation_core_manager::CompilationScheduler;
 use crate::mzn_to_fzn::compilation_manager;
 use crate::process_tree::{
     get_process_tree_memory, recursive_force_kill, send_signals_to_process_tree,
@@ -102,7 +102,7 @@ pub struct SolverManager {
     current_solvers: Arc<Mutex<HashSet<u64>>>,
     solver_errors: Arc<Mutex<HashSet<SolverError>>>,
     args: RunArgs,
-    mzn_to_fzn: Arc<CompilationCoreManager>,
+    mzn_to_fzn: Arc<CompilationScheduler>,
     best_objective: Arc<RwLock<Option<ObjectiveValue>>>,
     solver_info: Arc<solver_config::Solvers>,
     objective_type: ObjectiveType,
@@ -129,7 +129,7 @@ impl SolverManager {
         args: RunArgs,
         solver_args: HashMap<String, Vec<String>>,
         solver_info: Arc<solver_config::Solvers>,
-        compilation_manager: Arc<CompilationCoreManager>,
+        compilation_manager: Arc<CompilationScheduler>,
         program_cancellation_token: CancellationToken,
     ) -> std::result::Result<Self, Error> {
         let objective_type = get_objective_type(&args.minizinc.minizinc_exe, &args.model).await?;
@@ -309,7 +309,7 @@ impl SolverManager {
         cores: usize,
         elem_id: u64,
         cancellation_token: &CancellationToken,
-        mzn_to_fzn: &CompilationCoreManager,
+        mzn_to_fzn: &CompilationScheduler,
         solver_info: &solver_config::Solvers,
         best_objective: &RwLock<Option<ObjectiveValue>>,
         objective_type: ObjectiveType,

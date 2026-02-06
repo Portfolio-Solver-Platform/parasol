@@ -16,7 +16,7 @@ use crate::args::RunArgs;
 use crate::is_cancelled::{IsCancelled, IsErrorCancelled};
 use crate::logging;
 
-pub struct CompilationManager {
+pub struct CompilationExecutor {
     args: Arc<RunArgs>,
     /// Invariant that needs to be upheld: If a started compilation is cancelled, it also needs to be removed.
     compilations: Arc<RwLock<HashMap<String, Compilation>>>,
@@ -44,7 +44,7 @@ pub enum CompilationStatus {
     NotStarted,
 }
 
-impl CompilationManager {
+impl CompilationExecutor {
     pub fn new(args: Arc<RunArgs>) -> Self {
         Self {
             args,
@@ -201,7 +201,7 @@ impl CompilationManager {
     }
 }
 
-impl Drop for CompilationManager {
+impl Drop for CompilationExecutor {
     fn drop(&mut self) {
         self.cancellation_token.cancel()
     }

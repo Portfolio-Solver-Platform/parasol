@@ -1,6 +1,6 @@
 use tokio::sync::RwLock;
 
-use super::compilation_manager::CompilationManager;
+use super::compilation_manager::CompilationExecutor;
 use crate::{
     args::RunArgs,
     is_cancelled::IsCancelled,
@@ -13,16 +13,16 @@ use std::{
 };
 
 // TODO: Find better name (remember to replace file name as well)
-pub struct CompilationCoreManager {
-    manager: Arc<CompilationManager>,
+pub struct CompilationScheduler {
+    manager: Arc<CompilationExecutor>,
     state: Arc<RwLock<State>>,
 }
 
-impl CompilationCoreManager {
+impl CompilationScheduler {
     pub fn new(args: Arc<RunArgs>, compilation_priorities: SolverPriority) -> Self {
         let queue = State::from_vec(compilation_priorities);
         Self {
-            manager: Arc::new(CompilationManager::new(args)),
+            manager: Arc::new(CompilationExecutor::new(args)),
             state: Arc::new(RwLock::new(queue)),
         }
     }
@@ -72,7 +72,7 @@ impl CompilationCoreManager {
     }
 
     async fn wait_for_compilation(
-        manager: Arc<CompilationManager>,
+        manager: Arc<CompilationExecutor>,
         state: Arc<RwLock<State>>,
         solver_id: &SolverId,
     ) {
@@ -92,7 +92,7 @@ impl CompilationCoreManager {
     }
 
     fn spawn_compilation_worker_thread(
-        manager: Arc<CompilationManager>,
+        manager: Arc<CompilationExecutor>,
         state: Arc<RwLock<State>>,
     ) {
         tokio::spawn(async move {

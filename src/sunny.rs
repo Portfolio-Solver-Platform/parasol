@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::config::Config;
 use crate::fzn_to_features::{self, fzn_to_features};
-use crate::mzn_to_fzn::compilation_core_manager::{CompilationCoreManager, SolverPriority};
+use crate::mzn_to_fzn::compilation_core_manager::{CompilationScheduler, SolverPriority};
 use crate::scheduler::{Portfolio, Scheduler};
 use crate::signal_handler::SignalEvent;
 use crate::static_schedule::{self, static_schedule, timeout_schedule};
@@ -45,7 +45,7 @@ pub async fn sunny<T: Ai + Send + 'static>(
     suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
 ) -> Result<(), Error> {
     let compilation_priority = get_compilation_priority(args).await?;
-    let compilation_manager = Arc::new(CompilationCoreManager::new(
+    let compilation_manager = Arc::new(CompilationScheduler::new(
         Arc::new(args.clone()),
         compilation_priority,
     ));
@@ -121,7 +121,7 @@ async fn start_with_ai<T: Ai + Send + 'static>(
     initial_schedule: Portfolio,
     cores: usize,
     cancellation_token: CancellationToken,
-    compilation_manager: Arc<CompilationCoreManager>,
+    compilation_manager: Arc<CompilationScheduler>,
 ) -> Result<Portfolio, Error> {
     let static_runtime_duration = Duration::from_secs(args.static_runtime);
 
@@ -218,7 +218,7 @@ fn get_cores(args: &RunArgs, ai: &Option<impl Ai>) -> (usize, usize) {
 
 async fn get_features(
     args: &RunArgs,
-    compilation_manager: Arc<CompilationCoreManager>,
+    compilation_manager: Arc<CompilationScheduler>,
     token: CancellationToken,
 ) -> Result<Vec<f32>, Error> {
     compilation_manager
