@@ -5,7 +5,6 @@ ARG MAKE_JOBS=2
 FROM rust:${RUST_VERSION} AS rust
 FROM rust AS builder
 
-
 WORKDIR /usr/src/app
 
 # Build dependencies only (so they are cached)
