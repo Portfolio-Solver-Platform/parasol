@@ -57,7 +57,7 @@ async fn run(args: RunArgs) {
 
     let solvers = solver_config::load(&args.solver_config_mode, &args.minizinc.minizinc_exe).await;
 
-    let config = Config::new(&args, &solvers);
+    let config = Config::new(&solvers);
 
     let cores = args.cores;
 

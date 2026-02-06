@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{args::RunArgs, solver_config};
+use crate::solver_config;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -10,7 +10,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(program_args: &RunArgs, solvers: &solver_config::Solvers) -> Self {
+    pub fn new(solvers: &solver_config::Solvers) -> Self {
         let mut solver_args = HashMap::new();
 
         for solver in solvers.iter() {
@@ -23,7 +23,7 @@ impl Config {
                 args.push("-a".to_owned());
             }
 
-            if program_args.ignore_search && supported_flags.f {
+            if supported_flags.f {
                 args.push("-f".to_string());
             }
 
