@@ -73,10 +73,6 @@ pub struct RunArgs {
     #[arg(long, help_heading = "Execution")]
     pub pin_java_solvers: bool,
 
-    /// Enable free search for all solvers
-    #[arg(long, short = 'f', help_heading = "Execution")]
-    pub ignore_search: bool,
-
     /// The ID of the solver that should be used for the MiniZinc to FlatZinc conversion for feature extraction.
     #[arg(long, help_heading = "Execution", default_value = crate::solvers::GECODE_ID)]
     pub feature_extraction_solver_id: String,
