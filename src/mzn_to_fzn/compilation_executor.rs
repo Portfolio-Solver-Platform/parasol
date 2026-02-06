@@ -65,6 +65,7 @@ impl CompilationExecutor {
         self.start_many([solver_name]).await
     }
 
+    #[allow(dead_code)]
     pub async fn stop(&self, solver_name: String) {
         self.stop_many([solver_name]).await
     }
