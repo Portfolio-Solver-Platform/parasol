@@ -1,7 +1,12 @@
 use clap::{Parser, ValueEnum};
-use std::{collections::HashMap, fmt, path::PathBuf, process::exit};
+use std::{
+    collections::HashMap,
+    fmt,
+    path::{Path, PathBuf},
+    process::exit,
+};
 
-use crate::logging;
+use crate::{logging, mzn_to_fzn::compilation_scheduler::SolverPriority};
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about)]
@@ -27,10 +32,6 @@ pub struct RunArgs {
 
     /// The MiniZinc data file corresponding to the model file
     pub data: Option<PathBuf>,
-
-    /// Optional path to a solver compiler priority configuration file
-    #[arg(long, help_heading = "Input Files")]
-    pub solver_compiler_priority: Option<PathBuf>,
 
     // === AI Configuration ===
     /// The AI used to determine the solver schedule dynamically
@@ -115,6 +116,14 @@ pub struct RunArgs {
     #[arg(long, help_heading = "Paths")]
     pub timeout_schedule: Option<PathBuf>,
 
+    /// Optional path to a compilation priority configuration CSV file.
+    /// When possible without a runtime cost, the problem model and data will be compiled for the
+    /// solvers in this file in the order they are given.
+    /// The path should be to a text file with one solver ID per line.
+    /// Lines starting with # are treated as comments, and empty lines are ignored.
+    #[arg(long, help_heading = "Paths")]
+    pub compilation_priority: Option<PathBuf>,
+
     // === Debugging ===
     #[arg(
         long,
@@ -190,4 +199,23 @@ pub fn parse_ai_config(config: Option<&str>) -> HashMap<String, String> {
             (key.to_owned(), value.to_owned())
         })
         .collect()
+}
+
+pub async fn read_compilation_priority(path: &Path) -> tokio::io::Result<SolverPriority> {
+    let s = tokio::fs::read_to_string(path).await?;
+    Ok(parse_compilation_priority(&s))
+}
+
+pub fn parse_compilation_priority(s: &str) -> SolverPriority {
+    let solvers = s
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.starts_with('#') && !line.is_empty())
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>();
+
+    logging::info!(
+        "parsed the following solver compilation priority (first has highest priority): {solvers:?}"
+    );
+    SolverPriority::from_descending_priority(solvers)
 }

@@ -16,7 +16,7 @@ use crate::args::RunArgs;
 use crate::is_cancelled::{IsCancelled, IsErrorCancelled};
 use crate::logging;
 
-pub struct CompilationManager {
+pub struct CompilationExecutor {
     args: Arc<RunArgs>,
     /// Invariant that needs to be upheld: If a started compilation is cancelled, it also needs to be removed.
     compilations: Arc<RwLock<HashMap<String, Compilation>>>,
@@ -38,22 +38,43 @@ struct RunningCompilation {
     receiver: Receiver<Option<WaitForResult>>,
 }
 
-impl CompilationManager {
-    pub fn new(args: Arc<RunArgs>) -> Self {
+pub enum CompilationStatus {
+    Done,
+    Running,
+    NotStarted,
+}
+
+impl CompilationExecutor {
+    pub fn new(args: Arc<RunArgs>, cancellation_token: CancellationToken) -> Self {
         Self {
             args,
-            cancellation_token: CancellationToken::new(),
+            cancellation_token,
             compilations: Default::default(),
         }
     }
 
-    pub async fn start(&self, solver_name: String) {
-        self.start_many([solver_name].into_iter()).await
+    pub async fn status(&self, solver_name: &str) -> CompilationStatus {
+        match self.compilations.read().await.get(solver_name) {
+            None => CompilationStatus::NotStarted,
+            Some(Compilation::Running(_)) => CompilationStatus::Running,
+            Some(Compilation::Done(_)) => CompilationStatus::Done,
+        }
     }
 
-    pub async fn start_many(&self, solver_names: impl Iterator<Item = String>) {
+    pub async fn start(&self, solver_name: String) {
+        self.start_many([solver_name]).await
+    }
+
+    #[allow(dead_code)]
+    pub async fn stop(&self, solver_name: String) {
+        self.stop_many([solver_name]).await
+    }
+
+    pub async fn start_many(&self, solver_names: impl IntoIterator<Item = String>) {
         let mut compilations = self.compilations.write().await;
-        let new_solvers = solver_names.filter(|name| !compilations.contains_key(name));
+        let new_solvers = solver_names
+            .into_iter()
+            .filter(|name| !compilations.contains_key(name));
 
         let new_compilations: Vec<_> = new_solvers
             .map(|solver_name| {
@@ -73,7 +94,9 @@ impl CompilationManager {
                             .await
                             .map_err(|e| {
                                 let error = WaitForError::from(&e);
-                                logging::error!(e.into());
+                                if !e.is_cancelled() {
+                                    logging::error!(e.into());
+                                }
                                 error
                             })
                             .map(Arc::new);
@@ -83,6 +106,7 @@ impl CompilationManager {
                             .write()
                             .await
                             .insert(solver_name.clone(), Compilation::Done(compilation.clone()));
+                        logging::info!("Compilation for solver '{solver_name}' is done");
                     }
                     // NOTE: If the compilation is cancelled, we do not here remove the started compilation from the
                     //       self.compilations map, because the only way the compilation gets cancelled is in stop_all,
@@ -91,7 +115,6 @@ impl CompilationManager {
                     let _ = tx.send(Some(compilation)).map_err(|e| {
                         logging::error!(Error::SendError(solver_name.clone(), e).into())
                     });
-                    logging::info!("Compilation for solver '{solver_name}' is done");
                 });
 
                 (
@@ -138,7 +161,7 @@ impl CompilationManager {
         }
     }
 
-    pub async fn stop_many(&self, solver_names: impl Iterator<Item = String>) {
+    pub async fn stop_many(&self, solver_names: impl IntoIterator<Item = String>) {
         let mut compilations = self.compilations.write().await;
 
         for solver_name in solver_names {
@@ -162,6 +185,7 @@ impl CompilationManager {
     }
 
     /// Stop all running compilations except for the given solvers.
+    #[allow(dead_code)]
     pub async fn stop_all_except(&self, exception_solver_names: HashSet<String>) {
         let solvers_to_stop = {
             self.compilations
@@ -178,7 +202,7 @@ impl CompilationManager {
     }
 }
 
-impl Drop for CompilationManager {
+impl Drop for CompilationExecutor {
     fn drop(&mut self) {
         self.cancellation_token.cancel()
     }

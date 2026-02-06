@@ -1,7 +1,8 @@
 use crate::args::RunArgs;
 use crate::insert_objective::ObjectiveInserter;
 use crate::model_parser::{ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type};
-use crate::mzn_to_fzn::compilation_manager::{self, CompilationManager};
+use crate::mzn_to_fzn::compilation_executor;
+use crate::mzn_to_fzn::compilation_scheduler::CompilationScheduler;
 use crate::process_tree::{
     get_process_tree_memory, recursive_force_kill, send_signals_to_process_tree,
 };
@@ -32,7 +33,7 @@ use tokio_util::sync::CancellationToken;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("waited for a failed compilation")]
-    WaitForCompilation(#[from] compilation_manager::WaitForError),
+    WaitForCompilation(#[from] compilation_executor::WaitForError),
     #[error("invalid solver: {0}")]
     InvalidSolver(String),
     #[error("IO error")]
@@ -101,7 +102,7 @@ pub struct SolverManager {
     current_solvers: Arc<Mutex<HashSet<u64>>>,
     solver_errors: Arc<Mutex<HashSet<SolverError>>>,
     args: RunArgs,
-    mzn_to_fzn: Arc<CompilationManager>,
+    mzn_to_fzn: Arc<CompilationScheduler>,
     best_objective: Arc<RwLock<Option<ObjectiveValue>>>,
     solver_info: Arc<solver_config::Solvers>,
     objective_type: ObjectiveType,
@@ -128,7 +129,7 @@ impl SolverManager {
         args: RunArgs,
         solver_args: HashMap<String, Vec<String>>,
         solver_info: Arc<solver_config::Solvers>,
-        compilation_manager: Arc<CompilationManager>,
+        compilation_manager: Arc<CompilationScheduler>,
         program_cancellation_token: CancellationToken,
     ) -> std::result::Result<Self, Error> {
         let objective_type = get_objective_type(&args.minizinc.minizinc_exe, &args.model).await?;
@@ -308,7 +309,7 @@ impl SolverManager {
         cores: usize,
         elem_id: u64,
         cancellation_token: &CancellationToken,
-        mzn_to_fzn: &CompilationManager,
+        mzn_to_fzn: &CompilationScheduler,
         solver_info: &solver_config::Solvers,
         best_objective: &RwLock<Option<ObjectiveValue>>,
         objective_type: ObjectiveType,
@@ -318,7 +319,7 @@ impl SolverManager {
         #[cfg(target_os = "linux")] available_cores: &Arc<Mutex<BTreeSet<usize>>>,
         #[cfg(target_os = "linux")] pin_java_solvers: bool,
     ) -> PrepareResult {
-        mzn_to_fzn.start(solver_name.to_string()).await;
+        mzn_to_fzn.start(solver_name.to_string(), cores).await;
 
         let Some(conversion_paths) = cancellation_token
             .run_until_cancelled(mzn_to_fzn.wait_for(solver_name))

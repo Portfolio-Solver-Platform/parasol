@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use crate::config::Config;
 use crate::fzn_to_features::{self, fzn_to_features};
-use crate::mzn_to_fzn;
-use crate::mzn_to_fzn::compilation_manager::CompilationManager;
+use crate::mzn_to_fzn::compilation_scheduler::{CompilationScheduler, SolverPriority};
 use crate::scheduler::{Portfolio, Scheduler};
 use crate::signal_handler::SignalEvent;
 use crate::static_schedule::{self, static_schedule, timeout_schedule};
 use crate::{ai, logging, solver_config, solver_manager};
 use crate::{ai::Ai, args::RunArgs};
+use crate::{args, mzn_to_fzn};
 use tokio::time::{Duration, sleep, timeout};
 use tokio_util::sync::CancellationToken;
 
@@ -21,7 +21,7 @@ pub enum Error {
     #[error("failed converting minizinc to flatzinc")]
     MznToFzn(#[from] mzn_to_fzn::Error),
     #[error("failed to wait for the compilation")]
-    WaitForMznToFzn(#[from] mzn_to_fzn::compilation_manager::WaitForError),
+    WaitForMznToFzn(#[from] mzn_to_fzn::compilation_executor::WaitForError),
     #[error("Schedule error")]
     Schedule(#[from] static_schedule::Error),
     #[error("Ai error")]
@@ -32,6 +32,8 @@ pub enum Error {
     SolverManager(#[from] solver_manager::Error),
     #[error("All solvers failed, could not continue")]
     SolverFailure,
+    #[error("an IO error occurred")]
+    TokioIo(#[from] tokio::io::Error),
 }
 
 pub async fn sunny<T: Ai + Send + 'static>(
@@ -42,7 +44,11 @@ pub async fn sunny<T: Ai + Send + 'static>(
     program_cancellation_token: CancellationToken,
     suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
 ) -> Result<(), Error> {
-    let compilation_manager = Arc::new(CompilationManager::new(Arc::new(args.clone())));
+    let compilation_priority = get_compilation_priority(args).await?;
+    let compilation_manager = Arc::new(CompilationScheduler::new(
+        Arc::new(args.clone()),
+        compilation_priority,
+    ));
 
     let mut scheduler = Scheduler::new(
         args,
@@ -55,13 +61,13 @@ pub async fn sunny<T: Ai + Send + 'static>(
     .await?;
 
     let (cores, initial_solver_cores) = get_cores(args, &ai);
-    // let solver_priority_order = get_priority_schedule()
 
     let initial_schedule = static_schedule(args, initial_solver_cores).await?;
 
     let static_runtime = Duration::from_secs(args.static_runtime);
     let mut timer = sleep(static_runtime);
 
+    let mut extra_compilations_are_enabled = true;
     let start_cancellation_token = program_cancellation_token.child_token();
     let schedule = if let Some(ai) = ai {
         start_with_ai(
@@ -71,10 +77,12 @@ pub async fn sunny<T: Ai + Send + 'static>(
             initial_schedule,
             cores,
             start_cancellation_token,
-            compilation_manager,
+            Arc::clone(&compilation_manager),
         )
         .await
     } else {
+        compilation_manager.disable_extra_compilations().await;
+        extra_compilations_are_enabled = false;
         start_without_ai(args, &mut scheduler, initial_schedule).await
     }?;
 
@@ -90,6 +98,11 @@ pub async fn sunny<T: Ai + Send + 'static>(
 
         if scheduler.solver_manager.all_solvers_failed(&schedule).await {
             return Err(Error::SolverFailure);
+        }
+
+        if extra_compilations_are_enabled {
+            compilation_manager.disable_extra_compilations().await;
+            extra_compilations_are_enabled = false;
         }
 
         let apply_cancellation_token = scheduler.create_apply_token();
@@ -108,7 +121,7 @@ async fn start_with_ai<T: Ai + Send + 'static>(
     initial_schedule: Portfolio,
     cores: usize,
     cancellation_token: CancellationToken,
-    compilation_manager: Arc<CompilationManager>,
+    compilation_manager: Arc<CompilationScheduler>,
 ) -> Result<Portfolio, Error> {
     let static_runtime_duration = Duration::from_secs(args.static_runtime);
 
@@ -191,7 +204,7 @@ async fn start_without_ai(
 fn get_cores(args: &RunArgs, ai: &Option<impl Ai>) -> (usize, usize) {
     let mut cores = args.cores;
 
-    let initial_solver_cores = if args.pin_java_solvers && ai.is_some() {
+    let initial_solver_cores = if ai.is_some() {
         if cores <= 1 {
             logging::warning!("Too few cores are set. Using 2 cores");
             cores = 2;
@@ -205,11 +218,11 @@ fn get_cores(args: &RunArgs, ai: &Option<impl Ai>) -> (usize, usize) {
 
 async fn get_features(
     args: &RunArgs,
-    compilation_manager: Arc<CompilationManager>,
+    compilation_manager: Arc<CompilationScheduler>,
     token: CancellationToken,
 ) -> Result<Vec<f32>, Error> {
     compilation_manager
-        .start(args.feature_extraction_solver_id.clone())
+        .start(args.feature_extraction_solver_id.clone(), 1)
         .await;
     let conversion = token
         .run_until_cancelled(compilation_manager.wait_for(&args.feature_extraction_solver_id))
@@ -221,5 +234,13 @@ async fn get_features(
             result.map_err(Error::from)
         },
         _ = token.cancelled() => Err(Error::Cancelled)
+    }
+}
+
+async fn get_compilation_priority(args: &RunArgs) -> tokio::io::Result<SolverPriority> {
+    if let Some(path) = &args.compilation_priority {
+        args::read_compilation_priority(path).await
+    } else {
+        Ok(SolverPriority::empty())
     }
 }
