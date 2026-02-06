@@ -1,8 +1,10 @@
-FROM rust:1.93 AS rust
-FROM rust AS builder
-
+ARG RUST_VERSION=1.93
 # The number of make jobs used when `make` is called
 ARG MAKE_JOBS=2
+
+FROM rust:${RUST_VERSION} AS rust
+FROM rust AS builder
+
 
 WORKDIR /usr/src/app
 
@@ -38,6 +40,7 @@ ENV CARGO_HOME=/usr/local/cargo
 ENV RUSTUP_HOME=/usr/local/rustup
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
+ARG RUST_VERSION
 # Install system dependencies
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     software-properties-common \
@@ -51,7 +54,7 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     bison \
     build-essential \
     # Install rustup
-    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.91 \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain ${RUST_VERSION} \
     # Cleanup
     && apt-get clean -qq \
     && rm -rf /var/lib/apt/lists/*
@@ -175,6 +178,7 @@ RUN wget -qO package.deb https://www.scipopt.org/download/release/SCIPOptSuite-9
 
 FROM base AS dexter
 
+ARG MAKE_JOBS
 WORKDIR /source
 ARG DEXTER_SHA256=583a5ef689e189a568bd4e691096156fdc1974a0beb9721703f02ba61515b75f
 RUN wget -qO source.tar.gz https://github.com/ddxter/gecode-dexter/archive/b46a6f557977c7b1863dc6b5885b69ebf9edcc14.tar.gz \
