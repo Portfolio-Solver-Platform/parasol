@@ -104,7 +104,7 @@ def run_parasol(model: Path, data: Path | None, schedule: Path, cores: int,
     cmd.append(str(model))
     if data:
         cmd.append(str(data))
-    cmd.extend(["--static-schedule", str(schedule), "-p", str(cores), "--ai", "none", "--verbosity", "info", "--solver-config-mode", "cache"])
+    cmd.extend(["--static-schedule", str(schedule), "-p", str(cores), "--ai", "none", "--solver-config-mode", "cache"])
     if pin:
         cmd.append("--pin-java-solvers")
 
