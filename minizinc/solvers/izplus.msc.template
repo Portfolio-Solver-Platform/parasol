@@ -1,5 +1,5 @@
 {
-  "id": "org.izplus.izplus",
+  "id": "izplus",
   "name": "iZplus",
   "version": "1.0.0",
   "executable": "${EXE_PATH}",
