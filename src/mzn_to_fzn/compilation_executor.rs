@@ -45,10 +45,10 @@ pub enum CompilationStatus {
 }
 
 impl CompilationExecutor {
-    pub fn new(args: Arc<RunArgs>) -> Self {
+    pub fn new(args: Arc<RunArgs>, cancellation_token: CancellationToken) -> Self {
         Self {
             args,
-            cancellation_token: CancellationToken::new(),
+            cancellation_token,
             compilations: Default::default(),
         }
     }

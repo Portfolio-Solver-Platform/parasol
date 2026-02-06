@@ -1,10 +1,11 @@
 use itertools::{Either, Itertools};
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
 use super::compilation_executor::CompilationExecutor;
 use crate::{
     args::RunArgs,
-    is_cancelled::IsCancelled,
+    is_cancelled::IsErrorCancelled,
     logging,
     mzn_to_fzn::compilation_executor::{CompilationStatus, WaitForResult},
 };
@@ -16,14 +17,17 @@ use std::{
 pub struct CompilationScheduler {
     executor: Arc<CompilationExecutor>,
     state: Arc<RwLock<State>>,
+    cancellation_token: CancellationToken,
 }
 
 impl CompilationScheduler {
     pub fn new(args: Arc<RunArgs>, compilation_priorities: SolverPriority) -> Self {
         let queue = State::from_vec(compilation_priorities);
+        let cancellation_token = CancellationToken::new();
         Self {
-            executor: Arc::new(CompilationExecutor::new(args)),
+            executor: Arc::new(CompilationExecutor::new(args, cancellation_token.child_token())),
             state: Arc::new(RwLock::new(queue)),
+            cancellation_token
         }
     }
 
@@ -42,15 +46,15 @@ impl CompilationScheduler {
 
         state.register_main_compilation(solver_id.clone(), cores);
 
-        let executor = Arc::clone(&self.executor);
-        let state = Arc::clone(&self.state);
+        let executor_clone = Arc::clone(&self.executor);
+        let state_clone = Arc::clone(&self.state);
         tokio::spawn(async move {
-            Self::wait_for_compilation(executor, state, &solver_id).await;
+            Self::wait_for_compilation(executor_clone, state_clone, &solver_id).await;
         });
 
-        let executor = Arc::clone(&self.executor);
-        let state = Arc::clone(&self.state);
-        Self::spawn_compilation_worker_thread(executor, state);
+        let executor_clone = Arc::clone(&self.executor);
+        let state_clone = Arc::clone(&self.state);
+        Self::spawn_compilation_worker_thread(executor_clone, state_clone);
     }
 
     pub async fn stop_all_except(&self, exception_solver_ids: HashSet<SolverId>) {
@@ -59,6 +63,7 @@ impl CompilationScheduler {
         self.executor.stop_many(exception_solvers).await;
     }
 
+    /// Cancellation safe
     pub async fn wait_for(&self, solver_name: &str) -> WaitForResult {
         self.executor.wait_for(solver_name).await
     }
@@ -77,18 +82,15 @@ impl CompilationScheduler {
         solver_id: &SolverId,
     ) {
         let result = executor.wait_for(solver_id).await;
-        if let Err(error) = result
-            && error.is_cancelled()
-        {
+        if result.is_error_cancelled() {
             state.write().await.compilation_stopped(solver_id);
         } else {
             // NOTE: we don't handle the error if one occurred because the user can handle it themselves when they wait for the compilation.
 
             // It might have failed, but we don't want to repeat it so we still mark it as done
             state.write().await.compilation_finished(solver_id);
+            Self::spawn_compilation_worker_thread(executor, state);
         }
-
-        Self::spawn_compilation_worker_thread(executor, state);
     }
 
     fn spawn_compilation_worker_thread(
@@ -116,6 +118,12 @@ impl CompilationScheduler {
                 });
             }
         });
+    }
+}
+
+impl Drop for CompilationScheduler {
+    fn drop(&mut self) {
+        self.cancellation_token.cancel()
     }
 }
 
