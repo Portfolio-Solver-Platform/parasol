@@ -1,11 +1,11 @@
 use tokio::sync::RwLock;
 
-use super::compilation_manager::CompilationExecutor;
+use super::compilation_executor::CompilationExecutor;
 use crate::{
     args::RunArgs,
     is_cancelled::IsCancelled,
     logging,
-    mzn_to_fzn::compilation_manager::{CompilationStatus, WaitForResult},
+    mzn_to_fzn::compilation_executor::{CompilationStatus, WaitForResult},
 };
 use std::{
     collections::{BTreeMap, HashMap, HashSet},

@@ -1,8 +1,8 @@
 use crate::args::RunArgs;
 use crate::insert_objective::ObjectiveInserter;
 use crate::model_parser::{ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type};
-use crate::mzn_to_fzn::compilation_core_manager::CompilationScheduler;
-use crate::mzn_to_fzn::compilation_manager;
+use crate::mzn_to_fzn::compilation_executor;
+use crate::mzn_to_fzn::compilation_scheduler::CompilationScheduler;
 use crate::process_tree::{
     get_process_tree_memory, recursive_force_kill, send_signals_to_process_tree,
 };
@@ -33,7 +33,7 @@ use tokio_util::sync::CancellationToken;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("waited for a failed compilation")]
-    WaitForCompilation(#[from] compilation_manager::WaitForError),
+    WaitForCompilation(#[from] compilation_executor::WaitForError),
     #[error("invalid solver: {0}")]
     InvalidSolver(String),
     #[error("IO error")]

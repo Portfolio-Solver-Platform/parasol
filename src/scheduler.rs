@@ -3,7 +3,7 @@ use crate::{
     config::Config,
     logging,
     model_parser::ObjectiveValue,
-    mzn_to_fzn::compilation_core_manager::CompilationScheduler,
+    mzn_to_fzn::compilation_scheduler::CompilationScheduler,
     signal_handler::SignalEvent,
     solver_config,
     solver_manager::{Error, SolverManager},

@@ -6,7 +6,7 @@ use std::{
     process::exit,
 };
 
-use crate::{logging, mzn_to_fzn::compilation_core_manager::SolverPriority};
+use crate::{logging, mzn_to_fzn::compilation_scheduler::SolverPriority};
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about)]

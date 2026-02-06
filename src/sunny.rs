@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::config::Config;
 use crate::fzn_to_features::{self, fzn_to_features};
-use crate::mzn_to_fzn::compilation_core_manager::{CompilationScheduler, SolverPriority};
+use crate::mzn_to_fzn::compilation_scheduler::{CompilationScheduler, SolverPriority};
 use crate::scheduler::{Portfolio, Scheduler};
 use crate::signal_handler::SignalEvent;
 use crate::static_schedule::{self, static_schedule, timeout_schedule};
@@ -21,7 +21,7 @@ pub enum Error {
     #[error("failed converting minizinc to flatzinc")]
     MznToFzn(#[from] mzn_to_fzn::Error),
     #[error("failed to wait for the compilation")]
-    WaitForMznToFzn(#[from] mzn_to_fzn::compilation_manager::WaitForError),
+    WaitForMznToFzn(#[from] mzn_to_fzn::compilation_executor::WaitForError),
     #[error("Schedule error")]
     Schedule(#[from] static_schedule::Error),
     #[error("Ai error")]

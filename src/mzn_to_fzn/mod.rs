@@ -1,6 +1,6 @@
 mod compilation;
-pub mod compilation_core_manager;
-pub mod compilation_manager;
+pub mod compilation_executor;
+pub mod compilation_scheduler;
 
 pub use compilation::*;
 
