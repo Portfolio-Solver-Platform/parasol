@@ -195,6 +195,20 @@ RUN mkdir bin \
     && jq '.executable = "/opt/dexter/bin/fzn-dexter"' /source/tools/flatzinc/gecode.msc.in \
      | jq '.mznlib = "/opt/dexter/share/minizinc/dexter_lib"' > share/minizinc/solvers/dexter.msc
 
+FROM base AS izplus
+
+WORKDIR /opt/izplus
+RUN mkdir bin \
+    && mkdir -p share/minizinc/solvers
+
+COPY ./solvers/izplus/fzn-exec ./bin/fzn-izplus
+COPY ./solvers/izplus/mzn-lib/ ./share/minizinc/izplus-lib/
+
+COPY ./minizinc/solvers/izplus.msc.template .
+RUN jq '.executable = "/opt/izplus/bin/fzn-izplus"' ./izplus.msc.template \
+    | jq '.mznlib = "/opt/izplus/share/minizinc/izplus-lib"' > ./share/minizinc/solvers/izplus.msc
+
+
 FROM base AS solver-configs
 
 COPY ./minizinc/solvers/ /solvers/
@@ -214,6 +228,7 @@ COPY --from=pumpkin /opt/pumpkin/share/minizinc/solvers/* .
 COPY --from=gecode /opt/gecode/share/minizinc/solvers/* .
 COPY --from=chuffed /opt/chuffed/share/minizinc/solvers/* .
 COPY --from=dexter /opt/dexter/share/minizinc/solvers/* .
+COPY --from=izplus /opt/izplus/share/minizinc/solvers/* .
 
 FROM base AS mzn2feat
 
@@ -286,6 +301,7 @@ COPY --from=pumpkin /opt/pumpkin/ /opt/pumpkin/
 COPY --from=gecode /opt/gecode/ /opt/gecode/
 COPY --from=chuffed /opt/chuffed/ /opt/chuffed/
 COPY --from=dexter /opt/dexter/ /opt/dexter/
+COPY --from=izplus /opt/izplus/ /opt/izplus/
 
 COPY ./minizinc/Preferences.json /root/.minizinc/
 COPY --from=builder /usr/src/app/target/release/parasol /usr/local/bin/parasol
