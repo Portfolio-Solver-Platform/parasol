@@ -12,9 +12,8 @@ use std::{
     sync::Arc,
 };
 
-// TODO: Find better name (remember to replace file name as well)
 pub struct CompilationScheduler {
-    manager: Arc<CompilationExecutor>,
+    executor: Arc<CompilationExecutor>,
     state: Arc<RwLock<State>>,
 }
 
@@ -22,13 +21,13 @@ impl CompilationScheduler {
     pub fn new(args: Arc<RunArgs>, compilation_priorities: SolverPriority) -> Self {
         let queue = State::from_vec(compilation_priorities);
         Self {
-            manager: Arc::new(CompilationExecutor::new(args)),
+            executor: Arc::new(CompilationExecutor::new(args)),
             state: Arc::new(RwLock::new(queue)),
         }
     }
 
     pub async fn start(&self, solver_id: String, cores: Cores) {
-        let status = self.manager.status(&solver_id).await;
+        let status = self.executor.status(&solver_id).await;
         if matches!(status, CompilationStatus::Done) {
             logging::info!(
                 "did not start the compilation of solver '{solver_id}' because it was already done",
@@ -38,45 +37,45 @@ impl CompilationScheduler {
 
         let mut state = self.state.write().await;
 
-        self.manager.start(solver_id.clone()).await;
+        self.executor.start(solver_id.clone()).await;
 
         state.register_main_compilation(solver_id.clone(), cores);
 
-        let manager = Arc::clone(&self.manager);
+        let executor = Arc::clone(&self.executor);
         let state = Arc::clone(&self.state);
         tokio::spawn(async move {
-            Self::wait_for_compilation(manager, state, &solver_id).await;
+            Self::wait_for_compilation(executor, state, &solver_id).await;
         });
 
-        let manager = Arc::clone(&self.manager);
+        let executor = Arc::clone(&self.executor);
         let state = Arc::clone(&self.state);
-        Self::spawn_compilation_worker_thread(manager, state);
+        Self::spawn_compilation_worker_thread(executor, state);
     }
 
     pub async fn stop_all_except(&self, exception_solver_ids: HashSet<SolverId>) {
         let state = self.state.read().await;
         let exception_solvers = state.get_main_compilations_except(&exception_solver_ids);
-        self.manager.stop_many(exception_solvers).await;
+        self.executor.stop_many(exception_solvers).await;
     }
 
     pub async fn wait_for(&self, solver_name: &str) -> WaitForResult {
-        self.manager.wait_for(solver_name).await
+        self.executor.wait_for(solver_name).await
     }
 
     pub async fn disable_extra_compilations(&self) {
         self.state.write().await.disable();
 
-        let manager = Arc::clone(&self.manager);
+        let executor = Arc::clone(&self.executor);
         let state = Arc::clone(&self.state);
-        Self::spawn_compilation_worker_thread(manager, state);
+        Self::spawn_compilation_worker_thread(executor, state);
     }
 
     async fn wait_for_compilation(
-        manager: Arc<CompilationExecutor>,
+        executor: Arc<CompilationExecutor>,
         state: Arc<RwLock<State>>,
         solver_id: &SolverId,
     ) {
-        let result = manager.wait_for(solver_id).await;
+        let result = executor.wait_for(solver_id).await;
         if let Err(error) = result
             && error.is_cancelled()
         {
@@ -88,11 +87,11 @@ impl CompilationScheduler {
             state.write().await.compilation_finished(solver_id);
         }
 
-        Self::spawn_compilation_worker_thread(manager, state);
+        Self::spawn_compilation_worker_thread(executor, state);
     }
 
     fn spawn_compilation_worker_thread(
-        manager: Arc<CompilationExecutor>,
+        executor: Arc<CompilationExecutor>,
         state: Arc<RwLock<State>>,
     ) {
         tokio::spawn(async move {
@@ -103,15 +102,15 @@ impl CompilationScheduler {
             for work in work_list {
                 match work {
                     CompilationWork::Start(solver_id) => {
-                        manager.start(solver_id.clone()).await;
-                        let manager = Arc::clone(&manager);
+                        executor.start(solver_id.clone()).await;
+                        let executor = Arc::clone(&executor);
                         let state = Arc::clone(&state);
                         tokio::spawn(async move {
-                            Self::wait_for_compilation(manager, state, &solver_id).await;
+                            Self::wait_for_compilation(executor, state, &solver_id).await;
                         });
                     }
                     CompilationWork::Stop(solver_id) => {
-                        manager.stop(solver_id).await;
+                        executor.stop(solver_id).await;
                     }
                 }
             }
