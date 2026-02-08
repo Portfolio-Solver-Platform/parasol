@@ -99,8 +99,7 @@ def run_parasol(model: Path, data: Path | None, schedule: Path, cores: int,
         cmd.extend(["timeout", str(timeout)])
     cmd.append("minizinc")
 
-    if solver != "":
-        cmd.extend(["--solver", solver])
+    cmd.extend(["--solver", solver])
     cmd.append(str(model))
     if data:
         cmd.append(str(data))

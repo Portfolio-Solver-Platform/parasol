@@ -4,7 +4,7 @@
   "id": "org.psp.parasol",
   "executable": ["${EXE_PATH}", "run"],
   "tags": ["portfolio"],
-  "stdFlags": ["-p", "-f"],
+  "stdFlags": ["-p"],
   "extraFlags": [
     ["--ai", "The AI used to determine the solver schedule dynamically (none, simple, command-line)", "string", "simple"],
     ["--ai-config", "Configuration for the AI in format: <key1>=<value1>,<key2>=<value2>,...", "string", ""],
