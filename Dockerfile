@@ -220,7 +220,6 @@ RUN echo "${GUROBI_SHA256}  source.tar.gz" | sha256sum -c - \
     && rm source.tar.gz \
     && mv ./lib/libgurobi.so.* ./lib/libgurobi.so
 
-
 COPY ./gurobi.lic ./gurobi.lic
 
 
