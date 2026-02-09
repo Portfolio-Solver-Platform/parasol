@@ -85,7 +85,7 @@ struct State {
     memory_limit: u64, // In bytes (0 = use system total)
     next_solver_id: u64,
     prev_objective: Option<ObjectiveValue>,
-    config: Config,
+    memory_threshold: f64,
     debug_verbosity: Verbosity,
 }
 
@@ -108,7 +108,7 @@ fn is_over_threshold(used: f64, total: f64, threshold: f64) -> bool {
 
 impl Scheduler {
     pub async fn new(
-        args: &RunArgs,
+        args: Arc<RunArgs>,
         config: &Config,
         solver_info: Arc<solver_config::Solvers>,
         compilation_manager: Arc<CompilationScheduler>,
@@ -118,16 +118,16 @@ impl Scheduler {
         let scheduler_cancellation_token = program_cancellation_token.child_token();
         let solver_manager = Arc::new(
             SolverManager::new(
-                args.clone(),
-                config.solver_args.clone(),
+                Arc::clone(&args),
+                Arc::clone(&config.solver_args),
                 solver_info,
-                compilation_manager.clone(),
-                program_cancellation_token.clone(),
+                Arc::clone(&compilation_manager),
+                CancellationToken::clone(&program_cancellation_token),
             )
             .await?,
         );
 
-        let solver_manager_clone = solver_manager.clone();
+        let solver_manager_clone = Arc::clone(&solver_manager);
         let scheduler_cancellation_token_clone = scheduler_cancellation_token.clone();
         tokio::spawn(async move {
             loop {
@@ -172,19 +172,20 @@ impl Scheduler {
             memory_limit,
             next_solver_id: 0,
             prev_objective: None,
-            config: config.clone(),
+            memory_threshold: config.memory_threshold,
             debug_verbosity,
         }));
 
-        let state_clone = state.clone();
-        let solver_manager_clone = solver_manager.clone();
-        let config_clone = config.clone();
+        let state_clone = Arc::clone(&state);
+        let solver_manager_clone = Arc::clone(&solver_manager);
         if args.enforce_memory {
             let scheduler_cancellation_token_clone = scheduler_cancellation_token.clone();
+            let memory_enforcer_interval = config.memory_enforcer_interval;
+            let memory_threshold = config.memory_threshold;
             tokio::spawn(async move {
                 tokio::select! {
                     _ = scheduler_cancellation_token_clone.cancelled() => {},
-                    _ = Self::memory_enforcer_loop(state_clone, solver_manager_clone, config_clone) => {}
+                    _ = Self::memory_enforcer_loop(state_clone, solver_manager_clone, memory_enforcer_interval, memory_threshold) => {}
                 }
             });
         }
@@ -228,7 +229,7 @@ impl Scheduler {
             .await;
 
         while !sorted.is_empty()
-            && is_over_threshold(used_memory, total_memory, state.config.memory_threshold)
+            && is_over_threshold(used_memory, total_memory, state.memory_threshold)
         {
             let (mem, id) = sorted.remove(0);
             state.suspended_solvers.remove(&id);
@@ -257,7 +258,7 @@ impl Scheduler {
             .solvers_sorted_by_mem(&ids, &state.system)
             .await;
         let per_core_threshold =
-            (total_memory / total_cores as f64 * state.config.memory_threshold) as u64;
+            (total_memory / total_cores as f64 * state.memory_threshold) as u64;
 
         let mut remaining = Vec::new();
 
@@ -285,7 +286,7 @@ impl Scheduler {
             }
         }
         while !remaining.is_empty()
-            && is_over_threshold(used_memory, total_memory, state.config.memory_threshold)
+            && is_over_threshold(used_memory, total_memory, state.memory_threshold)
         {
             let (mem, id) = remaining.remove(0);
             state.running_solvers.remove(&id);
@@ -308,17 +309,17 @@ impl Scheduler {
     async fn memory_enforcer_loop(
         state: Arc<Mutex<State>>,
         solver_manager: Arc<SolverManager>,
-        config: Config,
+        memory_enforcer_interval: u64,
+        memory_threshold: f64,
     ) {
-        let mut interval =
-            tokio::time::interval(Duration::from_secs(config.memory_enforcer_interval));
+        let mut interval = tokio::time::interval(Duration::from_secs(memory_enforcer_interval));
 
         loop {
             interval.tick().await;
             let mut state: tokio::sync::MutexGuard<'_, State> = state.lock().await;
             Self::remove_exited_solvers(&mut state, &solver_manager).await;
             let (used, total) = Self::get_memory_usage(&mut state);
-            if !is_over_threshold(used, total, config.memory_threshold) {
+            if !is_over_threshold(used, total, memory_threshold) {
                 continue;
             }
 
@@ -327,7 +328,7 @@ impl Scheduler {
                 "Memory used by system: {} MiB, Memory Available: {} MiB, Memory threshold: {}",
                 used / div,
                 total / div,
-                total * state.config.memory_threshold / div,
+                total * state.memory_threshold / div,
             );
 
             let used = Self::kill_suspended_until_under_threshold(
@@ -338,7 +339,7 @@ impl Scheduler {
             )
             .await;
 
-            if is_over_threshold(used, total, config.memory_threshold) {
+            if is_over_threshold(used, total, memory_threshold) {
                 Self::kill_running_until_under_threshold(&mut state, &solver_manager, used, total)
                     .await;
             }
@@ -451,9 +452,12 @@ impl Scheduler {
         }
 
         let schedule = Self::assign_ids(portfolio, &mut state);
-        let changes =
-            Self::categorize_schedule(schedule.clone(), &mut state, self.solver_manager.clone())
-                .await;
+        let changes = Self::categorize_schedule(
+            schedule.clone(),
+            &mut state,
+            Arc::clone(&self.solver_manager),
+        )
+        .await;
         Self::apply_changes_to_state(&mut state, &changes);
 
         if state.debug_verbosity >= Verbosity::Info

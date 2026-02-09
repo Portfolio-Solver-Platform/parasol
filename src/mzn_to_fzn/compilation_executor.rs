@@ -79,11 +79,11 @@ impl CompilationExecutor {
         let new_compilations: Vec<_> = new_solvers
             .map(|solver_name| {
                 let cancellation_token = self.cancellation_token.child_token();
-                let args = self.args.clone();
+                let args = Arc::clone(&self.args);
                 let cancellation_token_clone = cancellation_token.clone();
                 let name_clone = solver_name.clone();
 
-                let compilations = self.compilations.clone();
+                let compilations = Arc::clone(&self.compilations);
 
                 let (tx, rx) = watch::channel(None);
 

@@ -37,32 +37,32 @@ pub enum Error {
 }
 
 pub async fn sunny<T: Ai + Send + 'static>(
-    args: &RunArgs,
+    args: Arc<RunArgs>,
     ai: Option<T>,
     config: Config,
     solvers: Arc<solver_config::Solvers>,
     program_cancellation_token: CancellationToken,
     suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
 ) -> Result<(), Error> {
-    let compilation_priority = get_compilation_priority(args).await?;
+    let compilation_priority = get_compilation_priority(&args).await?;
     let compilation_manager = Arc::new(CompilationScheduler::new(
-        Arc::new(args.clone()),
+        Arc::clone(&args),
         compilation_priority,
     ));
 
     let mut scheduler = Scheduler::new(
-        args,
+        Arc::clone(&args),
         &config,
         solvers,
-        compilation_manager.clone(),
+        Arc::clone(&compilation_manager),
         program_cancellation_token.clone(),
         suspend_and_resume_signal_rx,
     )
     .await?;
 
-    let (cores, initial_solver_cores) = get_cores(args, &ai);
+    let (cores, initial_solver_cores) = get_cores(&args, &ai);
 
-    let initial_schedule = static_schedule(args, initial_solver_cores).await?;
+    let initial_schedule = static_schedule(&args, initial_solver_cores).await?;
 
     let static_runtime = Duration::from_secs(args.static_runtime);
     let mut timer = sleep(static_runtime);
@@ -71,7 +71,7 @@ pub async fn sunny<T: Ai + Send + 'static>(
     let start_cancellation_token = program_cancellation_token.child_token();
     let schedule = if let Some(ai) = ai {
         start_with_ai(
-            args,
+            &args,
             ai,
             &mut scheduler,
             initial_schedule,
@@ -83,7 +83,7 @@ pub async fn sunny<T: Ai + Send + 'static>(
     } else {
         compilation_manager.disable_extra_compilations().await;
         extra_compilations_are_enabled = false;
-        start_without_ai(args, &mut scheduler, initial_schedule).await
+        start_without_ai(&args, &mut scheduler, initial_schedule).await
     }?;
 
     let restart_interval = Duration::from_secs(args.restart_interval);

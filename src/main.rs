@@ -49,6 +49,7 @@ async fn main() {
 }
 
 async fn run(args: RunArgs) {
+    let args = Arc::new(args);
     let program_cancellation_token = CancellationToken::new();
     let suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent> =
         spawn_signal_handler(program_cancellation_token.clone());
@@ -61,10 +62,11 @@ async fn run(args: RunArgs) {
 
     let cores = args.cores;
 
+    let args_clone = Arc::clone(&args);
     let result = match args.ai {
         Ai::None => {
             sunny(
-                &args,
+                args_clone,
                 None::<SimpleAi>,
                 config,
                 Arc::new(solvers),
@@ -75,7 +77,7 @@ async fn run(args: RunArgs) {
         }
         Ai::Simple => {
             sunny(
-                &args,
+                args_clone,
                 Some(SimpleAi {}),
                 config,
                 Arc::new(solvers),
@@ -95,7 +97,7 @@ async fn run(args: RunArgs) {
 
             let ai = crate::ai::commandline::Ai::new(command.clone(), args.verbosity);
             sunny(
-                &args,
+                args_clone,
                 Some(ai),
                 config,
                 Arc::new(solvers),

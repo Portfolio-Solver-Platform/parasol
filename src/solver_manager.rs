@@ -101,12 +101,12 @@ pub struct SolverManager {
     solver_processes: Arc<Mutex<HashMap<u64, SolverProcess>>>,
     current_solvers: Arc<Mutex<HashSet<u64>>>,
     solver_errors: Arc<Mutex<HashSet<SolverError>>>,
-    args: RunArgs,
+    args: Arc<RunArgs>,
     mzn_to_fzn: Arc<CompilationScheduler>,
     best_objective: Arc<RwLock<Option<ObjectiveValue>>>,
     solver_info: Arc<solver_config::Solvers>,
     objective_type: ObjectiveType,
-    solver_args: HashMap<String, Vec<String>>,
+    solver_args: Arc<HashMap<String, Vec<String>>>,
     available_cores: Arc<Mutex<BTreeSet<usize>>>, // assume that smallest ids is fastest cores, hence we use btreeset to sort the core id's
 }
 
@@ -126,8 +126,8 @@ struct PreparedSolver {
 
 impl SolverManager {
     pub async fn new(
-        args: RunArgs,
-        solver_args: HashMap<String, Vec<String>>,
+        args: Arc<RunArgs>,
+        solver_args: Arc<HashMap<String, Vec<String>>>,
         solver_info: Arc<solver_config::Solvers>,
         compilation_manager: Arc<CompilationScheduler>,
         program_cancellation_token: CancellationToken,
@@ -139,7 +139,7 @@ impl SolverManager {
 
         let best_objective: Arc<RwLock<Option<i64>>> = Arc::new(RwLock::new(None));
 
-        let shared_objective = best_objective.clone();
+        let shared_objective = Arc::clone(&best_objective);
         tokio::spawn(async move {
             Self::receiver(
                 rx,
@@ -151,7 +151,7 @@ impl SolverManager {
         });
 
         let solver_errors = Arc::new(Mutex::new(HashSet::new()));
-        let solver_errors_clone = solver_errors.clone();
+        let solver_errors_clone = Arc::clone(&solver_errors);
         tokio::spawn(async move { Self::error_receiver(error_rx, solver_errors_clone).await });
 
         let mut cores = BTreeSet::new();
@@ -169,7 +169,7 @@ impl SolverManager {
             tx,
             error_tx,
             solver_processes: solvers,
-            solver_info: solver_info.clone(),
+            solver_info: Arc::clone(&solver_info),
             mzn_to_fzn: compilation_manager,
             current_solvers: Default::default(),
             solver_errors,
@@ -310,7 +310,7 @@ impl SolverManager {
         elem_id: u64,
         cancellation_token: &CancellationToken,
         mzn_to_fzn: &CompilationScheduler,
-        solver_info: &solver_config::Solvers,
+        solver_info: Arc<solver_config::Solvers>,
         best_objective: &RwLock<Option<ObjectiveValue>>,
         objective_type: ObjectiveType,
         minizinc_exe: &Path,
@@ -334,7 +334,7 @@ impl SolverManager {
         };
 
         // Create ObjectiveInserter inside the spawn
-        let objective_inserter = ObjectiveInserter::new(Arc::new(solver_info.clone()));
+        let objective_inserter = ObjectiveInserter::new(Arc::clone(&solver_info));
 
         let objective = *best_objective.read().await;
         let (fzn_final_path, fzn_guard) = if let Some(obj) = objective {
@@ -354,7 +354,7 @@ impl SolverManager {
             &fzn_final_path,
             solver_name,
             cores,
-            solver_info,
+            &solver_info,
             minizinc_exe,
             solver_args,
         )
@@ -426,20 +426,20 @@ impl SolverManager {
         }
 
         // Clone all necessary fields before spawning
-        let mzn_to_fzn = self.mzn_to_fzn.clone();
-        let solver_info = self.solver_info.clone();
+        let mzn_to_fzn = Arc::clone(&self.mzn_to_fzn);
+        let solver_info = Arc::clone(&self.solver_info);
         let minizinc_exe = self.args.minizinc.minizinc_exe.clone();
-        let solver_args = self.solver_args.clone();
-        let solver_processes = self.solver_processes.clone();
+        let solver_args = Arc::clone(&self.solver_args);
+        let solver_processes = Arc::clone(&self.solver_processes);
         let tx = self.tx.clone();
         let error_tx = self.error_tx.clone();
-        let available_cores = self.available_cores.clone();
+        let available_cores = Arc::clone(&self.available_cores);
         let objective_type = self.objective_type;
         let elem = elem.clone();
-        let current_solvers = self.current_solvers.clone();
+        let current_solvers = Arc::clone(&self.current_solvers);
         #[cfg(target_os = "linux")]
         let pin_java_solvers = self.args.pin_java_solvers;
-        let best_objective = self.best_objective.clone();
+        let best_objective = Arc::clone(&self.best_objective);
 
         tokio::spawn(async move {
             let solver_name = &elem.info.name;
@@ -452,7 +452,7 @@ impl SolverManager {
                 elem_id,
                 &cancellation_token,
                 &mzn_to_fzn,
-                &solver_info,
+                solver_info,
                 &best_objective,
                 objective_type,
                 &minizinc_exe,
@@ -493,9 +493,9 @@ impl SolverManager {
 
             let solver_id = elem.id;
             let solver_name_for_wait = elem.info.name.clone();
-            let solvers_for_stdout = solver_processes.clone();
-            let solvers_for_wait = solver_processes.clone();
-            let available_cores_for_wait = available_cores.clone();
+            let solvers_for_stdout = Arc::clone(&solver_processes);
+            let solvers_for_wait = Arc::clone(&solver_processes);
+            let available_cores_for_wait = Arc::clone(&available_cores);
 
             let cancellation_token_stdout = cancellation_token.clone();
             tokio::spawn(async move {
@@ -720,7 +720,7 @@ impl SolverManager {
 
     #[allow(dead_code)]
     pub async fn suspend_all_solvers(&self) -> std::result::Result<(), Vec<Error>> {
-        Self::send_signals_to_all_solvers(self.solver_processes.clone(), vec![Signal::SIGSTOP])
+        Self::send_signals_to_all_solvers(Arc::clone(&self.solver_processes), vec![Signal::SIGSTOP])
             .await
     }
 
@@ -737,7 +737,7 @@ impl SolverManager {
 
     #[allow(dead_code)]
     pub async fn resume_all_solvers(&self) -> std::result::Result<(), Vec<Error>> {
-        Self::send_signals_to_all_solvers(self.solver_processes.clone(), vec![Signal::SIGCONT])
+        Self::send_signals_to_all_solvers(Arc::clone(&self.solver_processes), vec![Signal::SIGCONT])
             .await
     }
 
@@ -793,16 +793,16 @@ impl SolverManager {
     }
 
     pub async fn stop_solver(&self, id: u64) -> std::result::Result<(), Error> {
-        Self::_stop_solver(self.solver_processes.clone(), id).await
+        Self::_stop_solver(Arc::clone(&self.solver_processes), id).await
     }
 
     pub async fn stop_solvers(&self, ids: &[u64]) -> std::result::Result<(), Vec<Error>> {
-        Self::_stop_solvers(self.solver_processes.clone(), ids).await
+        Self::_stop_solvers(Arc::clone(&self.solver_processes), ids).await
     }
 
     #[allow(dead_code)]
     pub async fn stop_all_solvers(&self) -> std::result::Result<(), Vec<Error>> {
-        Self::_stop_all_solvers(self.solver_processes.clone()).await
+        Self::_stop_all_solvers(Arc::clone(&self.solver_processes)).await
     }
 
     pub async fn active_solver_ids(&self) -> HashSet<u64> {
