@@ -6,7 +6,6 @@ pub const CP_SAT_ID: &str = "cp-sat";
 pub const COIN_BC_ID: &str = "org.minizinc.mip.coin-bc";
 pub const CHOCO_ID: &str = "org.choco.choco";
 pub const GECODE_ID: &str = "org.gecode.gecode";
-#[allow(dead_code)]
 pub const GUROBI_ID: &str = "org.minizinc.mip.gurobi";
 pub const HIGHS_ID: &str = "org.minizinc.mip.highs";
 pub const PICAT_ID: &str = "org.picat-lang.picat";
@@ -19,7 +18,7 @@ pub const CPLEX_ID: &str = "org.minizinc.mip.cplex";
 pub const XPRESS_ID: &str = "org.minizinc.mip.xpress";
 pub const IZPLUS_ID: &str = "izplus";
 
-pub const ALL_IDS: [&str; 15] = [
+pub const ALL_IDS: [&str; 16] = [
     COIN_BC_ID, PICAT_ID, HUUB_ID, CP_SAT_ID, CHOCO_ID, GECODE_ID, PUMPKIN_ID, YUCK_ID, HIGHS_ID,
-    CHUFFED_ID, SCIP_ID, DEXTER_ID, CPLEX_ID, XPRESS_ID, IZPLUS_ID,
+    CHUFFED_ID, SCIP_ID, DEXTER_ID, CPLEX_ID, XPRESS_ID, IZPLUS_ID, GUROBI_ID,
 ];

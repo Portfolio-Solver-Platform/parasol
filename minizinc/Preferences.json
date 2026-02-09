@@ -1,6 +1,7 @@
 {
     "tagDefaults": [["", "org.psp.parasol"]],
     "solverDefaults": [
-        ["org.minizinc.mip.cplex","--cplex-dll","/app/libcplex.so"]
+        ["org.minizinc.mip.cplex","--cplex-dll","/app/libcplex.so"],
+        ["org.minizinc.mip.gurobi","--gurobi-dll","/opt/gurobi/lib/libgurobi.so"]
     ]
 }

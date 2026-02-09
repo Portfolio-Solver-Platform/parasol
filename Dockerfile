@@ -209,6 +209,21 @@ RUN jq '.executable = "/opt/izplus/bin/fzn-izplus"' ./izplus.msc.template \
     | jq '.mznlib = "/opt/izplus/share/minizinc/izplus-lib"' > ./share/minizinc/solvers/izplus.msc
 
 
+FROM base AS gurobi
+
+ARG GUROBI_LINK=https://packages.gurobi.com/13.0/gurobi13.0.1_linux64.tar.gz
+ARG GUROBI_SHA256=ec623217ac5fa0657799a752ed7c02b2141fbb9c0ff34129d6e1f8c9a8fe4ed8
+WORKDIR /opt/gurobi
+RUN wget -qO source.tar.gz "${GUROBI_LINK}"
+RUN echo "${GUROBI_SHA256}  source.tar.gz" | sha256sum -c - \
+    && tar xf source.tar.gz --strip-components=2 \
+    && rm source.tar.gz \
+    && mv ./lib/libgurobi.so.* ./lib/libgurobi.so
+
+
+COPY ./gurobi.lic ./gurobi.lic
+
+
 FROM base AS solver-configs
 
 COPY ./minizinc/solvers/ /solvers/
@@ -323,6 +338,12 @@ RUN echo "/opt/gecode/lib" > /etc/ld.so.conf.d/gecode.conf \
 #       1. Copy the entire xpressmp folder (the entire Xpress installation) into the root of this repository.
 #       2. Uncomment the following line of code:
 # COPY ./xpressmp/ /opt/xpressmp/
+
+
+# NOTE: For Gurobi support:
+#       1. Copy your Gurobi license into the root of this repository and name it "gurobi.lic"
+#       2. Uncomment the following line of code:
+# COPY --from=gurobi /opt/gurobi/ /opt/gurobi/
 
 RUN parasol build-solver-cache
 
