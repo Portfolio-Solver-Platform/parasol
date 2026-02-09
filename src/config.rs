@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::solver_config;
 
@@ -6,7 +6,7 @@ use crate::solver_config;
 pub struct Config {
     pub memory_enforcer_interval: u64,
     pub memory_threshold: f64,
-    pub solver_args: HashMap<String, Vec<String>>,
+    pub solver_args: Arc<HashMap<String, Vec<String>>>,
 }
 
 impl Config {
@@ -33,7 +33,7 @@ impl Config {
         Self {
             memory_enforcer_interval: 3,
             memory_threshold: 0.9,
-            solver_args,
+            solver_args: Arc::new(solver_args),
         }
     }
 }
