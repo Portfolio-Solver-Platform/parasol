@@ -100,6 +100,16 @@ pub(crate) fn is_log_level(level: u8) -> bool {
     current_level >= level
 }
 
+pub(crate) fn log_output_note_impl(args: std::fmt::Arguments) {
+    println!("% NOTE: {args}");
+}
+
+macro_rules! output_note {
+    ($($arg:tt)*) => {
+        $crate::logging::log_output_note_impl(format_args!($($arg)*))
+    };
+}
+
 pub(crate) fn errors(errors: impl IntoIterator<Item = impl Into<anyhow::Error>>) {
     errors.into_iter().for_each(|e| error!(e.into()));
 }
@@ -108,6 +118,7 @@ pub(crate) use error;
 pub(crate) use error_msg;
 pub(crate) use error_with_msg;
 pub(crate) use info;
+pub(crate) use output_note;
 pub(crate) use warning;
 
 #[allow(dead_code)]
