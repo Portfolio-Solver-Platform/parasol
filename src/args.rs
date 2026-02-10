@@ -65,6 +65,10 @@ pub struct RunArgs {
     #[arg(long, help_heading = "Output")]
     pub output_objective: bool,
 
+    /// When a solution is found, outputs the ID of the solver that found the solution
+    #[arg(long, help_heading = "Output")]
+    pub output_solver: bool,
+
     // === Execution ===
     /// The number of cores parasol should use
     #[arg(short = 'p', default_value = "2", help_heading = "Execution")]

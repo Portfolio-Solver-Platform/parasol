@@ -74,8 +74,8 @@ enum PrepareResult {
 
 #[derive(Debug)]
 enum Msg {
-    Solution(Solution),
-    Status(Status),
+    Solution(String, Solution),
+    Status(String, Status),
 }
 
 #[derive(Clone)]
@@ -140,12 +140,14 @@ impl SolverManager {
         let best_objective: Arc<RwLock<Option<i64>>> = Arc::new(RwLock::new(None));
 
         let shared_objective = Arc::clone(&best_objective);
+        let output_solver = args.output_solver;
         tokio::spawn(async move {
             Self::receiver(
                 rx,
                 objective_type,
                 shared_objective,
                 program_cancellation_token,
+                output_solver,
             )
             .await
         });
@@ -186,38 +188,55 @@ impl SolverManager {
         objective_type: ObjectiveType,
         shared_objective: Arc<RwLock<Option<ObjectiveValue>>>,
         program_cancellation_token: CancellationToken,
+        output_solver: bool,
     ) {
         let mut objective: Option<ObjectiveValue> = None;
 
         while let Some(output) = rx.recv().await {
             match output {
-                Msg::Solution(Solution {
-                    solution: s,
-                    objective: Some(o),
-                }) => {
+                Msg::Solution(
+                    solver_name,
+                    Solution {
+                        solution: s,
+                        objective: Some(o),
+                    },
+                ) => {
                     if objective_type.is_better(objective, o) {
                         objective = Some(o);
                         {
                             let mut guard = shared_objective.write().await;
                             *guard = Some(o);
                         }
+                        if output_solver {
+                            logging::output_note!("{solver_name} found objective {o}");
+                        }
                         println!("{}", s.trim_end());
                         let _ = std::io::stdout().flush();
                     }
                 }
-                Msg::Solution(Solution {
-                    solution: s,
-                    objective: None, // is satisfaction problem
-                }) => {
+                Msg::Solution(
+                    solver_name,
+                    Solution {
+                        solution: s,
+                        objective: None, // is satisfaction problem
+                    },
+                ) => {
+                    if output_solver {
+                        logging::output_note!("{solver_name} found solution");
+                    }
                     println!("{}", s.trim_end());
                     let _ = std::io::stdout().flush();
                     // In satisfaction problems, we are only interested in a single solution
                     program_cancellation_token.cancel();
                     break;
                 }
-                Msg::Status(status) => {
+                Msg::Status(solver_name, status) => {
                     if status != Status::Unknown {
-                        println!("{}", status.to_dzn_string());
+                        let dzn_string = status.to_dzn_string();
+                        if output_solver {
+                            logging::output_note!("{solver_name} got status {dzn_string}");
+                        }
+                        println!("{dzn_string}");
                         let _ = std::io::stdout().flush();
                         program_cancellation_token.cancel();
                         break;
@@ -498,12 +517,14 @@ impl SolverManager {
             let available_cores_for_wait = Arc::clone(&available_cores);
 
             let cancellation_token_stdout = cancellation_token.clone();
+            let solver_name_for_stdout = elem.info.name.clone();
             tokio::spawn(async move {
                 Self::handle_solver_stdout(
                     ozn_stdout,
                     pipe,
                     tx,
                     solver_id,
+                    solver_name_for_stdout,
                     solvers_for_stdout,
                     objective_type,
                     cancellation_token_stdout,
@@ -553,11 +574,13 @@ impl SolverManager {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_solver_stdout(
         stdout: tokio::process::ChildStdout,
         pipe: JoinHandle<std::io::Result<u64>>,
         tx: tokio::sync::mpsc::UnboundedSender<Msg>,
         solver_id: u64,
+        solver_name: String,
         solver_processes: Arc<Mutex<HashMap<u64, SolverProcess>>>,
         objective_type: ObjectiveType,
         cancellation_token: CancellationToken,
@@ -598,17 +621,16 @@ impl SolverManager {
             };
 
             let msg = match output {
-                Output::Solution(Solution {
-                    solution: s,
-                    objective: None,
-                }) => Msg::Solution(Solution {
-                    solution: s,
-                    objective: None,
-                }),
-                Output::Solution(Solution {
-                    solution: s,
-                    objective: Some(o),
-                }) => {
+                Output::Solution(
+                    solution @ Solution {
+                        objective: None, ..
+                    },
+                ) => Msg::Solution(solver_name.clone(), solution),
+                Output::Solution(
+                    solution @ Solution {
+                        objective: Some(o), ..
+                    },
+                ) => {
                     if objective_type.is_better(local_best, o) {
                         local_best = Some(o);
                         let mut map = solver_processes.lock().await;
@@ -616,12 +638,9 @@ impl SolverManager {
                             state.best_objective = local_best;
                         }
                     }
-                    Msg::Solution(Solution {
-                        solution: s,
-                        objective: Some(o),
-                    })
+                    Msg::Solution(solver_name.clone(), solution)
                 }
-                Output::Status(status) => Msg::Status(status),
+                Output::Status(status) => Msg::Status(solver_name.clone(), status),
             };
 
             if let Err(e) = tx.send(msg) {
