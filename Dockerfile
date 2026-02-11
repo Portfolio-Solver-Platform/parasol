@@ -118,9 +118,8 @@ RUN mkdir -p /opt/choco/bin \
     && mkdir -p /opt/choco/share/minizinc/solvers \
     && mv /choco/parsers/src/main/minizinc/mzn_lib /opt/choco/share/minizinc/choco_lib \
     && json5-to-json < parsers/src/main/minizinc/choco.msc \
-     | jq '.executable = "/opt/choco/bin/fzn-choco.sh"' \
-     | jq ".version = \"${CHOCO_VERSION}\"" \
-     | jq '.mznlib = "/opt/choco/share/minizinc/choco_lib"' > /opt/choco/share/minizinc/solvers/choco.msc \
+     | jq -e '.executable = "/opt/choco/bin/fzn-choco.sh"' \
+     | jq -e '.mznlib = "/opt/choco/share/minizinc/choco_lib"' > /opt/choco/share/minizinc/solvers/choco.msc \
     && sed -i 's&JAR_FILE=.*&JAR_FILE="/opt/choco/bin/choco.jar"&g' /opt/choco/bin/fzn-choco.py \
     && rm -rf /choco
 
