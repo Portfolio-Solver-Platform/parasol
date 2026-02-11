@@ -93,22 +93,26 @@ RUN wget -q https://github.com/google/or-tools/releases/download/v9.15/or-tools_
 
 FROM base AS choco
 
-ARG CHOCO_SRC_SHA256=9a6d8c465cc73752c085281f49c45793135d8545e57bc3f4effd15bde6d03de5
-ARG CHOCO_JAR_SHA256=767a8bdf872c3b9d2a3465bb37822e1f0a60904a54f0181dbf7c6a106415abdf
-RUN wget -q https://github.com/chocoteam/choco-solver/archive/refs/tags/v4.10.18.tar.gz -O choco.tar.gz \
+WORKDIR /choco
+ARG CHOCO_VERSION=5.0.0
+ARG CHOCO_SRC_SHA256=0c99663fc51124907c05c6d72e4a039bfa55bdf920c16fa5a3649b3c0473e0ef
+ARG CHOCO_JAR_SHA256=8f3c9ceac4028f5fbefc0e02233e30c5a54fa5f15c890785109b29737dbb3cca
+RUN wget -q https://github.com/chocoteam/choco-solver/archive/refs/tags/v${CHOCO_VERSION}.tar.gz -O choco.tar.gz \
     && echo "${CHOCO_SRC_SHA256}  choco.tar.gz" | sha256sum -c - \
-    && wget -q https://github.com/chocoteam/choco-solver/releases/download/v4.10.18/choco-solver-4.10.18-light.jar -O choco.jar \
+    && wget -q https://github.com/chocoteam/choco-solver/releases/download/v${CHOCO_VERSION}/choco-solver-${CHOCO_VERSION}-light.jar -O choco.jar \
     && echo "${CHOCO_JAR_SHA256}  choco.jar" | sha256sum -c - \
-    && tar -xzf choco.tar.gz \
-    && rm choco.tar.gz \
-    && mv choco-solver-4.10.18 /choco \
-    && mkdir -p /opt/choco/bin \
+    && tar -xzf choco.tar.gz --strip-components=1 \
+    && rm choco.tar.gz
+
+COPY ./minizinc/solvers/choco.msc.template .
+RUN mkdir -p /opt/choco/bin \
     && mv choco.jar /opt/choco/bin \
     && mv /choco/parsers/src/main/minizinc/fzn-choco.py /opt/choco/bin \
     && mv /choco/parsers/src/main/minizinc/fzn-choco.sh /opt/choco/bin \
     && mkdir -p /opt/choco/share/minizinc/solvers \
     && mv /choco/parsers/src/main/minizinc/mzn_lib /opt/choco/share/minizinc/choco_lib \
-    && jq '.executable = "/opt/choco/bin/fzn-choco.sh"' /choco/parsers/src/main/minizinc/choco.msc \
+    && jq '.executable = "/opt/choco/bin/fzn-choco.sh"' choco.msc.template \
+     | jq ".version = \"${CHOCO_VERSION}\"" \
      | jq '.mznlib = "/opt/choco/share/minizinc/choco_lib"' > /opt/choco/share/minizinc/solvers/choco.msc \
     && sed -i 's&JAR_FILE=.*&JAR_FILE="/opt/choco/bin/choco.jar"&g' /opt/choco/bin/fzn-choco.py \
     && rm -rf /choco
