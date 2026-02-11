@@ -78,8 +78,8 @@ RUN wget -q https://github.com/informarte/yuck/releases/download/20251106/yuck-2
 FROM base AS or-tools
 
 WORKDIR /or-tools
-ARG OR_TOOLS_SHA256=6f389320672cee00b78aacefb2bde33fef0bb988c3b2735573b9fffd1047fbda
-RUN wget -q https://github.com/google/or-tools/releases/download/v9.15/or-tools_amd64_ubuntu-24.04_cpp_v9.15.6755.tar.gz -O or-tools.tar.gz \
+ARG OR_TOOLS_SHA256=71128e095024707bf9835faf4558cbe34acb79345e899bd532f3008a493a8970
+RUN wget -q https://github.com/google/or-tools/releases/download/v9.12/or-tools_amd64_ubuntu-24.04_cpp_v9.12.4544.tar.gz -O or-tools.tar.gz \
     && echo "${OR_TOOLS_SHA256}  or-tools.tar.gz" | sha256sum -c - \
     && tar -xzf or-tools.tar.gz --strip-components=1 \
     && rm or-tools.tar.gz \
