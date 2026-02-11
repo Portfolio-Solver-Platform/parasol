@@ -58,6 +58,11 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     && apt-get clean -qq \
     && rm -rf /var/lib/apt/lists/*
 
+FROM rust AS json5-to-json
+
+RUN cargo install json5-to-json \
+    && mv /usr/local/cargo/bin/json5-to-json /
+
 FROM base AS huub
 
 RUN git clone -q --depth 1 --branch pub/CP2025 https://github.com/huub-solver/huub.git /huub
@@ -104,14 +109,16 @@ RUN wget -q https://github.com/chocoteam/choco-solver/archive/refs/tags/v${CHOCO
     && tar -xzf choco.tar.gz --strip-components=1 \
     && rm choco.tar.gz
 
-COPY ./minizinc/solvers/choco.msc.template .
+COPY --from=json5-to-json /json5-to-json /usr/local/bin/
+
 RUN mkdir -p /opt/choco/bin \
     && mv choco.jar /opt/choco/bin \
     && mv /choco/parsers/src/main/minizinc/fzn-choco.py /opt/choco/bin \
     && mv /choco/parsers/src/main/minizinc/fzn-choco.sh /opt/choco/bin \
     && mkdir -p /opt/choco/share/minizinc/solvers \
     && mv /choco/parsers/src/main/minizinc/mzn_lib /opt/choco/share/minizinc/choco_lib \
-    && jq '.executable = "/opt/choco/bin/fzn-choco.sh"' choco.msc.template \
+    && json5-to-json < parsers/src/main/minizinc/choco.msc \
+     | jq '.executable = "/opt/choco/bin/fzn-choco.sh"' \
      | jq ".version = \"${CHOCO_VERSION}\"" \
      | jq '.mznlib = "/opt/choco/share/minizinc/choco_lib"' > /opt/choco/share/minizinc/solvers/choco.msc \
     && sed -i 's&JAR_FILE=.*&JAR_FILE="/opt/choco/bin/choco.jar"&g' /opt/choco/bin/fzn-choco.py \
