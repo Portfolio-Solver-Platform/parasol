@@ -6,7 +6,7 @@ use std::{
     process::exit,
 };
 
-use crate::{logging, mzn_to_fzn::compilation_scheduler::SolverPriority};
+use crate::{ai::SimpleAi, logging, mzn_to_fzn::compilation_scheduler::SolverPriority};
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about)]
@@ -19,13 +19,19 @@ pub struct Cli {
 #[derive(clap::Subcommand, Debug, Clone)]
 pub enum Command {
     /// Run the parasol framework
-    Run(RunArgs),
+    Static(StaticArgs),
     /// Build the solver config cache and exit
     BuildSolverCache(BuildSolverCacheArgs),
 }
 
 #[derive(clap::Args, Debug, Clone)]
-pub struct RunArgs {
+pub struct StaticArgs {
+    #[command(flatten)]
+    pub common_args: CommonArgs,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct CommonArgs {
     // === Input Files ===
     /// The MiniZinc model file
     pub model: PathBuf,
@@ -222,4 +228,34 @@ pub fn parse_compilation_priority(s: &str) -> SolverPriority {
         "parsed the following solver compilation priority (first has highest priority): {solvers:?}"
     );
     SolverPriority::from_descending_priority(solvers)
+}
+
+pub fn unpack_ai(
+    ai: &Ai,
+    config: Option<&str>,
+    verbosity: Verbosity,
+) -> Result<Option<Box<dyn crate::ai::Ai + Send>>, UnpackAiError> {
+    Ok(match ai {
+        Ai::None => None,
+        Ai::Simple => Some(Box::new(SimpleAi {})),
+        Ai::CommandLine => {
+            let ai_config = parse_ai_config(config);
+            let Some(command) = ai_config.get("command") else {
+                return Err(UnpackAiError::CommandLineAiConfigMissing(
+                    "command".to_owned(),
+                ));
+            };
+
+            Some(Box::new(crate::ai::commandline::Ai::new(
+                command.clone(),
+                verbosity,
+            )))
+        }
+    })
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum UnpackAiError {
+    #[error("'{0}' not provided in AI configuration when commandline AI has been specified")]
+    CommandLineAiConfigMissing(String),
 }

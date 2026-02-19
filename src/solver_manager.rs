@@ -1,4 +1,4 @@
-use crate::args::RunArgs;
+use crate::args::CommonArgs;
 use crate::insert_objective::ObjectiveInserter;
 use crate::model_parser::{ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type};
 use crate::mzn_to_fzn::compilation_executor;
@@ -9,7 +9,7 @@ use crate::process_tree::{
 use crate::scheduler::ScheduleElement;
 use crate::solver_config::SolverInputType;
 use crate::solver_output::{Output, Solution, Status};
-use crate::{logging, mzn_to_fzn, solver_config, solver_output, solvers};
+use crate::{logging, mzn_to_fzn, solver_config, solver_output};
 use async_tempfile::TempFile;
 use futures::future::join_all;
 use nix::errno::Errno;
@@ -101,7 +101,7 @@ pub struct SolverManager {
     solver_processes: Arc<Mutex<HashMap<u64, SolverProcess>>>,
     current_solvers: Arc<Mutex<HashSet<u64>>>,
     solver_errors: Arc<Mutex<HashSet<SolverError>>>,
-    args: Arc<RunArgs>,
+    args: Arc<CommonArgs>,
     mzn_to_fzn: Arc<CompilationScheduler>,
     best_objective: Arc<RwLock<Option<ObjectiveValue>>>,
     solver_info: Arc<solver_config::Solvers>,
@@ -126,7 +126,7 @@ struct PreparedSolver {
 
 impl SolverManager {
     pub async fn new(
-        args: Arc<RunArgs>,
+        args: Arc<CommonArgs>,
         solver_args: Arc<HashMap<String, Vec<String>>>,
         solver_info: Arc<solver_config::Solvers>,
         compilation_manager: Arc<CompilationScheduler>,

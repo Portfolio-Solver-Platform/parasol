@@ -1,13 +1,15 @@
 use std::sync::Arc;
 
+use crate::args::UnpackAiError;
 use crate::config::Config;
 use crate::fzn_to_features::{self, fzn_to_features};
 use crate::mzn_to_fzn::compilation_scheduler::{CompilationScheduler, SolverPriority};
+use crate::orchestrator::Orchestrator;
 use crate::scheduler::{Portfolio, Scheduler};
 use crate::signal_handler::SignalEvent;
 use crate::static_schedule::{self, static_schedule, timeout_schedule};
 use crate::{ai, logging, solver_config, solver_manager};
-use crate::{ai::Ai, args::RunArgs};
+use crate::{ai::Ai, args::CommonArgs};
 use crate::{args, mzn_to_fzn};
 use tokio::time::{Duration, sleep, timeout};
 use tokio_util::sync::CancellationToken;
@@ -34,89 +36,134 @@ pub enum Error {
     SolverFailure,
     #[error("an IO error occurred")]
     TokioIo(#[from] tokio::io::Error),
+    #[error("failed to unpack the AI")]
+    UnpackAi(#[from] UnpackAiError),
 }
 
-pub async fn sunny<T: Ai + Send + 'static>(
-    args: Arc<RunArgs>,
-    ai: Option<T>,
+pub struct StaticParrallelPortfolio {
+    args: Arc<CommonArgs>,
+    ai: Option<Box<dyn Ai + Send>>,
     config: Config,
     solvers: Arc<solver_config::Solvers>,
     program_cancellation_token: CancellationToken,
     suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
-) -> Result<(), Error> {
-    let compilation_priority = get_compilation_priority(&args).await?;
-    let compilation_manager = Arc::new(CompilationScheduler::new(
-        Arc::clone(&args),
-        compilation_priority,
-    ));
+}
 
-    let mut scheduler = Scheduler::new(
-        Arc::clone(&args),
-        &config,
-        solvers,
-        Arc::clone(&compilation_manager),
-        program_cancellation_token.clone(),
-        suspend_and_resume_signal_rx,
-    )
-    .await?;
-
-    let (cores, initial_solver_cores) = get_cores(&args, &ai);
-
-    let initial_schedule = static_schedule(&args, initial_solver_cores).await?;
-
-    let static_runtime = Duration::from_secs(args.static_runtime);
-    let mut timer = sleep(static_runtime);
-
-    let mut extra_compilations_are_enabled = true;
-    let start_cancellation_token = program_cancellation_token.child_token();
-    let schedule = if let Some(ai) = ai {
-        start_with_ai(
-            &args,
-            ai,
-            &mut scheduler,
-            initial_schedule,
-            cores,
-            start_cancellation_token,
-            Arc::clone(&compilation_manager),
-        )
-        .await
-    } else {
-        compilation_manager.disable_extra_compilations().await;
-        extra_compilations_are_enabled = false;
-        start_without_ai(&args, &mut scheduler, initial_schedule).await
-    }?;
-
-    let restart_interval = Duration::from_secs(args.restart_interval);
-    // Restart loop, where it share bounds. It runs forever until it finds a solution, where it will then be cancelled by the cancellation token.
-    loop {
-        tokio::select! {
-            _ = timer => {}
-            _ = program_cancellation_token.cancelled() => {
-                return Err(Error::Cancelled)
-            }
+impl From<Error> for crate::orchestrator::Error {
+    fn from(value: Error) -> Self {
+        match value {
+            Error::Cancelled => crate::orchestrator::Error::Cancelled,
+            e => crate::orchestrator::Error::Other(e.into()),
         }
-
-        if scheduler.solver_manager.all_solvers_failed(&schedule).await {
-            return Err(Error::SolverFailure);
-        }
-
-        if extra_compilations_are_enabled {
-            compilation_manager.disable_extra_compilations().await;
-            extra_compilations_are_enabled = false;
-        }
-
-        let apply_cancellation_token = scheduler.create_apply_token();
-        scheduler
-            .apply(schedule.clone(), apply_cancellation_token, true)
-            .await;
-
-        timer = sleep(restart_interval);
     }
 }
 
-async fn start_with_ai<T: Ai + Send + 'static>(
-    args: &RunArgs,
-    mut ai: T,
+impl StaticParrallelPortfolio {
+    pub async fn new(
+        args: Arc<CommonArgs>,
+        program_cancellation_token: CancellationToken,
+        suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
+    ) -> Result<Self, Error> {
+        let solvers = Arc::new(
+            solver_config::load(&args.solver_config_mode, &args.minizinc.minizinc_exe).await,
+        );
+
+        let config = Config::new(&solvers);
+
+        let ai = args::unpack_ai(&args.ai, args.ai_config.as_deref(), args.verbosity)?;
+
+        Ok(Self {
+            args,
+            ai,
+            config,
+            solvers,
+            program_cancellation_token,
+            suspend_and_resume_signal_rx,
+        })
+    }
+}
+
+impl Orchestrator for StaticParrallelPortfolio {
+    async fn run(self) -> Result<(), crate::orchestrator::Error> {
+        let compilation_priority = get_compilation_priority(&self.args)
+            .await
+            .map_err(Error::from)?;
+        let compilation_manager = Arc::new(CompilationScheduler::new(
+            Arc::clone(&self.args),
+            compilation_priority,
+        ));
+
+        let mut scheduler = Scheduler::new(
+            Arc::clone(&self.args),
+            &self.config,
+            self.solvers,
+            Arc::clone(&compilation_manager),
+            self.program_cancellation_token.clone(),
+            self.suspend_and_resume_signal_rx,
+        )
+        .await
+        .map_err(Error::from)?;
+
+        let (cores, initial_solver_cores) = get_cores(&self.args, self.ai.as_deref());
+
+        let initial_schedule = static_schedule(&self.args, initial_solver_cores)
+            .await
+            .map_err(Error::from)?;
+
+        let static_runtime = Duration::from_secs(self.args.static_runtime);
+        let mut timer = sleep(static_runtime);
+
+        let mut extra_compilations_are_enabled = true;
+        let start_cancellation_token = self.program_cancellation_token.child_token();
+        let schedule = if let Some(ai) = self.ai {
+            start_with_ai(
+                &self.args,
+                ai,
+                &mut scheduler,
+                initial_schedule,
+                cores,
+                start_cancellation_token,
+                Arc::clone(&compilation_manager),
+            )
+            .await
+        } else {
+            compilation_manager.disable_extra_compilations().await;
+            extra_compilations_are_enabled = false;
+            start_without_ai(&self.args, &mut scheduler, initial_schedule).await
+        }?;
+
+        let restart_interval = Duration::from_secs(self.args.restart_interval);
+        // Restart loop, where it share bounds. It runs forever until it finds a solution, where it will then be cancelled by the cancellation token.
+        loop {
+            tokio::select! {
+                _ = timer => {}
+                _ = self.program_cancellation_token.cancelled() => {
+                    return Err(Error::Cancelled.into())
+                }
+            }
+
+            if scheduler.solver_manager.all_solvers_failed(&schedule).await {
+                return Err(Error::SolverFailure.into());
+            }
+
+            if extra_compilations_are_enabled {
+                compilation_manager.disable_extra_compilations().await;
+                extra_compilations_are_enabled = false;
+            }
+
+            let apply_cancellation_token = scheduler.create_apply_token();
+            scheduler
+                .apply(schedule.clone(), apply_cancellation_token, true)
+                .await;
+
+            timer = sleep(restart_interval);
+        }
+    }
+}
+
+async fn start_with_ai(
+    args: &CommonArgs,
+    mut ai: Box<dyn Ai + Send>,
     scheduler: &mut Scheduler,
     initial_schedule: Portfolio,
     cores: usize,
@@ -179,7 +226,7 @@ async fn start_with_ai<T: Ai + Send + 'static>(
 }
 
 async fn start_without_ai(
-    args: &RunArgs,
+    args: &CommonArgs,
     scheduler: &mut Scheduler,
     schedule: Portfolio,
 ) -> Result<Portfolio, Error> {
@@ -201,7 +248,7 @@ async fn start_without_ai(
     Ok(schedule)
 }
 
-fn get_cores(args: &RunArgs, ai: &Option<impl Ai>) -> (usize, usize) {
+fn get_cores(args: &CommonArgs, ai: Option<&(dyn Ai + Send)>) -> (usize, usize) {
     let mut cores = args.cores;
 
     let initial_solver_cores = if ai.is_some() {
@@ -217,7 +264,7 @@ fn get_cores(args: &RunArgs, ai: &Option<impl Ai>) -> (usize, usize) {
 }
 
 async fn get_features(
-    args: &RunArgs,
+    args: &CommonArgs,
     compilation_manager: Arc<CompilationScheduler>,
     token: CancellationToken,
 ) -> Result<Vec<f32>, Error> {
@@ -237,7 +284,7 @@ async fn get_features(
     }
 }
 
-async fn get_compilation_priority(args: &RunArgs) -> tokio::io::Result<SolverPriority> {
+async fn get_compilation_priority(args: &CommonArgs) -> tokio::io::Result<SolverPriority> {
     if let Some(path) = &args.compilation_priority {
         args::read_compilation_priority(path).await
     } else {

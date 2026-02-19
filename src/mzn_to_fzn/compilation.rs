@@ -1,5 +1,5 @@
 use super::Conversion;
-use crate::args::RunArgs;
+use crate::args::CommonArgs;
 use crate::is_cancelled::IsCancelled;
 use crate::logging;
 use std::path::Path;
@@ -9,7 +9,7 @@ use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
 
 pub async fn convert_mzn(
-    args: &RunArgs,
+    args: &CommonArgs,
     solver_name: &str,
     cancellation_token: CancellationToken,
 ) -> Result<Conversion> {
@@ -35,7 +35,7 @@ pub async fn convert_mzn(
 }
 
 async fn run_mzn_to_fzn_cmd(
-    args: &RunArgs,
+    args: &CommonArgs,
     solver_name: &str,
     fzn_result_path: &Path,
     ozn_result_path: &Path,
@@ -75,7 +75,7 @@ async fn run_mzn_to_fzn_cmd(
 }
 
 fn get_mzn_to_fzn_cmd(
-    args: &RunArgs,
+    args: &CommonArgs,
     solver_name: &str,
     fzn_result_path: &Path,
     ozn_result_path: &Path,

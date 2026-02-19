@@ -12,12 +12,12 @@ use tokio_util::sync::CancellationToken;
 
 use super::Conversion;
 use super::compilation;
-use crate::args::RunArgs;
+use crate::args::CommonArgs;
 use crate::is_cancelled::{IsCancelled, IsErrorCancelled};
 use crate::logging;
 
 pub struct CompilationExecutor {
-    args: Arc<RunArgs>,
+    args: Arc<CommonArgs>,
     /// Invariant that needs to be upheld: If a started compilation is cancelled, it also needs to be removed.
     compilations: Arc<RwLock<HashMap<String, Compilation>>>,
     /// The cancellation token for the manager itself.
@@ -45,7 +45,7 @@ pub enum CompilationStatus {
 }
 
 impl CompilationExecutor {
-    pub fn new(args: Arc<RunArgs>, cancellation_token: CancellationToken) -> Self {
+    pub fn new(args: Arc<CommonArgs>, cancellation_token: CancellationToken) -> Self {
         Self {
             args,
             cancellation_token,
