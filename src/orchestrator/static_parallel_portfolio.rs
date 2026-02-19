@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::args::UnpackAiError;
+use crate::args::{StaticArgs, UnpackAiError};
 use crate::config::Config;
 use crate::fzn_to_features::{self, fzn_to_features};
 use crate::mzn_to_fzn::compilation_scheduler::{CompilationScheduler, SolverPriority};
@@ -41,7 +41,7 @@ pub enum Error {
 }
 
 pub struct StaticParrallelPortfolio {
-    args: Arc<CommonArgs>,
+    args: StaticArgs,
     ai: Option<Box<dyn Ai + Send>>,
     config: Config,
     solvers: Arc<solver_config::Solvers>,
@@ -60,17 +60,17 @@ impl From<Error> for crate::orchestrator::Error {
 
 impl StaticParrallelPortfolio {
     pub async fn new(
-        args: Arc<CommonArgs>,
+        args: StaticArgs,
         program_cancellation_token: CancellationToken,
         suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
     ) -> Result<Self, Error> {
         let solvers = Arc::new(
-            solver_config::load(&args.solver_config_mode, &args.minizinc.minizinc_exe).await,
+            solver_config::load(&args.common.solver_config_mode, &args.common.minizinc.minizinc_exe).await,
         );
 
         let config = Config::new(&solvers);
 
-        let ai = args::unpack_ai(&args.ai, args.ai_config.as_deref(), args.verbosity)?;
+        let ai = args::unpack_ai(&args.common.ai, args.common.ai_config.as_deref(), args.common.verbosity)?;
 
         Ok(Self {
             args,
@@ -85,16 +85,17 @@ impl StaticParrallelPortfolio {
 
 impl Orchestrator for StaticParrallelPortfolio {
     async fn run(self) -> Result<(), crate::orchestrator::Error> {
-        let compilation_priority = get_compilation_priority(&self.args)
+        let common_args = Arc::new(self.args.common);
+        let compilation_priority = get_compilation_priority(&common_args)
             .await
             .map_err(Error::from)?;
         let compilation_manager = Arc::new(CompilationScheduler::new(
-            Arc::clone(&self.args),
+            Arc::clone(&common_args),
             compilation_priority,
         ));
 
         let mut scheduler = Scheduler::new(
-            Arc::clone(&self.args),
+            Arc::clone(&common_args),
             &self.config,
             self.solvers,
             Arc::clone(&compilation_manager),
@@ -104,20 +105,20 @@ impl Orchestrator for StaticParrallelPortfolio {
         .await
         .map_err(Error::from)?;
 
-        let (cores, initial_solver_cores) = get_cores(&self.args, self.ai.as_deref());
+        let (cores, initial_solver_cores) = get_cores(&common_args, self.ai.as_deref());
 
-        let initial_schedule = static_schedule(&self.args, initial_solver_cores)
+        let initial_schedule = static_schedule(&common_args, initial_solver_cores)
             .await
             .map_err(Error::from)?;
 
-        let static_runtime = Duration::from_secs(self.args.static_runtime);
+        let static_runtime = Duration::from_secs(common_args.static_runtime);
         let mut timer = sleep(static_runtime);
 
         let mut extra_compilations_are_enabled = true;
         let start_cancellation_token = self.program_cancellation_token.child_token();
         let schedule = if let Some(ai) = self.ai {
             start_with_ai(
-                &self.args,
+                &common_args,
                 ai,
                 &mut scheduler,
                 initial_schedule,
@@ -129,10 +130,10 @@ impl Orchestrator for StaticParrallelPortfolio {
         } else {
             compilation_manager.disable_extra_compilations().await;
             extra_compilations_are_enabled = false;
-            start_without_ai(&self.args, &mut scheduler, initial_schedule).await
+            start_without_ai(&common_args, &mut scheduler, initial_schedule).await
         }?;
 
-        let restart_interval = Duration::from_secs(self.args.restart_interval);
+        let restart_interval = Duration::from_secs(common_args.restart_interval);
         // Restart loop, where it share bounds. It runs forever until it finds a solution, where it will then be cancelled by the cancellation token.
         loop {
             tokio::select! {

@@ -27,7 +27,7 @@ pub enum Command {
 #[derive(clap::Args, Debug, Clone)]
 pub struct StaticArgs {
     #[command(flatten)]
-    pub common_args: CommonArgs,
+    pub common: CommonArgs,
 }
 
 #[derive(clap::Args, Debug, Clone)]

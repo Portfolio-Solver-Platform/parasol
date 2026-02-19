@@ -19,7 +19,6 @@ mod solvers;
 mod static_schedule;
 
 use std::process::exit;
-use std::sync::Arc;
 
 use crate::args::{Cli, Command, CommonArgs};
 use crate::backup_solvers::run_backup_solver;
@@ -47,11 +46,11 @@ async fn main() {
             }
         }
         Command::Static(args) => {
-            let common_args = Arc::new(args.common_args);
+            let common_args = args.common.clone();
 
             let orchestrator_result =
                 orchestrator::static_parallel_portfolio::StaticParrallelPortfolio::new(
-                    Arc::clone(&common_args),
+                    args,
                     program_cancellation_token.clone(),
                     suspend_and_resume_signal_rx,
                 )
