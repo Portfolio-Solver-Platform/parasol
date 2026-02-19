@@ -27,9 +27,6 @@ pub enum Command {
 #[derive(clap::Args, Debug, Clone)]
 pub struct StaticArgs {
     #[command(flatten)]
-    pub common: CommonArgs,
-
-    #[command(flatten)]
     pub ai: AiArgs,
 
     // === Timing ===
@@ -71,6 +68,9 @@ pub struct StaticArgs {
     /// Whether to discover solvers at startup or load from a pre-generated cache. Loading from cache is faster.
     #[arg(long, default_value = "discover", help_heading = "Execution")]
     pub solver_config_mode: SolverConfigMode,
+
+    #[command(flatten)]
+    pub common: CommonArgs,
 }
 
 const AI_HELP_HEADING: &str = "AI Configuration";
