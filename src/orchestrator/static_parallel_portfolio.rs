@@ -40,7 +40,7 @@ pub enum Error {
     UnpackAi(#[from] UnpackAiError),
 }
 
-pub struct StaticParrallelPortfolio {
+pub struct StaticParallelPortfolio {
     args: StaticArgs,
     ai: Option<Box<dyn Ai + Send>>,
     config: Config,
@@ -58,7 +58,7 @@ impl From<Error> for crate::orchestrator::Error {
     }
 }
 
-impl StaticParrallelPortfolio {
+impl StaticParallelPortfolio {
     pub async fn new(
         args: StaticArgs,
         program_cancellation_token: CancellationToken,
@@ -83,9 +83,9 @@ impl StaticParrallelPortfolio {
     }
 }
 
-impl Orchestrator for StaticParrallelPortfolio {
+impl Orchestrator for StaticParallelPortfolio {
     async fn run(self) -> Result<(), crate::orchestrator::Error> {
-        let common_args = Arc::new(self.args.common);
+        let common_args = Arc::new(self.args.common.clone());
         let compilation_priority = get_compilation_priority(&common_args)
             .await
             .map_err(Error::from)?;
@@ -111,14 +111,14 @@ impl Orchestrator for StaticParrallelPortfolio {
             .await
             .map_err(Error::from)?;
 
-        let static_runtime = Duration::from_secs(common_args.static_runtime);
+        let static_runtime = Duration::from_secs(self.args.static_runtime);
         let mut timer = sleep(static_runtime);
 
         let mut extra_compilations_are_enabled = true;
         let start_cancellation_token = self.program_cancellation_token.child_token();
         let schedule = if let Some(ai) = self.ai {
             start_with_ai(
-                &common_args,
+                &self.args,
                 ai,
                 &mut scheduler,
                 initial_schedule,
@@ -130,10 +130,10 @@ impl Orchestrator for StaticParrallelPortfolio {
         } else {
             compilation_manager.disable_extra_compilations().await;
             extra_compilations_are_enabled = false;
-            start_without_ai(&common_args, &mut scheduler, initial_schedule).await
+            start_without_ai(&self.args, &mut scheduler, initial_schedule).await
         }?;
 
-        let restart_interval = Duration::from_secs(common_args.restart_interval);
+        let restart_interval = Duration::from_secs(self.args.restart_interval);
         // Restart loop, where it share bounds. It runs forever until it finds a solution, where it will then be cancelled by the cancellation token.
         loop {
             tokio::select! {
@@ -163,7 +163,7 @@ impl Orchestrator for StaticParrallelPortfolio {
 }
 
 async fn start_with_ai(
-    args: &CommonArgs,
+    args: &StaticArgs,
     mut ai: Box<dyn Ai + Send>,
     scheduler: &mut Scheduler,
     initial_schedule: Portfolio,
@@ -179,7 +179,7 @@ async fn start_with_ai(
         tokio::join!(
             timeout(
                 feature_timeout_duration,
-                get_features(args, compilation_manager, cancellation_token.clone())
+                get_features(&args.common, compilation_manager, cancellation_token.clone())
             ),
             sleep(static_runtime_duration)
         )
@@ -215,7 +215,7 @@ async fn start_with_ai(
         }
         Err(_) => {
             logging::info!("Feature extraction timed out. Running timeout schedule");
-            timeout_schedule(args, cores).await?
+            timeout_schedule(&args.common, cores).await?
         }
     };
 
@@ -227,7 +227,7 @@ async fn start_with_ai(
 }
 
 async fn start_without_ai(
-    args: &CommonArgs,
+    args: &StaticArgs,
     scheduler: &mut Scheduler,
     schedule: Portfolio,
 ) -> Result<Portfolio, Error> {

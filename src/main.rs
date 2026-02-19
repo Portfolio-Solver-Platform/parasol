@@ -49,7 +49,7 @@ async fn main() {
             let common_args = args.common.clone();
 
             let orchestrator_result =
-                orchestrator::static_parallel_portfolio::StaticParrallelPortfolio::new(
+                orchestrator::static_parallel_portfolio::StaticParallelPortfolio::new(
                     args,
                     program_cancellation_token.clone(),
                     suspend_and_resume_signal_rx,

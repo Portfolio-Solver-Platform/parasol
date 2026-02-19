@@ -28,6 +28,21 @@ pub enum Command {
 pub struct StaticArgs {
     #[command(flatten)]
     pub common: CommonArgs,
+
+    // === Timing ===
+    /// The minimum time (in seconds) the initial static schedule will be run before using the AI's schedule
+    #[arg(long, default_value = "5", help_heading = "Timing")]
+    pub static_runtime: u64,
+
+    /// Number of seconds between how often the solvers are restarted to share the upper bound found
+    #[arg(long, default_value = "5", help_heading = "Timing")]
+    pub restart_interval: u64,
+
+    /// The time (in seconds) before we skip extracting the features and stop using the static schedule, and instead use the timeout schedule.
+    /// Warning: if static_runtime set higher than feature_timeout, then static_runtime will be used instead.
+    #[arg(long, default_value = "10", help_heading = "Timing")]
+    pub feature_timeout: u64,
+
 }
 
 #[derive(clap::Args, Debug, Clone)]
@@ -95,20 +110,6 @@ pub struct CommonArgs {
     /// Whether it should kill solvers if you are nearing the system memory limit
     #[arg(long, help_heading = "Execution")]
     pub enforce_memory: bool,
-
-    // === Timing ===
-    /// The minimum time (in seconds) the initial static schedule will be run before using the AI's schedule
-    #[arg(long, default_value = "5", help_heading = "Timing")]
-    pub static_runtime: u64,
-
-    /// Number of seconds between how often the solvers are restarted to share the upper bound found
-    #[arg(long, default_value = "5", help_heading = "Timing")]
-    pub restart_interval: u64,
-
-    /// The time (in seconds) before we skip extracting the features and stop using the static schedule, and instead use the timeout schedule.
-    /// Warning: if static_runtime set higher than feature_timeout, then static_runtime will be used instead.
-    #[arg(long, default_value = "10", help_heading = "Timing")]
-    pub feature_timeout: u64,
 
     // === Paths ===
     #[command(flatten)]
