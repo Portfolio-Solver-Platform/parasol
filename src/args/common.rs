@@ -29,6 +29,9 @@ pub struct StaticArgs {
     #[command(flatten)]
     pub common: CommonArgs,
 
+    #[command(flatten)]
+    pub ai: AiArgs,
+
     // === Timing ===
     /// The minimum time (in seconds) the initial static schedule will be run before using the AI's schedule
     #[arg(long, default_value = "5", help_heading = "Timing")]
@@ -43,7 +46,58 @@ pub struct StaticArgs {
     #[arg(long, default_value = "10", help_heading = "Timing")]
     pub feature_timeout: u64,
 
+    /// The path to the static schedule file.
+    /// The file needs to be a CSV (without a header) in the format of `<solver>,<cores>`.
+    /// If not provided, a default static schedule will be used.
+    #[arg(long, help_heading = "Paths")]
+    pub static_schedule: Option<PathBuf>,
+
+    /// The path to the timeout schedule file. This schedule will be run if the compilation or the feature extraction takes too long.
+    /// The file needs to be a CSV (without a header) in the format of `<solver>,<cores>`.
+    /// If not provided, a default timeout schedule will be used.
+    #[arg(long, help_heading = "Paths")]
+    pub timeout_schedule: Option<PathBuf>,
+
+    /// Optional path to a compilation priority configuration CSV file.
+    /// When possible without a runtime cost, the problem model and data will be compiled for the
+    /// solvers in this file in the order they are given.
+    /// This may be useful for attempting to pre-compile the model for solvers that an AI might choose,
+    /// before the AI has decided on a portfolio.
+    /// The path should be to a text file with one solver ID per line.
+    /// Lines starting with # are treated as comments, and empty lines are ignored.
+    #[arg(long, help_heading = "Paths")]
+    pub compilation_priority: Option<PathBuf>,
+
+    /// Whether to discover solvers at startup or load from a pre-generated cache. Loading from cache is faster.
+    #[arg(long, default_value = "discover", help_heading = "Execution")]
+    pub solver_config_mode: SolverConfigMode,
 }
+
+const AI_HELP_HEADING: &str = "AI Configuration";
+#[derive(clap::Args, Debug, Clone)]
+pub struct AiArgs {
+    // === AI Configuration ===
+    /// The AI used to determine the solver schedule dynamically
+    #[arg(
+        long = "ai",
+        short = 'a',
+        value_enum,
+        default_value = "simple",
+        help_heading = AI_HELP_HEADING
+    )]
+    pub kind: Ai,
+
+    /// Configuration for the AI. This is only relevant when the AI documentation says
+    /// configuration should be added here.
+    /// The format is: <key1>=<value1>,<key2>=<value2>,...
+    #[arg(long = "ai-config", help_heading = AI_HELP_HEADING)]
+    pub config: Option<String>,
+
+    /// The ID of the solver that should be used for the MiniZinc to FlatZinc conversion for feature extraction.
+    #[arg(long, help_heading = AI_HELP_HEADING, default_value = crate::solvers::GECODE_ID)]
+    pub feature_extraction_solver_id: String,
+}
+
 
 #[derive(clap::Args, Debug, Clone)]
 pub struct CommonArgs {
@@ -53,23 +107,6 @@ pub struct CommonArgs {
 
     /// The MiniZinc data file corresponding to the model file
     pub data: Option<PathBuf>,
-
-    // === AI Configuration ===
-    /// The AI used to determine the solver schedule dynamically
-    #[arg(
-        long,
-        short = 'a',
-        value_enum,
-        default_value = "simple",
-        help_heading = "AI Configuration"
-    )]
-    pub ai: Ai,
-
-    /// Configuration for the AI. This is only relevant when the AI documentation says
-    /// configuration should be added here.
-    /// The format is: <key1>=<value1>,<key2>=<value2>,...
-    #[arg(long, help_heading = "AI Configuration")]
-    pub ai_config: Option<String>,
 
     // === Output ===
     #[arg(
@@ -99,14 +136,6 @@ pub struct CommonArgs {
     #[arg(long, help_heading = "Execution")]
     pub pin_java_solvers: bool,
 
-    /// The ID of the solver that should be used for the MiniZinc to FlatZinc conversion for feature extraction.
-    #[arg(long, help_heading = "Execution", default_value = crate::solvers::GECODE_ID)]
-    pub feature_extraction_solver_id: String,
-
-    /// Whether to discover solvers at startup or load from a pre-generated cache. Loading from cache is faster.
-    #[arg(long, default_value = "discover", help_heading = "Execution")]
-    pub solver_config_mode: SolverConfigMode,
-
     /// Whether it should kill solvers if you are nearing the system memory limit
     #[arg(long, help_heading = "Execution")]
     pub enforce_memory: bool,
@@ -114,26 +143,6 @@ pub struct CommonArgs {
     // === Paths ===
     #[command(flatten)]
     pub minizinc: MiniZincArgs,
-
-    /// The path to the static schedule file.
-    /// The file needs to be a CSV (without a header) in the format of `<solver>,<cores>`.
-    /// If not provided, a default static schedule will be used.
-    #[arg(long, help_heading = "Paths")]
-    pub static_schedule: Option<PathBuf>,
-
-    /// The path to the timeout schedule file. This schedule will be run if the compilation or the feature extraction takes too long
-    /// The file needs to be a CSV (without a header) in the format of `<solver>,<cores>`.
-    /// If not provided, a default timeout schedule will be used.
-    #[arg(long, help_heading = "Paths")]
-    pub timeout_schedule: Option<PathBuf>,
-
-    /// Optional path to a compilation priority configuration CSV file.
-    /// When possible without a runtime cost, the problem model and data will be compiled for the
-    /// solvers in this file in the order they are given.
-    /// The path should be to a text file with one solver ID per line.
-    /// Lines starting with # are treated as comments, and empty lines are ignored.
-    #[arg(long, help_heading = "Paths")]
-    pub compilation_priority: Option<PathBuf>,
 
     // === Debugging ===
     #[arg(
@@ -161,7 +170,7 @@ pub struct BuildSolverCacheArgs {
 
 #[derive(Debug, Clone, ValueEnum)]
 pub enum Ai {
-    /// Dont use an AI, aka. only use the static schedule
+    /// Don't use an AI, aka. only use the static schedule
     None,
     /// Use the simple AI
     Simple,
@@ -232,15 +241,13 @@ pub fn parse_compilation_priority(s: &str) -> SolverPriority {
 }
 
 pub fn unpack_ai(
-    ai: &Ai,
-    config: Option<&str>,
-    verbosity: Verbosity,
+    ai: &AiArgs
 ) -> Result<Option<Box<dyn crate::ai::Ai + Send>>, UnpackAiError> {
-    Ok(match ai {
+    Ok(match ai.kind {
         Ai::None => None,
         Ai::Simple => Some(Box::new(SimpleAi {})),
         Ai::CommandLine => {
-            let ai_config = parse_ai_config(config);
+            let ai_config = parse_ai_config(ai.config.as_deref());
             let Some(command) = ai_config.get("command") else {
                 return Err(UnpackAiError::CommandLineAiConfigMissing(
                     "command".to_owned(),
@@ -249,7 +256,6 @@ pub fn unpack_ai(
 
             Some(Box::new(crate::ai::commandline::Ai::new(
                 command.clone(),
-                verbosity,
             )))
         }
     })

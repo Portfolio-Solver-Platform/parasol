@@ -65,12 +65,12 @@ impl StaticParallelPortfolio {
         suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
     ) -> Result<Self, Error> {
         let solvers = Arc::new(
-            solver_config::load(&args.common.solver_config_mode, &args.common.minizinc.minizinc_exe).await,
+            solver_config::load(&args.solver_config_mode, &args.common.minizinc.minizinc_exe).await,
         );
 
         let config = Config::new(&solvers);
 
-        let ai = args::unpack_ai(&args.common.ai, args.common.ai_config.as_deref(), args.common.verbosity)?;
+        let ai = args::unpack_ai(&args.ai)?;
 
         Ok(Self {
             args,
@@ -86,7 +86,7 @@ impl StaticParallelPortfolio {
 impl Orchestrator for StaticParallelPortfolio {
     async fn run(self) -> Result<(), crate::orchestrator::Error> {
         let common_args = Arc::new(self.args.common.clone());
-        let compilation_priority = get_compilation_priority(&common_args)
+        let compilation_priority = get_compilation_priority(&self.args)
             .await
             .map_err(Error::from)?;
         let compilation_manager = Arc::new(CompilationScheduler::new(
@@ -107,7 +107,7 @@ impl Orchestrator for StaticParallelPortfolio {
 
         let (cores, initial_solver_cores) = get_cores(&common_args, self.ai.as_deref());
 
-        let initial_schedule = static_schedule(&common_args, initial_solver_cores)
+        let initial_schedule = static_schedule(&self.args, initial_solver_cores)
             .await
             .map_err(Error::from)?;
 
@@ -179,7 +179,7 @@ async fn start_with_ai(
         tokio::join!(
             timeout(
                 feature_timeout_duration,
-                get_features(&args.common, compilation_manager, cancellation_token.clone())
+                get_features(&args, compilation_manager, cancellation_token.clone())
             ),
             sleep(static_runtime_duration)
         )
@@ -215,7 +215,7 @@ async fn start_with_ai(
         }
         Err(_) => {
             logging::info!("Feature extraction timed out. Running timeout schedule");
-            timeout_schedule(&args.common, cores).await?
+            timeout_schedule(&args, cores).await?
         }
     };
 
@@ -265,15 +265,15 @@ fn get_cores(args: &CommonArgs, ai: Option<&(dyn Ai + Send)>) -> (usize, usize) 
 }
 
 async fn get_features(
-    args: &CommonArgs,
+    args: &StaticArgs,
     compilation_manager: Arc<CompilationScheduler>,
     token: CancellationToken,
 ) -> Result<Vec<f32>, Error> {
     compilation_manager
-        .start(args.feature_extraction_solver_id.clone(), 1)
+        .start(args.ai.feature_extraction_solver_id.clone(), 1)
         .await;
     let conversion = token
-        .run_until_cancelled(compilation_manager.wait_for(&args.feature_extraction_solver_id))
+        .run_until_cancelled(compilation_manager.wait_for(&args.ai.feature_extraction_solver_id))
         .await
         .ok_or(Error::Cancelled)??;
 
@@ -285,7 +285,7 @@ async fn get_features(
     }
 }
 
-async fn get_compilation_priority(args: &CommonArgs) -> tokio::io::Result<SolverPriority> {
+async fn get_compilation_priority(args: &StaticArgs) -> tokio::io::Result<SolverPriority> {
     if let Some(path) = &args.compilation_priority {
         args::read_compilation_priority(path).await
     } else {

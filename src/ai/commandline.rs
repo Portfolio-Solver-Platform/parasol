@@ -1,19 +1,17 @@
 use itertools::Itertools;
 
 use super::{Error, Features, Result};
-use crate::{args::Verbosity, logging, scheduler::Portfolio, static_schedule::parse_schedule};
+use crate::{logging, scheduler::Portfolio, static_schedule::parse_schedule};
 use std::process::Command;
 
 pub struct Ai {
     pub command_name: String,
-    pub verbosity: Verbosity,
 }
 
 impl Ai {
-    pub fn new(command_name: String, verbosity: Verbosity) -> Self {
+    pub fn new(command_name: String) -> Self {
         Self {
             command_name,
-            verbosity,
         }
     }
 }
@@ -32,9 +30,7 @@ impl super::Ai for Ai {
             ))
         })?;
 
-        if self.verbosity >= Verbosity::Error {
-            print_stderr(output.stderr);
-        }
+        log_stderr(output.stderr);
 
         if !output.status.success() {
             return Err(Error::Other(format!(
@@ -60,15 +56,17 @@ fn parse_output_as_schedule(output: Vec<u8>) -> Result<Portfolio> {
     parse_schedule(&output).map_err(|e| Error::Other(format!("Failed to parse as schedule: {e}")))
 }
 
-fn print_stderr(stderr: Vec<u8>) {
+fn log_stderr(stderr: Vec<u8>) {
     if stderr.is_empty() {
         return;
     }
 
-    match String::from_utf8(stderr) {
-        Ok(stderr) => stderr
-            .lines()
-            .for_each(|line| logging::error_msg!("AI error: {line}")),
-        Err(_) => logging::error_msg!("AI error: Failed to convert stderr to string"),
+    if logging::is_log_level(logging::LEVEL_ERROR) {
+        match String::from_utf8(stderr) {
+            Ok(stderr) => stderr
+                .lines()
+                .for_each(|line| logging::error_msg!("AI error: {line}")),
+            Err(_) => logging::error_msg!("AI error: Failed to convert stderr to string"),
+        }
     }
 }
