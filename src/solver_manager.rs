@@ -9,6 +9,8 @@ use crate::process_tree::{
 use crate::scheduler::ScheduleElement;
 use crate::solver_config::SolverInputType;
 use crate::solver_output::{Output, Solution, Status};
+#[cfg(target_os = "linux")]
+use crate::solvers;
 use crate::{logging, mzn_to_fzn, solver_config, solver_output};
 use async_tempfile::TempFile;
 use futures::future::join_all;
