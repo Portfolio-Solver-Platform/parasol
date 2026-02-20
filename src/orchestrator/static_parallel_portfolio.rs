@@ -64,9 +64,7 @@ impl StaticParallelPortfolio {
         program_cancellation_token: CancellationToken,
         suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
     ) -> Result<Self, Error> {
-        let solvers = Arc::new(
-            solver_config::load(&args.solver_config_mode, &args.common.minizinc.minizinc_exe).await,
-        );
+        let solvers = Arc::new(solver_config::load_from_args(&args.common).await);
 
         let config = Config::new(&solvers);
 
@@ -86,13 +84,12 @@ impl StaticParallelPortfolio {
 impl Orchestrator for StaticParallelPortfolio {
     async fn run(self) -> Result<(), crate::orchestrator::Error> {
         let common_args = Arc::new(self.args.common.clone());
-        let compilation_priority = get_compilation_priority(&self.args)
-            .await
-            .map_err(Error::from)?;
-        let compilation_manager = Arc::new(CompilationScheduler::new(
-            Arc::clone(&common_args),
-            compilation_priority,
-        ));
+
+        let compilation_manager = Arc::new(
+            CompilationScheduler::from_args(Arc::clone(&common_args))
+                .await
+                .map_err(Error::from)?,
+        );
 
         let mut scheduler = Scheduler::new(
             Arc::clone(&common_args),
@@ -282,13 +279,5 @@ async fn get_features(
             result.map_err(Error::from)
         },
         _ = token.cancelled() => Err(Error::Cancelled)
-    }
-}
-
-async fn get_compilation_priority(args: &StaticArgs) -> tokio::io::Result<SolverPriority> {
-    if let Some(path) = &args.compilation_priority {
-        args::read_compilation_priority(path).await
-    } else {
-        Ok(SolverPriority::empty())
     }
 }

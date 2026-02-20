@@ -3,13 +3,13 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
-use crate::args::SolverConfigMode;
+use crate::args::{CommonArgs, SolverConfigMode};
 use crate::logging;
 
 pub mod cache;
 pub mod discovery;
 
-pub async fn load(mode: &SolverConfigMode, minizinc_exe: &Path) -> Solvers {
+async fn load(mode: &SolverConfigMode, minizinc_exe: &Path) -> Solvers {
     match mode {
         SolverConfigMode::Cache => match cache::load_solvers_config() {
             Ok(solvers) => return solvers,
@@ -27,6 +27,10 @@ pub async fn load(mode: &SolverConfigMode, minizinc_exe: &Path) -> Solvers {
         logging::error!(e.into());
         Solvers::empty()
     })
+}
+
+pub async fn load_from_args(args: &CommonArgs) -> Solvers {
+    load(&args.solver_config_mode, &args.minizinc.minizinc_exe).await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
