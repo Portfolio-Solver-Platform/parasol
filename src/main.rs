@@ -23,7 +23,6 @@ use std::process::exit;
 use crate::args::{Cli, Command, CommonArgs};
 use crate::backup_solvers::run_backup_solver;
 use crate::orchestrator::Orchestrator;
-// use crate::orchestrator::StaticParrallelPortfolio;
 use crate::signal_handler::{SignalEvent, spawn_signal_handler};
 use clap::Parser;
 use tokio_util::sync::CancellationToken;
