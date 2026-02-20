@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::args::{StaticArgs, UnpackAiError};
 use crate::config::Config;
 use crate::fzn_to_features::{self, fzn_to_features};
-use crate::mzn_to_fzn::compilation_scheduler::{CompilationScheduler, SolverPriority};
+use crate::mzn_to_fzn::compilation_scheduler::CompilationScheduler;
 use crate::orchestrator::Orchestrator;
 use crate::scheduler::{Portfolio, Scheduler};
 use crate::signal_handler::SignalEvent;
@@ -176,7 +176,7 @@ async fn start_with_ai(
         tokio::join!(
             timeout(
                 feature_timeout_duration,
-                get_features(&args, compilation_manager, cancellation_token.clone())
+                get_features(args, compilation_manager, cancellation_token.clone())
             ),
             sleep(static_runtime_duration)
         )
@@ -212,7 +212,7 @@ async fn start_with_ai(
         }
         Err(_) => {
             logging::info!("Feature extraction timed out. Running timeout schedule");
-            timeout_schedule(&args, cores).await?
+            timeout_schedule(args, cores).await?
         }
     };
 

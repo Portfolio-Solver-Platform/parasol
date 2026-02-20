@@ -91,7 +91,7 @@ async fn run(
             logging::error_msg!("Portfolio solver failed, falling back to backup solver");
             tokio::select! {
                 _ = program_cancellation_token.cancelled() => {},
-                result = run_backup_solver(&common_args, cores) => {
+                result = run_backup_solver(common_args, cores) => {
                     if let Err(e) = result {
                         logging::error!(e.into());
                         exit(1);
