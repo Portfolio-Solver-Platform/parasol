@@ -2,7 +2,7 @@
   "name" : "parasol",
   "version": "1.0",
   "id": "org.psp.parasol",
-  "executable": ["${EXE_PATH}", "run"],
+  "executable": ["${EXE_PATH}", "static"],
   "tags": ["portfolio"],
   "stdFlags": ["-p"],
   "extraFlags": [

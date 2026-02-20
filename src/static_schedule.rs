@@ -1,19 +1,19 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    args::{RunArgs, Verbosity},
+    args::{StaticArgs, Verbosity},
     logging,
     scheduler::{Portfolio, SolverInfo},
     solvers,
 };
 
-pub async fn static_schedule(args: &RunArgs, cores: usize) -> Result<Portfolio> {
+pub async fn static_schedule(args: &StaticArgs, cores: usize) -> Result<Portfolio> {
     let schedule = match args.static_schedule.as_ref() {
         Some(path) => get_schedule_from_file(path).await?,
         None => default_schedule(cores),
     };
 
-    if args.verbosity >= Verbosity::Warning {
+    if args.common.verbosity >= Verbosity::Warning {
         let schedule_cores = schedule_cores(&schedule);
         if schedule_cores != cores {
             logging::warning!(
@@ -25,13 +25,13 @@ pub async fn static_schedule(args: &RunArgs, cores: usize) -> Result<Portfolio> 
     Ok(schedule)
 }
 
-pub async fn timeout_schedule(args: &RunArgs, cores: usize) -> Result<Portfolio> {
+pub async fn timeout_schedule(args: &StaticArgs, cores: usize) -> Result<Portfolio> {
     let schedule = match args.timeout_schedule.as_ref() {
         Some(path) => get_schedule_from_file(path).await?,
         None => default_schedule(cores),
     };
 
-    if args.verbosity >= Verbosity::Warning {
+    if args.common.verbosity >= Verbosity::Warning {
         let schedule_cores = schedule_cores(&schedule);
         if schedule_cores != cores {
             logging::warning!(

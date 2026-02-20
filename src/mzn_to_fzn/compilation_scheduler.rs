@@ -4,7 +4,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::compilation_executor::CompilationExecutor;
 use crate::{
-    args::RunArgs,
+    args::CommonArgs,
     is_cancelled::IsErrorCancelled,
     logging,
     mzn_to_fzn::compilation_executor::{CompilationStatus, WaitForResult},
@@ -21,7 +21,7 @@ pub struct CompilationScheduler {
 }
 
 impl CompilationScheduler {
-    pub fn new(args: Arc<RunArgs>, compilation_priorities: SolverPriority) -> Self {
+    fn new(args: Arc<CommonArgs>, compilation_priorities: SolverPriority) -> Self {
         let queue = State::from_vec(compilation_priorities);
         let cancellation_token = CancellationToken::new();
         Self {
@@ -31,6 +31,22 @@ impl CompilationScheduler {
             )),
             state: Arc::new(RwLock::new(queue)),
             cancellation_token,
+        }
+    }
+
+    pub async fn from_args(args: Arc<CommonArgs>) -> tokio::io::Result<Self> {
+        let compilation_priority = Self::get_compilation_priority(&args).await?;
+        Ok(CompilationScheduler::new(
+            Arc::clone(&args),
+            compilation_priority,
+        ))
+    }
+
+    async fn get_compilation_priority(args: &CommonArgs) -> tokio::io::Result<SolverPriority> {
+        if let Some(path) = &args.compilation_priority {
+            crate::args::read_compilation_priority(path).await
+        } else {
+            Ok(SolverPriority::empty())
         }
     }
 

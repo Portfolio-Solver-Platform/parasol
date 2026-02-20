@@ -4,7 +4,7 @@ use predicates::prelude::predicate::str::contains; // Used for string matching
 fn command() -> Command {
     let path = assert_cmd::cargo::cargo_bin!("parasol");
     let mut cmd = Command::new(path);
-    cmd.arg("run");
+    cmd.arg("static");
     cmd
 }
 
