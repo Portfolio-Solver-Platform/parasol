@@ -127,14 +127,35 @@ impl Scheduler {
             .await?,
         );
 
+        let memory_limit = std::env::var("MEMORY_LIMIT")
+            .ok()
+            .and_then(|val| val.parse::<u64>().ok())
+            .map(|mib| mib * 1024 * 1024)
+            .unwrap_or(0);
+
+        let debug_verbosity = args.verbosity;
+
+        let state = Arc::new(Mutex::new(State {
+            running_solvers: HashMap::new(),
+            suspended_solvers: HashMap::new(),
+            system: System::new_all(),
+            memory_limit,
+            next_solver_id: 0,
+            prev_objective: None,
+            memory_threshold: config.memory_threshold,
+            debug_verbosity,
+        }));
+
         let solver_manager_clone = Arc::clone(&solver_manager);
         let scheduler_cancellation_token_clone = scheduler_cancellation_token.clone();
+        let state_clone = Arc::clone(&state);
         tokio::spawn(async move {
             loop {
                 tokio::select! {
                     _ = scheduler_cancellation_token_clone.cancelled() => break,
                     event = suspend_and_resume_signal_rx.recv() => {
                         let Some(event) = event else { break };
+                        let _state_guard = state_clone.lock().await; // lock so we are in a safe state when suspending or resuming solvers.
                         match event {
                             SignalEvent::Suspend => {
                                 let res = solver_manager_clone.suspend_all_solvers().await;
@@ -156,25 +177,6 @@ impl Scheduler {
                 }
             }
         });
-
-        let memory_limit = std::env::var("MEMORY_LIMIT")
-            .ok()
-            .and_then(|val| val.parse::<u64>().ok())
-            .map(|mib| mib * 1024 * 1024)
-            .unwrap_or(0);
-
-        let debug_verbosity = args.verbosity;
-
-        let state = Arc::new(Mutex::new(State {
-            running_solvers: HashMap::new(),
-            suspended_solvers: HashMap::new(),
-            system: System::new_all(),
-            memory_limit,
-            next_solver_id: 0,
-            prev_objective: None,
-            memory_threshold: config.memory_threshold,
-            debug_verbosity,
-        }));
 
         let state_clone = Arc::clone(&state);
         let solver_manager_clone = Arc::clone(&solver_manager);
