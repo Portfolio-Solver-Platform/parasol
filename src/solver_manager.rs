@@ -707,17 +707,28 @@ impl SolverManager {
         signals: Vec<Signal>,
         ids: &[u64],
         solver_processes: tokio::sync::MutexGuard<'_, HashMap<u64, SolverProcess>>,
-    ) -> std::result::Result<(), Vec<Error>> {
+    ) -> std::result::Result<(), Vec<(Error, u64)>> {
         let futures = ids.iter().map(async |id| {
             let pid = match solver_processes.get(id) {
                 Some(state) => state.pid,
-                None => return Err(Error::InvalidSolver(format!("Solver {id} not running"))),
+                None => {
+                    return (
+                        Err(Error::InvalidSolver(format!("Solver {id} not running"))),
+                        id,
+                    );
+                }
             };
-            send_signals_to_process_tree(pid, signals.clone())
-                .map_err(|e| Error::InvalidSolver(format!("Failed to send signals: {}", e)))
+            (
+                send_signals_to_process_tree(pid, signals.clone())
+                    .map_err(|e| Error::InvalidSolver(format!("Failed to send signals: {}", e))),
+                id,
+            )
         });
         let results = join_all(futures).await;
-        let errors: Vec<Error> = results.into_iter().filter_map(|res| res.err()).collect();
+        let errors: Vec<(Error, u64)> = results
+            .into_iter()
+            .filter_map(|(res, id)| res.err().map(|e| (e, *id)))
+            .collect();
 
         if errors.is_empty() {
             Ok(())
@@ -730,7 +741,7 @@ impl SolverManager {
     async fn send_signals_to_all_solvers(
         solver_processes: Arc<Mutex<HashMap<u64, SolverProcess>>>,
         signals: Vec<Signal>,
-    ) -> std::result::Result<(), Vec<Error>> {
+    ) -> std::result::Result<(), Vec<(Error, u64)>> {
         let solvers_guard = solver_processes.lock().await;
         let ids: Vec<u64> = { solvers_guard.keys().cloned().collect() };
         Self::send_signals_to_solvers(signals, &ids, solvers_guard).await
@@ -742,13 +753,13 @@ impl SolverManager {
         Self::send_signals_to_solver(vec![Signal::SIGSTOP], id, solvers_guard).await
     }
 
-    pub async fn suspend_solvers(&self, ids: &[u64]) -> std::result::Result<(), Vec<Error>> {
+    pub async fn suspend_solvers(&self, ids: &[u64]) -> std::result::Result<(), Vec<(Error, u64)>> {
         let solvers_guard = self.solver_processes.lock().await;
         Self::send_signals_to_solvers(vec![Signal::SIGSTOP], ids, solvers_guard).await
     }
 
     #[allow(dead_code)]
-    pub async fn suspend_all_solvers(&self) -> std::result::Result<(), Vec<Error>> {
+    pub async fn suspend_all_solvers(&self) -> std::result::Result<(), Vec<(Error, u64)>> {
         Self::send_signals_to_all_solvers(Arc::clone(&self.solver_processes), vec![Signal::SIGSTOP])
             .await
     }
@@ -759,13 +770,13 @@ impl SolverManager {
         Self::send_signals_to_solver(vec![Signal::SIGCONT], id, solvers_guard).await
     }
 
-    pub async fn resume_solvers(&self, ids: &[u64]) -> std::result::Result<(), Vec<Error>> {
+    pub async fn resume_solvers(&self, ids: &[u64]) -> std::result::Result<(), Vec<(Error, u64)>> {
         let solvers_guard = self.solver_processes.lock().await;
         Self::send_signals_to_solvers(vec![Signal::SIGCONT], ids, solvers_guard).await
     }
 
     #[allow(dead_code)]
-    pub async fn resume_all_solvers(&self) -> std::result::Result<(), Vec<Error>> {
+    pub async fn resume_all_solvers(&self) -> std::result::Result<(), Vec<(Error, u64)>> {
         Self::send_signals_to_all_solvers(Arc::clone(&self.solver_processes), vec![Signal::SIGCONT])
             .await
     }
@@ -781,7 +792,7 @@ impl SolverManager {
     async fn _stop_solvers(
         solver_processes: Arc<Mutex<HashMap<u64, SolverProcess>>>,
         ids: &[u64],
-    ) -> std::result::Result<(), Vec<Error>> {
+    ) -> std::result::Result<(), Vec<(Error, u64)>> {
         let mut results = Vec::new();
         {
             let mut map = solver_processes.lock().await;
@@ -790,7 +801,11 @@ impl SolverManager {
             }
         };
 
-        let errors: Vec<Error> = results.into_iter().filter_map(|res| res.err()).collect();
+        let errors: Vec<(Error, u64)> = ids
+            .iter()
+            .zip(results)
+            .filter_map(|(id, res)| res.err().map(|e| (e, *id)))
+            .collect();
 
         if errors.is_empty() {
             Ok(())
@@ -825,7 +840,7 @@ impl SolverManager {
         Self::_stop_solver(Arc::clone(&self.solver_processes), id).await
     }
 
-    pub async fn stop_solvers(&self, ids: &[u64]) -> std::result::Result<(), Vec<Error>> {
+    pub async fn stop_solvers(&self, ids: &[u64]) -> std::result::Result<(), Vec<(Error, u64)>> {
         Self::_stop_solvers(Arc::clone(&self.solver_processes), ids).await
     }
 

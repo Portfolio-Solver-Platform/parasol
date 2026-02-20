@@ -138,16 +138,18 @@ impl Scheduler {
                             SignalEvent::Suspend => {
                                 let res = solver_manager_clone.suspend_all_solvers().await;
                                 if let Err(e) = res {
+                                    let (errors, _failed_solvers): (Vec<_>, Vec<_>) = e.into_iter().unzip();
                                     logging::error_msg!("errors when suspending solvers");
-                                    logging::errors(e);
+                                    logging::errors(errors);
                                 }
                                 let _ = nix::sys::signal::raise(nix::sys::signal::Signal::SIGSTOP).map_err(|error_number| logging::error_msg!("failed to suspend terminal. Error number was {error_number}"));
                             }
                             SignalEvent::Resume => {
                                 let result = solver_manager_clone.resume_all_solvers().await;
                                 if let Err(e) = result {
+                                    let (errors, _failed_solvers): (Vec<_>, Vec<_>) = e.into_iter().unzip();
                                     logging::error_msg!("errors when resuming solvers");
-                                    logging::errors(e);
+                                    logging::errors(errors);
                                 }
                             },
                         };
@@ -411,40 +413,7 @@ impl Scheduler {
         let new_objective = self.solver_manager.get_best_objective().await;
 
         if new_objective != state.prev_objective {
-            logging::info!(
-                "apply function objectives: old objective: {:?}, new: {:?}",
-                state.prev_objective,
-                new_objective
-            );
-
-            state.prev_objective = new_objective;
-
-            if let Some(obj) = new_objective {
-                let solver_objectives = self.solver_manager.get_solver_objectives().await;
-
-                let objective_type = self.solver_manager.objective_type();
-                logging::info!("{:?}", solver_objectives);
-                let to_restart: Vec<u64> = solver_objectives
-                    .iter()
-                    .filter(|(_, best)| objective_type.is_better(**best, obj))
-                    .map(|(id, _)| *id)
-                    .collect();
-
-                if !to_restart.is_empty() {
-                    logging::info!("solver objectives: {:?}", solver_objectives);
-                    logging::info!("solver to restart {:?}", to_restart);
-                }
-
-                if let Err(e) = self.solver_manager.stop_solvers(&to_restart).await {
-                    logging::error_msg!("failed to stop solvers for restart");
-                    logging::errors(e);
-                }
-
-                for id in &to_restart {
-                    state.running_solvers.remove(id);
-                    state.suspended_solvers.remove(id);
-                }
-            }
+            Self::handle_stale_objective(&self.solver_manager, &mut state, new_objective).await;
         }
 
         let schedule = Self::assign_ids(portfolio, &mut state);
@@ -469,33 +438,111 @@ impl Scheduler {
             .suspend_solvers(&changes.to_suspend)
             .await
         {
-            logging::error_msg!("failed to suspend solvers");
-            logging::errors(e);
-            if let Err(e) = self.solver_manager.stop_solvers(&changes.to_suspend).await {
-                logging::error_msg!("failed to stop solvers after suspending failed");
-                logging::errors(e);
-            }
+            Self::handle_suspend_failure(&self.solver_manager, e).await;
         }
 
         if let Err(e) = self.solver_manager.resume_solvers(&changes.to_resume).await {
-            logging::error_msg!("failed to resume solvers");
-            logging::errors(e);
-            let mut resume_elements = Vec::new();
-            for schedule_elem in &schedule {
-                for resume_id in &changes.to_resume {
-                    if &schedule_elem.id == resume_id {
-                        resume_elements.push(schedule_elem.clone());
-                    }
-                }
-            }
-            self.solver_manager
-                .start_solvers(&resume_elements, apply_cancellation_token.0.clone())
-                .await;
+            Self::handle_resume_failure(
+                &self.solver_manager,
+                e,
+                schedule,
+                apply_cancellation_token.0.clone(),
+            )
+            .await;
         }
 
         self.solver_manager
             .start_solvers(&changes.to_start, apply_cancellation_token.0)
             .await;
+    }
+
+    async fn handle_stale_objective(
+        solver_manager: &Arc<SolverManager>,
+        state: &mut State,
+        new_objective: Option<ObjectiveValue>,
+    ) {
+        logging::info!(
+            "apply function objectives: old objective: {:?}, new: {:?}",
+            state.prev_objective,
+            new_objective
+        );
+
+        state.prev_objective = new_objective;
+
+        if let Some(obj) = new_objective {
+            let solver_objectives = solver_manager.get_solver_objectives().await;
+
+            let objective_type = solver_manager.objective_type();
+            logging::info!("{:?}", solver_objectives);
+            let to_restart: Vec<u64> = solver_objectives
+                .iter()
+                .filter(|(_, best)| objective_type.is_better(**best, obj))
+                .map(|(id, _)| *id)
+                .collect();
+
+            if !to_restart.is_empty() {
+                logging::info!("solver objectives: {:?}", solver_objectives);
+                logging::info!("solver to restart {:?}", to_restart);
+            }
+
+            if let Err(e) = solver_manager.stop_solvers(&to_restart).await {
+                logging::error_msg!("failed to stop solvers for restart");
+                let (errors, _): (Vec<_>, Vec<_>) = e.into_iter().unzip();
+                logging::errors(errors);
+            }
+
+            for id in &to_restart {
+                state.running_solvers.remove(id);
+                state.suspended_solvers.remove(id);
+            }
+        }
+    }
+
+    async fn handle_suspend_failure(solver_manager: &Arc<SolverManager>, e: Vec<(Error, u64)>) {
+        let (errors, failed_solvers): (Vec<_>, Vec<_>) = e.into_iter().unzip();
+        logging::error_msg!("failed to suspend solvers");
+        logging::errors(errors);
+        if let Err(e) = solver_manager.stop_solvers(&failed_solvers).await {
+            logging::error_msg!("failed to stop solvers after suspending failed");
+            let (errors, _): (Vec<_>, Vec<_>) = e.into_iter().unzip();
+            logging::errors(errors);
+        }
+    }
+
+    async fn handle_resume_failure(
+        solver_manager: &Arc<SolverManager>,
+        e: Vec<(Error, u64)>,
+        schedule: Schedule,
+        token: CancellationToken,
+    ) {
+        let (errors, failed_solvers): (Vec<_>, Vec<_>) = e.into_iter().unzip();
+        logging::error_msg!("failed to resume solvers. Trying to stop and start them again");
+        logging::errors(errors);
+
+        let still_running: Vec<u64> = if let Err(e) =
+            solver_manager.stop_solvers(&failed_solvers).await
+        {
+            let (errors, still_running): (Vec<_>, Vec<_>) = e.into_iter().unzip();
+            logging::error_msg!(
+                "failed to stop solvers when restarting the solvers, which is happening because resume solvers failed"
+            );
+            logging::errors(errors);
+            still_running
+        } else {
+            vec![]
+        };
+
+        let resume_elements: Vec<_> = schedule
+            .into_iter()
+            .filter(|schedule_elem| {
+                failed_solvers.contains(&schedule_elem.id)
+                    && !still_running.contains(&schedule_elem.id)
+            })
+            .collect();
+
+        // We cannot do anything further with the solvers that failed to stop here
+
+        solver_manager.start_solvers(&resume_elements, token).await;
     }
 
     fn assign_ids(
