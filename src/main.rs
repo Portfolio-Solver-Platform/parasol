@@ -30,6 +30,8 @@ use tokio_util::sync::CancellationToken;
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let cli = Cli::parse();
+    logging::init(cli.verbosity);
+
     let program_cancellation_token = CancellationToken::new();
     let suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent> =
         spawn_signal_handler(program_cancellation_token.clone());
@@ -71,8 +73,6 @@ async fn run(
     common_args: &CommonArgs,
     program_cancellation_token: CancellationToken,
 ) {
-    logging::init(common_args.verbosity);
-
     let result = match orchestrator {
         Ok(orchestrator) => orchestrator.run().await,
         Err(e) => Err(e),

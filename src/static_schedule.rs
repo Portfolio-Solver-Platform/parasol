@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    args::{StaticArgs, Verbosity},
+    args::StaticArgs,
     logging,
     scheduler::{Portfolio, SolverInfo},
     solvers,
@@ -13,7 +13,7 @@ pub async fn static_schedule(args: &StaticArgs, cores: usize) -> Result<Portfoli
         None => default_schedule(cores),
     };
 
-    if args.common.verbosity >= Verbosity::Warning {
+    if logging::is_log_level(logging::LEVEL_WARNING) {
         let schedule_cores = schedule_cores(&schedule);
         if schedule_cores != cores {
             logging::warning!(
@@ -31,7 +31,7 @@ pub async fn timeout_schedule(args: &StaticArgs, cores: usize) -> Result<Portfol
         None => default_schedule(cores),
     };
 
-    if args.common.verbosity >= Verbosity::Warning {
+    if logging::is_log_level(logging::LEVEL_WARNING) {
         let schedule_cores = schedule_cores(&schedule);
         if schedule_cores != cores {
             logging::warning!(

@@ -46,7 +46,7 @@ async fn run_mzn_to_fzn_cmd(
 
     let mut child = cmd.spawn().map_err(ConversionError::from)?;
 
-    if args.verbosity >= crate::args::Verbosity::Warning
+    if logging::is_log_level(logging::LEVEL_WARNING)
         && let Some(stderr) = child.stderr.take()
     {
         tokio::spawn(async move {
