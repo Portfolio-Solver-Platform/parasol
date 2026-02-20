@@ -10,9 +10,7 @@ pub struct Ai {
 
 impl Ai {
     pub fn new(command_name: String) -> Self {
-        Self {
-            command_name,
-        }
+        Self { command_name }
     }
 }
 
