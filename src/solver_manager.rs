@@ -335,6 +335,7 @@ impl SolverManager {
         minizinc_exe: &Path,
         solver_args: &HashMap<String, Vec<String>>,
         solver_processes: &Mutex<HashMap<u64, SolverProcess>>,
+        error_tx: &mpsc::UnboundedSender<SolverError>,
         #[cfg(target_os = "linux")] available_cores: &Arc<Mutex<BTreeSet<usize>>>,
         #[cfg(target_os = "linux")] pin_java_solvers: bool,
     ) -> PrepareResult {
@@ -357,13 +358,19 @@ impl SolverManager {
 
         let objective = *best_objective.read().await;
         let (fzn_final_path, fzn_guard) = if let Some(obj) = objective {
-            if let Ok(new_temp_file) = objective_inserter
+            match objective_inserter
                 .insert_objective(solver_name, conversion_paths.fzn(), &objective_type, obj)
                 .await
             {
-                (new_temp_file.file_path().to_path_buf(), Some(new_temp_file))
-            } else {
-                (conversion_paths.fzn().to_path_buf(), None)
+                Ok(new_temp_file) => (new_temp_file.file_path().to_path_buf(), Some(new_temp_file)),
+                Err(e) => {
+                    logging::error!(e.into());
+                    let _ = error_tx.send(SolverError {
+                        solver_name: solver_name.to_owned(),
+                        error: format!("failed to insert objective for solver '{solver_name}'"),
+                    });
+                    (conversion_paths.fzn().to_path_buf(), None)
+                }
             }
         } else {
             (conversion_paths.fzn().to_path_buf(), None)
@@ -477,6 +484,7 @@ impl SolverManager {
                 &minizinc_exe,
                 &solver_args,
                 &solver_processes,
+                &error_tx,
                 #[cfg(target_os = "linux")]
                 &available_cores,
                 #[cfg(target_os = "linux")]
