@@ -1,5 +1,5 @@
 use crate::{
-    args::{CommonArgs, Verbosity},
+    args::CommonArgs,
     config::Config,
     logging,
     model_parser::ObjectiveValue,
@@ -86,7 +86,6 @@ struct State {
     next_solver_id: u64,
     prev_objective: Option<ObjectiveValue>,
     memory_threshold: f64,
-    debug_verbosity: Verbosity,
 }
 
 pub struct Scheduler {
@@ -163,8 +162,6 @@ impl Scheduler {
             .map(|mib| mib * 1024 * 1024)
             .unwrap_or(0);
 
-        let debug_verbosity = args.verbosity;
-
         let state = Arc::new(Mutex::new(State {
             running_solvers: HashMap::new(),
             suspended_solvers: HashMap::new(),
@@ -173,7 +170,6 @@ impl Scheduler {
             next_solver_id: 0,
             prev_objective: None,
             memory_threshold: config.memory_threshold,
-            debug_verbosity,
         }));
 
         let state_clone = Arc::clone(&state);
@@ -460,7 +456,7 @@ impl Scheduler {
         .await;
         Self::apply_changes_to_state(&mut state, &changes);
 
-        if state.debug_verbosity >= Verbosity::Info
+        if logging::is_log_level(logging::LEVEL_INFO)
             && (!changes.to_start.is_empty()
                 || !changes.to_suspend.is_empty()
                 || !changes.to_resume.is_empty())

@@ -13,6 +13,17 @@ use crate::{ai::SimpleAi, logging, mzn_to_fzn::compilation_scheduler::SolverPrio
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
+
+    // === Debugging ===
+    #[arg(
+        long,
+        short = 'v',
+        value_enum,
+        default_value = "warning",
+        help_heading = "Debugging",
+        global = true
+    )]
+    pub verbosity: Verbosity,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -143,16 +154,6 @@ pub struct CommonArgs {
     // === Paths ===
     #[command(flatten)]
     pub minizinc: MiniZincArgs,
-
-    // === Debugging ===
-    #[arg(
-        long,
-        short = 'v',
-        value_enum,
-        default_value = "warning",
-        help_heading = "Debugging"
-    )]
-    pub verbosity: Verbosity,
 }
 
 #[derive(clap::Args, Debug, Clone)]
