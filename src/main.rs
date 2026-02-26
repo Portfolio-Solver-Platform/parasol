@@ -46,11 +46,11 @@ async fn main() {
                 exit(1);
             }
         }
-        Command::Static(args) => {
+        Command::Sso(args) => {
             let common_args = args.common.clone();
 
             let orchestrator_result =
-                orchestrator::static_parallel_portfolio::StaticParallelPortfolio::new(
+                orchestrator::single_selection::SingleSelection::new(
                     args,
                     program_cancellation_token.clone(),
                     suspend_and_resume_signal_rx,

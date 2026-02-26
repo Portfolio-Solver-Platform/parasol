@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::args::{StaticArgs, UnpackAiError};
+use crate::args::{SsoArgs, UnpackAiError};
 use crate::config::Config;
 use crate::fzn_to_features::{self, fzn_to_features};
 use crate::mzn_to_fzn::compilation_scheduler::CompilationScheduler;
@@ -40,8 +40,8 @@ pub enum Error {
     UnpackAi(#[from] UnpackAiError),
 }
 
-pub struct StaticParallelPortfolio {
-    args: StaticArgs,
+pub struct SingleSelection {
+    args: SsoArgs,
     ai: Option<Box<dyn Ai + Send>>,
     config: Config,
     solvers: Arc<solver_config::Solvers>,
@@ -58,9 +58,9 @@ impl From<Error> for crate::orchestrator::Error {
     }
 }
 
-impl StaticParallelPortfolio {
+impl SingleSelection {
     pub async fn new(
-        args: StaticArgs,
+        args: SsoArgs,
         program_cancellation_token: CancellationToken,
         suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
     ) -> Result<Self, Error> {
@@ -81,7 +81,7 @@ impl StaticParallelPortfolio {
     }
 }
 
-impl Orchestrator for StaticParallelPortfolio {
+impl Orchestrator for SingleSelection {
     async fn run(self) -> Result<(), crate::orchestrator::Error> {
         let common_args = Arc::new(self.args.common.clone());
 
@@ -160,7 +160,7 @@ impl Orchestrator for StaticParallelPortfolio {
 }
 
 async fn start_with_ai(
-    args: &StaticArgs,
+    args: &SsoArgs,
     mut ai: Box<dyn Ai + Send>,
     scheduler: &mut Scheduler,
     initial_schedule: Portfolio,
@@ -224,7 +224,7 @@ async fn start_with_ai(
 }
 
 async fn start_without_ai(
-    args: &StaticArgs,
+    args: &SsoArgs,
     scheduler: &mut Scheduler,
     schedule: Portfolio,
 ) -> Result<Portfolio, Error> {
@@ -262,7 +262,7 @@ fn get_cores(args: &CommonArgs, ai: Option<&(dyn Ai + Send)>) -> (usize, usize) 
 }
 
 async fn get_features(
-    args: &StaticArgs,
+    args: &SsoArgs,
     compilation_manager: Arc<CompilationScheduler>,
     token: CancellationToken,
 ) -> Result<Vec<f32>, Error> {
