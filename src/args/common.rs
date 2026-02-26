@@ -29,15 +29,15 @@ pub struct Cli {
 #[allow(clippy::large_enum_variant)]
 #[derive(clap::Subcommand, Debug, Clone)]
 pub enum Command {
-    /// Run with the static parallel portfolio orchestrator
-    Static(StaticArgs),
-    /// Build the solver config cache and exit
+    /// Run with the single-selection orchestrator (SSO).
+    Sso(SsoArgs),
+    /// Build the solver config cache and exit.
     BuildSolverCache(BuildSolverCacheArgs),
 }
 
 const ORCHESTRATOR_HEADING: &str = "Orchestrator";
 #[derive(clap::Args, Debug, Clone)]
-pub struct StaticArgs {
+pub struct SsoArgs {
     #[command(flatten)]
     pub ai: AiArgs,
 

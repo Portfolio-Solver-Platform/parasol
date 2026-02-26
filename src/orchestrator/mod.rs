@@ -1,4 +1,4 @@
-pub mod static_parallel_portfolio;
+pub mod single_selection;
 
 pub trait Orchestrator {
     async fn run(self) -> Result<(), Error>;
