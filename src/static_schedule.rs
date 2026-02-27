@@ -83,7 +83,7 @@ fn parse_schedule_line(line: &str) -> std::result::Result<SolverInfo, ParseError
 
 fn default_schedule(cores: usize) -> Portfolio {
     if cores <= 7 {
-        let solvers = vec![
+        let solvers = [
             SolverInfo::new(solvers::CP_SAT_ID.to_owned(), 1),
             SolverInfo::new(solvers::CHUFFED_ID.to_owned(), 1),
             SolverInfo::new(solvers::HUUB_ID.to_owned(), 1),
