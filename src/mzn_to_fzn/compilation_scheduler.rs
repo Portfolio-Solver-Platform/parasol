@@ -245,15 +245,6 @@ impl State {
             }
             Some(RunningCompilation::Extra(priority)) => (cores, Some(priority)),
             Some(RunningCompilation::Main(old_compilation)) => {
-                // TODO: If it was already a main compilation, then starting it again
-                // with more cores, should actually just add these cores plainly to the available
-                // cores. This is because if gecode is started with 1 cores for feature extraction,
-                // and it is also started for the static portfolio with 1 core, then
-                // we can start an extra compilation.
-                // In the running_compilations, however, gecode should be registered
-                // with two cores, because then when the compilation is stopped,
-                // it gets two cores removed from the available cores again.
-                // self.available_cores = self.available_cores.saturating_sub(old_compilation.cores);
                 (old_compilation.cores + cores, old_compilation.priority)
             }
         };
