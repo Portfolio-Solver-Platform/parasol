@@ -14,14 +14,14 @@ from discover import discover_problems
 
 PROBLEMS = [
     # --- Original problems ---
-    ("sudoku_fixed/sudoku_fixed.mzn", "sudoku_fixed/sudoku_p20.dzn"),
-    ("accap/accap.mzn", "accap/accap_instance6.dzn"),
-    ("rcpsp/rcpsp.mzn", "rcpsp/00.dzn"),
-    ("gbac/gbac.mzn", "gbac/UD2-gbac.dzn"),
-    ("amaze/amaze.mzn", "amaze/2012-03-08.dzn"),
-    ("bacp/bacp-1.mzn", None),
-    ("bacp/bacp-2.mzn", None),
-    ("steelmillslab/steelmillslab.mzn", "steelmillslab/bench_2_0.dzn"),
+    # ("sudoku_fixed/sudoku_fixed.mzn", "sudoku_fixed/sudoku_p20.dzn"),
+    # ("accap/accap.mzn", "accap/accap_instance6.dzn"),
+    # ("rcpsp/rcpsp.mzn", "rcpsp/00.dzn"),
+    # ("gbac/gbac.mzn", "gbac/UD2-gbac.dzn"),
+    # ("amaze/amaze.mzn", "amaze/2012-03-08.dzn"),
+    # ("bacp/bacp-1.mzn", None),
+    # ("bacp/bacp-2.mzn", None),
+    # ("steelmillslab/steelmillslab.mzn", "steelmillslab/bench_2_0.dzn"),
 
     # --- Stress tests (specifically designed to stress solvers) ---
     ("search_stress/search_stress.mzn", "search_stress/08_08.dzn"),  # Search stress
@@ -57,6 +57,7 @@ PROBLEMS = [
 
     # --- Classic puzzles ---
     ("mqueens/mqueens2.mzn", "mqueens/n13.dzn"),  # N-queens variant
+    
 ]
 
 
@@ -92,8 +93,9 @@ def resolve_schedules(args: list[str]) -> list[Path]:
     return list(dict.fromkeys(f.resolve() for f in files))
 
 
-def run_parasol(model: Path, data: Path | None, schedule: Path, cores: int,
-                timeout: int | None, solver: str, pin: bool) -> tuple[float, str | None, str, str]:
+def run_parasol(model: Path, data: Path | None, schedule: Path | None, cores: int,
+                timeout: int | None, solver: str, pin: bool, disable_restart_interval: bool,
+                ai_command: str | None = None) -> tuple[float, str | None, str, str]:
     cmd = []
     if timeout:
         cmd.extend(["timeout", str(timeout)])
@@ -103,16 +105,23 @@ def run_parasol(model: Path, data: Path | None, schedule: Path, cores: int,
     cmd.append(str(model))
     if data:
         cmd.append(str(data))
-    cmd.extend(["--static-schedule", str(schedule), "-p", str(cores), "--ai", "none", "--solver-config-mode", "cache"])
+    cmd.extend(["-p", str(cores), "--solver-config-mode", "cache"])
+    if schedule:
+        cmd.extend(["--static-schedule", str(schedule)])
+    if ai_command:
+        cmd.extend(["--ai", "command-line", "--ai-config", f"command={ai_command}", "--static-runtime", "0"])
+    else:
+        cmd.extend(["--ai", "none"])
     if pin:
         cmd.append("--pin-java-solvers")
-
+    if disable_restart_interval:
+        cmd.extend(["--static-runtime", "1000000000000"])
 
     start = time.perf_counter()
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True)
     elapsed_ms = (time.perf_counter() - start) * 1000
 
-    stdout = result.stdout
+    stdout = result.stdout.decode("utf-8", errors="replace")
 
     objectives = re.findall(r'_objective\s*=\s*(-?\d+);', stdout)
     objective = objectives[-1] if objectives else None
@@ -129,8 +138,9 @@ def run_parasol(model: Path, data: Path | None, schedule: Path, cores: int,
     return elapsed_ms, objective, status, stdout
 
 
-def run_benchmark(problems: list[tuple[Path, Path | None]], schedules: list[Path], cores: int,
-                  timeout: int | None, runs: int, solver: str, output: Path, pin: bool):
+def run_benchmark(problems: list[tuple[Path, Path | None]], schedules: list[Path | None], cores: int,
+                  timeout: int | None, runs: int, solver: str, output: Path, pin: bool, disable_restart_interval: bool,
+                  ai_command: str | None = None):
     output.parent.mkdir(parents=True, exist_ok=True)
 
     with open(output, "w", newline="") as f:
@@ -138,7 +148,8 @@ def run_benchmark(problems: list[tuple[Path, Path | None]], schedules: list[Path
         writer.writerow(["schedule", "problem", "name", "model", "time_ms", "objective", "optimal"])
 
         for schedule in schedules:
-            print(f"\nSchedule: {schedule.name}")
+            schedule_label = schedule.name if schedule else "ai"
+            print(f"\nSchedule: {schedule_label}")
 
             for model, data in problems:
                 problem = model.parent.name
@@ -149,8 +160,9 @@ def run_benchmark(problems: list[tuple[Path, Path | None]], schedules: list[Path
 
                 for run in range(runs):
                     kill_solvers()
-                    time_ms, objective, status, stdout = run_parasol(model, data, schedule, cores, timeout, solver, pin)
-                    writer.writerow([schedule.stem, problem, name, model_name, f"{time_ms:.0f}", objective or "", status])
+                    time_ms, objective, status, stdout = run_parasol(model, data, schedule, cores, timeout, solver, pin, disable_restart_interval, ai_command)
+                    schedule_stem = schedule.stem if schedule else "ai"
+                    writer.writerow([schedule_stem, problem, name, model_name, f"{time_ms:.0f}", objective or "", status])
                     f.flush()
                     short = "US" if status == "Unsat" else status[0]
                     print(f"{time_ms/1000:.1f}s({short}) ", end="", flush=True)
@@ -163,7 +175,7 @@ def run_benchmark(problems: list[tuple[Path, Path | None]], schedules: list[Path
 
 def main():
     parser = argparse.ArgumentParser(description="Benchmark Parasol static schedules")
-    parser.add_argument("schedules", nargs="+", help="Schedule CSV files or directories")
+    parser.add_argument("schedules", nargs="*", help="Schedule CSV files or directories")
     parser.add_argument("-p", "--cores", type=int, default=8)
     parser.add_argument("-t", "--timeout", type=int, default=None)
     parser.add_argument("-r", "--runs", type=int, default=3)
@@ -172,20 +184,31 @@ def main():
     parser.add_argument("--problems-path", type=Path, default=Path("/problems"))
     parser.add_argument("--discover", action="store_true", help="Discover problems from --problems-path instead of using hardcoded list")
     parser.add_argument("--pin", action="store_true", help="Pass --pin-java-solvers to the solver")
+    parser.add_argument("--disable-restart-interval", action="store_true", help="Pass --static-runtime 1000000000000 to the solver")
+    parser.add_argument("--ai-command", type=str, default=None, help="Path to AI command script (e.g. ./command-line-ai/svm.py)")
+    parser.add_argument("--start-from-instance", type=str, default=None)
     args = parser.parse_args()
 
-    schedules = resolve_schedules(args.schedules)
-    if not schedules:
+    if args.ai_command and args.disable_restart_interval:
+        print("Error: --ai-command and --disable-restart-interval both set --static-runtime and cannot be used together", file=sys.stderr)
+        sys.exit(1)
+
+    if not args.ai_command and not args.schedules:
+        print("Error: must provide either schedules or --ai-command (or both)", file=sys.stderr)
+        sys.exit(1)
+
+    schedules = resolve_schedules(args.schedules) if args.schedules else [None]
+    if args.schedules and not schedules:
         print("No schedule files found", file=sys.stderr)
         sys.exit(1)
 
     if args.discover:
-        problems = discover_problems(args.problems_path)
+        problems = discover_problems(args.problems_path, args.start_from_instance)
     else:
         problems = [(args.problems_path / m, args.problems_path / d if d else None) for m, d in PROBLEMS]
 
     print(f"Schedules: {len(schedules)}, Problems: {len(problems)}, Runs: {args.runs}")
-    run_benchmark(problems, schedules, args.cores, args.timeout, args.runs, args.solver, args.output, args.pin)
+    run_benchmark(problems, schedules, args.cores, args.timeout, args.runs, args.solver, args.output, args.pin, args.disable_restart_interval, args.ai_command)
 
 
 if __name__ == "__main__":
