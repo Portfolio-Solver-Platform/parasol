@@ -232,22 +232,35 @@ impl State {
     /// Precondition: The solver should be started.
     pub fn register_main_compilation(&mut self, solver: SolverId, cores: Cores) {
         logging::info!("registering main compilation for solver '{solver}' with cores '{cores}'");
-        self.used_cores += 1;
         self.available_cores += cores;
 
         let running_compilation = self.running_compilations.remove(&solver);
-        let priority = match running_compilation {
-            None => self.extra_compilations_queue.remove_by_solver_id(&solver),
-            Some(RunningCompilation::Extra(priority)) => Some(priority),
+        let (new_cores, priority) = match running_compilation {
+            None => {
+                self.used_cores += 1;
+                (
+                    cores,
+                    self.extra_compilations_queue.remove_by_solver_id(&solver),
+                )
+            }
+            Some(RunningCompilation::Extra(priority)) => (cores, Some(priority)),
             Some(RunningCompilation::Main(old_compilation)) => {
-                self.available_cores = self.available_cores.saturating_sub(old_compilation.cores);
-                old_compilation.priority
+                // TODO: If it was already a main compilation, then starting it again
+                // with more cores, should actually just add these cores plainly to the available
+                // cores. This is because if gecode is started with 1 cores for feature extraction,
+                // and it is also started for the static portfolio with 1 core, then
+                // we can start an extra compilation.
+                // In the running_compilations, however, gecode should be registered
+                // with two cores, because then when the compilation is stopped,
+                // it gets two cores removed from the available cores again.
+                // self.available_cores = self.available_cores.saturating_sub(old_compilation.cores);
+                (old_compilation.cores + cores, old_compilation.priority)
             }
         };
 
         self.running_compilations.insert(
             solver,
-            RunningCompilation::Main(MainCompilation::new(cores, priority)),
+            RunningCompilation::Main(MainCompilation::new(new_cores, priority)),
         );
     }
 
