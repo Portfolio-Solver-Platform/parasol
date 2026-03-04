@@ -167,7 +167,7 @@ impl Scheduler {
         let state = Arc::new(Mutex::new(State {
             running_solvers: HashMap::new(),
             suspended_solvers: HashMap::new(),
-            system: System::new_all(),
+            system: System::new(),
             memory_limit,
             next_solver_id: 0,
             prev_objective: None,
@@ -203,7 +203,7 @@ impl Scheduler {
     fn get_memory_usage(state: &mut State) -> (f64, f64) {
         state
             .system
-            .refresh_processes(sysinfo::ProcessesToUpdate::All, false);
+            .refresh_processes(sysinfo::ProcessesToUpdate::All, true);
         state.system.refresh_memory();
 
         let used = state.system.used_memory() as f64;

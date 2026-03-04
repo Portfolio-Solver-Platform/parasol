@@ -9,8 +9,6 @@ use crate::process_tree::{
 use crate::scheduler::ScheduleElement;
 use crate::solver_config::SolverInputType;
 use crate::solver_output::{Output, Solution, Status};
-#[cfg(target_os = "linux")]
-use crate::solvers;
 use crate::{logging, mzn_to_fzn, solver_config, solver_output};
 use async_tempfile::TempFile;
 use futures::future::join_all;
@@ -339,7 +337,7 @@ impl SolverManager {
         solver_processes: &Mutex<HashMap<u64, SolverProcess>>,
         error_tx: &mpsc::UnboundedSender<SolverError>,
         #[cfg(target_os = "linux")] available_cores: &Arc<Mutex<BTreeSet<usize>>>,
-        #[cfg(target_os = "linux")] pin_java_solvers: bool,
+        #[cfg(target_os = "linux")] pin_solvers: &[String],
     ) -> PrepareResult {
         mzn_to_fzn.start(solver_name.to_string(), cores).await;
 
@@ -425,9 +423,9 @@ impl SolverManager {
         #[allow(unused_mut)]
         let mut allocated_cores: Vec<usize> = Vec::new();
         #[cfg(target_os = "linux")]
-        let is_java_solver = solver_name == solvers::YUCK_ID || solver_name == solvers::CHOCO_ID;
+        let should_pin = pin_solvers.iter().any(|id| id == solver_name);
         #[cfg(target_os = "linux")]
-        if pin_java_solvers && is_java_solver {
+        if should_pin {
             match pin_solver_to_cores(pid, cores, available_cores).await {
                 Ok(cores) => allocated_cores = cores,
                 Err(e) => {
@@ -466,7 +464,7 @@ impl SolverManager {
         let elem = elem.clone();
         let current_solvers = Arc::clone(&self.current_solvers);
         #[cfg(target_os = "linux")]
-        let pin_java_solvers = self.args.pin_java_solvers;
+        let pin_solvers = self.args.pin_solvers.clone();
         let best_objective = Arc::clone(&self.best_objective);
 
         tokio::spawn(async move {
@@ -490,7 +488,7 @@ impl SolverManager {
                 #[cfg(target_os = "linux")]
                 &available_cores,
                 #[cfg(target_os = "linux")]
-                pin_java_solvers,
+                &pin_solvers,
             )
             .await;
 

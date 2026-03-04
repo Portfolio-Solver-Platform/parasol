@@ -8,10 +8,11 @@
   "extraFlags": [
     ["--ai", "The AI used to determine the solver schedule dynamically (none, simple, command-line)", "string", "simple"],
     ["--ai-config", "Configuration for the AI in format: <key1>=<value1>,<key2>=<value2>,...", "string", ""],
+    ["--feature-extraction-solver-id", "The ID of the solver used for MiniZinc to FlatZinc conversion for feature extraction", "string", "gecode"],
     ["--output-mode", "Output solutions in DZN format", "string", "dzn"],
     ["--output-objective", "Output the objective value as _objective for optimisation problems", "bool", ""],
-    ["--pin-java-solvers", "Pin the Java-based solvers (yuck, choco) to specific CPU cores", "bool", ""],
-    ["--ignore-search", "Enable free search for all solvers", "bool", ""],
+    ["--pin-solvers", "Comma-separated list of solver IDs to pin to dedicated CPU cores", "string", ""],
+    ["--enforce-memory", "Whether it should kill solvers if you are nearing the system memory limit", "bool", ""],
     ["--static-runtime", "Minimum time (in seconds) the initial static schedule will be run before using AI schedule", "int", "5"],
     ["--restart-interval", "Seconds between solver restarts to share the upper bound found", "int", "5"],
     ["--feature-timeout", "Time (in seconds) before skipping feature extraction and using timeout schedule", "int", "10"],
