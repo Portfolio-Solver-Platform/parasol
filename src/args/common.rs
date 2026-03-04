@@ -129,9 +129,11 @@ pub struct CommonArgs {
     #[arg(long, short = 'p', default_value = "2", help_heading = "Execution")]
     pub cores: usize,
 
-    /// Pin the java based solvers to specific CPU cores as the java runtime makes them use extra cpu. The current solvers it pins is yuck and choco. Note: this degrades the performance of the two solvers
-    #[arg(long, help_heading = "Execution")]
-    pub pin_java_solvers: bool,
+    /// Pin specific solvers to dedicated CPU cores. Provide a comma-separated list of solver IDs to pin.
+    /// This is useful for solvers whose runtimes use extra CPU (e.g. Java-based solvers like yuck, choco).
+    /// Note: pinning may degrade the performance of the pinned solvers.
+    #[arg(long, value_delimiter = ',', help_heading = "Execution")]
+    pub pin_solvers: Vec<String>,
 
     /// Whether it should kill solvers if you are nearing the system memory limit
     #[arg(long, help_heading = "Execution")]

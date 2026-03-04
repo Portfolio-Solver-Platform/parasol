@@ -113,7 +113,7 @@ def run_parasol(model: Path, data: Path | None, schedule: Path | None, cores: in
     else:
         cmd.extend(["--ai", "none"])
     if pin:
-        cmd.append("--pin-java-solvers")
+        cmd.extend(["--pin-solvers", "yuck,org.choco.choco"])
     if disable_restart_interval:
         cmd.extend(["--static-runtime", "1000000000000"])
 
@@ -183,7 +183,7 @@ def main():
     parser.add_argument("--solver", default="parasol")
     parser.add_argument("--problems-path", type=Path, default=Path("/problems"))
     parser.add_argument("--discover", action="store_true", help="Discover problems from --problems-path instead of using hardcoded list")
-    parser.add_argument("--pin", action="store_true", help="Pass --pin-java-solvers to the solver")
+    parser.add_argument("--pin", action="store_true", help="Pass --pin-solvers yuck,org.choco.choco to the solver")
     parser.add_argument("--disable-restart-interval", action="store_true", help="Pass --static-runtime 1000000000000 to the solver")
     parser.add_argument("--ai-command", type=str, default=None, help="Path to AI command script (e.g. ./command-line-ai/svm.py)")
     parser.add_argument("--start-from-instance", type=str, default=None)
