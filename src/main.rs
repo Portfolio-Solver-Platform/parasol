@@ -83,18 +83,22 @@ async fn run(
             // User cancelled, don't run backup solver
         }
         Err(e) => {
-            let cores = common_args.cores;
-
             logging::error!(e.into());
-            logging::error_msg!("Portfolio solver failed, falling back to backup solver");
-            tokio::select! {
-                _ = program_cancellation_token.cancelled() => {},
-                result = run_backup_solver(common_args, cores) => {
-                    if let Err(e) = result {
-                        logging::error!(e.into());
-                        exit(1);
+
+            if common_args.backup_solver {
+                let cores = common_args.cores;
+                logging::error_msg!("Portfolio solver failed, falling back to backup solver");
+                tokio::select! {
+                    _ = program_cancellation_token.cancelled() => {},
+                    result = run_backup_solver(common_args, cores) => {
+                        if let Err(e) = result {
+                            logging::error!(e.into());
+                            exit(1);
+                        }
                     }
                 }
+            } else {
+                exit(1);
             }
         }
     }
