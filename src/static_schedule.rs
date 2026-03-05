@@ -8,6 +8,10 @@ use crate::{
 };
 
 pub async fn static_schedule(args: &SsoArgs, cores: usize) -> Result<Portfolio> {
+    if args.no_static_schedule {
+        return Ok(Vec::new());
+    }
+
     let schedule = match args.static_schedule.as_ref() {
         Some(path) => get_schedule_from_file(path).await?,
         None => default_schedule(cores),

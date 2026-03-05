@@ -55,6 +55,10 @@ pub struct SsoArgs {
     #[arg(long, default_value = "10", help_heading = ORCHESTRATOR_HEADING)]
     pub feature_timeout: u64,
 
+    /// Disable the static schedule entirely. No solvers will run during the static phase.
+    #[arg(long, help_heading = ORCHESTRATOR_HEADING, conflicts_with_all = ["static_schedule", "static_runtime"])]
+    pub no_static_schedule: bool,
+
     /// The path to the static schedule file.
     /// The file needs to be a CSV (without a header) in the format of `<solver>,<cores>`.
     /// If not provided, a default static schedule will be used.
