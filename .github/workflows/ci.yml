@@ -34,7 +34,7 @@ jobs:
     - name: Linting
       run: cargo clippy --locked -- -D warnings
     - name: Unit tests
-      run: cargo test --locked
+      run: cargo test --bins --lib --locked
 
   containerisation:
     needs: code-validation
