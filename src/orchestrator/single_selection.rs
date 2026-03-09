@@ -109,7 +109,9 @@ impl Orchestrator for SingleSelection {
             .await
             .map_err(Error::from)?;
 
-        let static_runtime = Duration::from_secs(self.args.static_runtime);
+        // static_runtime and static_schedule require each other (via clap),
+        // so when static_runtime is None the initial_schedule is empty and Duration::ZERO is safe.
+        let static_runtime = Duration::from_secs(self.args.static_runtime.unwrap_or(0));
         let mut timer = Box::pin(sleep(static_runtime));
 
         let mut extra_compilations_are_enabled = true;
@@ -169,10 +171,12 @@ async fn start_with_ai(
     cancellation_token: CancellationToken,
     compilation_manager: Arc<CompilationScheduler>,
 ) -> Result<Portfolio, Error> {
-    let static_runtime_duration = Duration::from_secs(args.static_runtime);
+    let static_runtime_duration = Duration::from_secs(args.static_runtime.unwrap_or(0));
 
-    let feature_timeout_duration =
-        Duration::from_secs(args.feature_timeout.max(args.static_runtime)); // if static runtime is higher thatn feature_runtime, we anyways have to wait, so we have more time to extract features
+    let feature_timeout_duration = match args.feature_timeout {
+        Some(ft) => Duration::from_secs(ft.max(args.static_runtime.unwrap_or(0))),
+        None => Duration::MAX, // no timeout: wait for features indefinitely
+    };
     let barrier = async {
         tokio::join!(
             timeout(
