@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# Exit immediately if a command exits with a non-zero status.
+set -e
+
+echo "Running code validation..."
+
+echo "=> Checking formatting..."
+cargo fmt --all -- --check
+
+echo "=> Running clippy..."
+cargo clippy --locked -- -D warnings
+
+echo "=> Running unit tests..."
+cargo test --bins --locked
+
+echo "All checks passed! Proceeding with commit."
