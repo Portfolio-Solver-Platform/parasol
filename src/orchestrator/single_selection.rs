@@ -1,3 +1,4 @@
+use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::args::{SsoArgs, UnpackAiError};
@@ -11,7 +12,7 @@ use crate::static_schedule::{self, static_schedule, timeout_schedule};
 use crate::{ai, logging, solver_config, solver_manager};
 use crate::{ai::Ai, args::CommonArgs};
 use crate::{args, mzn_to_fzn};
-use tokio::time::{Duration, sleep, timeout};
+use tokio::time::{Duration, Sleep, sleep, timeout};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, thiserror::Error)]
@@ -108,8 +109,10 @@ impl Orchestrator for SingleSelection {
             .await
             .map_err(Error::from)?;
 
-        let static_runtime = Duration::from_secs(self.args.static_runtime);
-        let mut timer = sleep(static_runtime);
+        // static_runtime and static_schedule require each other (via clap),
+        // so when static_runtime is None the initial_schedule is empty and Duration::ZERO is safe.
+        let static_runtime = Duration::from_secs(self.args.static_runtime.unwrap_or(0));
+        let mut timer = Box::pin(sleep(static_runtime));
 
         let mut extra_compilations_are_enabled = true;
         let start_cancellation_token = self.program_cancellation_token.child_token();
@@ -127,14 +130,14 @@ impl Orchestrator for SingleSelection {
         } else {
             compilation_manager.disable_extra_compilations().await;
             extra_compilations_are_enabled = false;
-            start_without_ai(&self.args, &mut scheduler, initial_schedule).await
+            start_without_ai(&mut scheduler, initial_schedule, timer.as_mut()).await
         }?;
 
         let restart_interval = Duration::from_secs(self.args.restart_interval);
         // Restart loop, where it share bounds. It runs forever until it finds a solution, where it will then be cancelled by the cancellation token.
         loop {
             tokio::select! {
-                _ = timer => {}
+                _ = &mut timer => {}
                 _ = self.program_cancellation_token.cancelled() => {
                     return Err(Error::Cancelled.into())
                 }
@@ -154,7 +157,7 @@ impl Orchestrator for SingleSelection {
                 .apply(schedule.clone(), apply_cancellation_token, true)
                 .await;
 
-            timer = sleep(restart_interval);
+            timer = Box::pin(sleep(restart_interval));
         }
     }
 }
@@ -168,10 +171,12 @@ async fn start_with_ai(
     cancellation_token: CancellationToken,
     compilation_manager: Arc<CompilationScheduler>,
 ) -> Result<Portfolio, Error> {
-    let static_runtime_duration = Duration::from_secs(args.static_runtime);
+    let static_runtime_duration = Duration::from_secs(args.static_runtime.unwrap_or(0));
 
-    let feature_timeout_duration =
-        Duration::from_secs(args.feature_timeout.max(args.static_runtime)); // if static runtime is higher thatn feature_runtime, we anyways have to wait, so we have more time to extract features
+    let feature_timeout_duration = match args.feature_timeout {
+        Some(ft) => Duration::from_secs(ft.max(args.static_runtime.unwrap_or(0))),
+        None => Duration::MAX, // no timeout: wait for features indefinitely
+    };
     let barrier = async {
         tokio::join!(
             timeout(
@@ -224,19 +229,17 @@ async fn start_with_ai(
 }
 
 async fn start_without_ai(
-    args: &SsoArgs,
     scheduler: &mut Scheduler,
     schedule: Portfolio,
+    timer: Pin<&mut Sleep>,
 ) -> Result<Portfolio, Error> {
-    let static_runtime = Duration::from_secs(args.static_runtime);
-
     let apply_cancellation_token = scheduler.create_apply_token();
     let fut = scheduler.apply(schedule.clone(), apply_cancellation_token.clone(), true);
     tokio::pin!(fut);
 
     tokio::select! {
         _ = &mut fut => {}
-        _ = sleep(static_runtime) => {
+        _ = timer => {
             apply_cancellation_token.cancel();
             logging::info!("applying static schedule timed out");
             fut.await;
