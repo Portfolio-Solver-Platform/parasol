@@ -171,15 +171,15 @@ impl Scheduler {
             memory_limit,
             next_solver_id: 0,
             prev_objective: None,
-            memory_threshold: config.memory_threshold,
+            memory_threshold: args.memory_threshold,
         }));
 
         let state_clone = Arc::clone(&state);
         let solver_manager_clone = Arc::clone(&solver_manager);
         if args.enforce_memory {
             let scheduler_cancellation_token_clone = scheduler_cancellation_token.clone();
-            let memory_enforcer_interval = config.memory_enforcer_interval;
-            let memory_threshold = config.memory_threshold;
+            let memory_enforcer_interval = args.memory_interval;
+            let memory_threshold = args.memory_threshold;
             tokio::spawn(async move {
                 tokio::select! {
                     _ = scheduler_cancellation_token_clone.cancelled() => {},

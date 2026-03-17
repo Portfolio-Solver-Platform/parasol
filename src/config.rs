@@ -4,8 +4,6 @@ use crate::solver_config;
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub memory_enforcer_interval: u64,
-    pub memory_threshold: f64,
     pub solver_args: Arc<HashMap<String, Vec<String>>>,
 }
 
@@ -31,8 +29,6 @@ impl Config {
         }
 
         Self {
-            memory_enforcer_interval: 3,
-            memory_threshold: 0.9,
             solver_args: Arc::new(solver_args),
         }
     }

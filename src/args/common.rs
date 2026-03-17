@@ -42,29 +42,31 @@ pub struct SsoArgs {
     pub ai: AiArgs,
 
     // === Timing ===
-    /// The minimum time (in seconds) the initial static schedule will be run before using the AI's schedule
-    #[arg(long, default_value = "5", help_heading = ORCHESTRATOR_HEADING)]
-    pub static_runtime: u64,
+    /// The minimum time (in seconds) the initial static schedule will be run before using the AI's schedule.
+    /// Requires --static-schedule.
+    #[arg(long, help_heading = ORCHESTRATOR_HEADING, requires = "static_schedule")]
+    pub static_runtime: Option<u64>,
 
     /// Number of seconds between how often the solvers are restarted to share the upper bound found
     #[arg(long, default_value = "5", help_heading = ORCHESTRATOR_HEADING)]
     pub restart_interval: u64,
 
-    /// The time (in seconds) before we skip extracting the features and stop using the static schedule, and instead use the timeout schedule.
-    /// Warning: if static_runtime set higher than feature_timeout, then static_runtime will be used instead.
-    #[arg(long, default_value = "10", help_heading = ORCHESTRATOR_HEADING)]
-    pub feature_timeout: u64,
+    /// The time (in seconds) before we skip extracting the features and use the timeout schedule instead.
+    /// If static_runtime is set higher than feature_timeout, static_runtime will be used instead.
+    /// Requires --timeout-schedule.
+    #[arg(long, help_heading = ORCHESTRATOR_HEADING, requires = "timeout_schedule")]
+    pub feature_timeout: Option<u64>,
 
     /// The path to the static schedule file.
     /// The file needs to be a CSV (without a header) in the format of `<solver>,<cores>`.
-    /// If not provided, a default static schedule will be used.
-    #[arg(long, help_heading = ORCHESTRATOR_HEADING)]
+    /// Requires --static-runtime.
+    #[arg(long, help_heading = ORCHESTRATOR_HEADING, requires = "static_runtime")]
     pub static_schedule: Option<PathBuf>,
 
-    /// The path to the timeout schedule file. This schedule will be run if the compilation or the feature extraction takes too long.
+    /// The path to the timeout schedule file. This schedule will be run if feature extraction takes too long.
     /// The file needs to be a CSV (without a header) in the format of `<solver>,<cores>`.
-    /// If not provided, a default timeout schedule will be used.
-    #[arg(long, help_heading = ORCHESTRATOR_HEADING)]
+    /// Requires --feature-timeout.
+    #[arg(long, help_heading = ORCHESTRATOR_HEADING, requires = "feature_timeout")]
     pub timeout_schedule: Option<PathBuf>,
 
     #[command(flatten)]
@@ -138,6 +140,20 @@ pub struct CommonArgs {
     /// Whether it should kill solvers if you are nearing the system memory limit
     #[arg(long, help_heading = "Execution")]
     pub enforce_memory: bool,
+
+    /// The fraction of total system memory (0.0 to 1.0) that triggers the memory enforcer to kill solvers.
+    /// Only relevant when --enforce-memory is set.
+    #[arg(long, default_value = "0.9", help_heading = "Execution")]
+    pub memory_threshold: f64,
+
+    /// How often (in seconds) the memory enforcer checks memory usage.
+    /// Only relevant when --enforce-memory is set.
+    #[arg(long, default_value = "3", help_heading = "Execution")]
+    pub memory_interval: u64,
+
+    /// Run a backup solver (cp-sat) as a fallback if the orchestrator fails
+    #[arg(long, help_heading = "Execution")]
+    pub backup_solver: bool,
 
     /// Whether to discover solvers at startup or load from a pre-generated cache. Loading from cache is faster.
     #[arg(long, default_value = "discover", help_heading = "Execution")]

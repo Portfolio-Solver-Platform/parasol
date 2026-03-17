@@ -4,14 +4,14 @@ use crate::{
     args::SsoArgs,
     logging,
     scheduler::{Portfolio, SolverInfo},
-    solvers,
 };
 
 pub async fn static_schedule(args: &SsoArgs, cores: usize) -> Result<Portfolio> {
-    let schedule = match args.static_schedule.as_ref() {
-        Some(path) => get_schedule_from_file(path).await?,
-        None => default_schedule(cores),
+    let Some(path) = args.static_schedule.as_ref() else {
+        return Ok(Vec::new());
     };
+
+    let schedule = get_schedule_from_file(path).await?;
 
     if logging::is_log_level(logging::LEVEL_WARNING) {
         let schedule_cores = schedule_cores(&schedule);
@@ -26,10 +26,11 @@ pub async fn static_schedule(args: &SsoArgs, cores: usize) -> Result<Portfolio> 
 }
 
 pub async fn timeout_schedule(args: &SsoArgs, cores: usize) -> Result<Portfolio> {
-    let schedule = match args.timeout_schedule.as_ref() {
-        Some(path) => get_schedule_from_file(path).await?,
-        None => default_schedule(cores),
+    let Some(path) = args.timeout_schedule.as_ref() else {
+        return Ok(Vec::new());
     };
+
+    let schedule = get_schedule_from_file(path).await?;
 
     if logging::is_log_level(logging::LEVEL_WARNING) {
         let schedule_cores = schedule_cores(&schedule);
@@ -79,23 +80,6 @@ fn parse_schedule_line(line: &str) -> std::result::Result<SolverInfo, ParseError
         })?;
 
     Ok(SolverInfo::new(solver.to_owned(), cores))
-}
-
-fn default_schedule(cores: usize) -> Portfolio {
-    if cores <= 7 {
-        let solvers = [
-            SolverInfo::new(solvers::CP_SAT_ID.to_owned(), 1),
-            SolverInfo::new(solvers::CHUFFED_ID.to_owned(), 1),
-            SolverInfo::new(solvers::HUUB_ID.to_owned(), 1),
-            SolverInfo::new(solvers::CPLEX_ID.to_owned(), 1),
-            SolverInfo::new(solvers::GECODE_ID.to_owned(), 1),
-            SolverInfo::new(solvers::CHOCO_ID.to_owned(), 1),
-            SolverInfo::new(solvers::PICAT_ID.to_owned(), 1),
-        ];
-        solvers[..cores].to_owned()
-    } else {
-        vec![SolverInfo::new(solvers::CP_SAT_ID.to_owned(), cores)]
-    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
