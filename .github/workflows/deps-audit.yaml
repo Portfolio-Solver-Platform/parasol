@@ -16,8 +16,8 @@ jobs:
         uses: actions/create-github-app-token@v1
         id: app-token
         with:
-          app-id: ${{ inputs.infrastructure_bot_id || vars.INFRASTRUCTURE_BOT_ID }}
-          private-key: ${{ secrets.infrastructure_bot_private_key }}
+          app-id: ${{ vars.INFRASTRUCTURE_BOT_ID }}
+          private-key: ${{ secrets.INFRASTRUCTURE_BOT_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.repository }}
 
@@ -25,7 +25,7 @@ jobs:
         uses: renovatebot/github-action@v46.1.5
         with:
           renovate-version: ${{ env.RENOVATE_VERSION }}
-          configurationFile: renovate.js
-          token: ${{ secrets.RENOVATE_TOKEN }}
+          configurationFile: renovate-config.js
+          token: ${{ steps.app-token.outputs.token }}
         env:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
