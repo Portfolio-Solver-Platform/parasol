@@ -1,0 +1,31 @@
+name: Renovate
+on:
+  pull_request:
+  schedule:
+    - cron: '0 0 * * *'
+env:
+  RENOVATE_VERSION: 43.80.0 # renovate: datasource=docker depName=ghcr.io/renovatebot/renovate
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Generate app token
+        uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ inputs.infrastructure_bot_id || vars.INFRASTRUCTURE_BOT_ID }}
+          private-key: ${{ secrets.infrastructure_bot_private_key }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.repository }}
+
+      - name: Self-hosted Renovate
+        uses: renovatebot/github-action@v46.1.5
+        with:
+          renovate-version: ${{ env.RENOVATE_VERSION }}
+          configurationFile: renovate.js
+          token: ${{ secrets.RENOVATE_TOKEN }}
+        env:
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
