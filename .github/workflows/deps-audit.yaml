@@ -18,8 +18,6 @@ jobs:
         with:
           app-id: ${{ vars.INFRASTRUCTURE_BOT_APP_ID }}
           private-key: ${{ secrets.INFRASTRUCTURE_BOT_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.repository }}
 
       - name: Self-hosted Renovate
         uses: renovatebot/github-action@v46.1.5
