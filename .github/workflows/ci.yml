@@ -1,8 +1,9 @@
 name: CI
 
 on:
-  pull_request:
-    branches: [ "main" ]
+  # TODO: Add back
+  # pull_request:
+  #   branches: [ "main" ]
   workflow_call:
     inputs:
       update_image_cache:
