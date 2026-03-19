@@ -3,6 +3,8 @@
   "extends": [
     "config:recommended"
   ],
+  "prHourlyLimit": 0,
+  "prConcurrentLimit": 0,
   "packageRules": [
     {
       "description": "Group all minor and patch Rust crate updates together",
