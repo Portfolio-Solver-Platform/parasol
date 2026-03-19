@@ -1,6 +1,6 @@
 name: Renovate
 on:
-  pull_request:
+  pull_request: # TODO: Remove
   schedule:
     - cron: '0 0 * * *'
 env:
