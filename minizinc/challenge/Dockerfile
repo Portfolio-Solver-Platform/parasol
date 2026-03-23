@@ -1,4 +1,4 @@
-FROM rust:1.91 AS rust
+FROM rust:1.93@sha256:ecbe59a8408895edd02d9ef422504b8501dd9fa1526de27a45b73406d734d659 AS rust
 FROM rust AS builder
 
 WORKDIR /usr/src/app
@@ -14,7 +14,7 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs \
 COPY src ./src
 RUN touch src/main.rs && cargo build --release --locked
 
-FROM minizinc/mznc2025:latest AS base
+FROM minizinc/mznc2025:latest@sha256:6e1bb6fc6ed4c6f2963c06606d0cf4aeef56554a47c77274de1ca69281147fbe AS base
 
 WORKDIR /app
 
