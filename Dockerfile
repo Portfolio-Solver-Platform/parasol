@@ -1,4 +1,4 @@
-ARG RUST_VERSION=1.93
+ARG RUST_VERSION=1.93@sha256:ecbe59a8408895edd02d9ef422504b8501dd9fa1526de27a45b73406d734d659
 # The number of make jobs used when `make` is called
 ARG MAKE_JOBS=2
 
@@ -18,7 +18,7 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs \
 COPY src ./src
 RUN touch src/main.rs && cargo build --release --locked --quiet
 
-FROM minizinc/mznc2026:latest AS base-small
+FROM minizinc/mznc2026:latest@sha256:f4544522b4ac6b650d25e81d664f25385dc81d7d8c778957b9feee936675344a AS base-small
 
 WORKDIR /app
 
