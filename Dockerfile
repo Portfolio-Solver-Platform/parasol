@@ -53,7 +53,7 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     bison \
     build-essential \
     # Install rustup
-    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain ${RUST_VERSION} \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain ${RUST_VERSION%@*} \
     # Cleanup
     && apt-get clean -qq \
     && rm -rf /var/lib/apt/lists/*
