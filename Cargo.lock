@@ -603,7 +603,6 @@ dependencies = [
  "directories",
  "futures",
  "itertools",
- "libc",
  "nix 0.31.1",
  "predicates",
  "regex",

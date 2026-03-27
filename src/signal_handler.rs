@@ -1,4 +1,5 @@
 use crate::logging;
+use nix::sys::signal::Signal::{SIGCONT, SIGTSTP};
 use tokio::{
     signal::unix::{SignalKind, signal},
     sync::mpsc,
@@ -32,8 +33,8 @@ pub fn spawn_signal_handler(
         let mut sigint = register_signal!(SignalKind::interrupt());
         let mut sigterm = register_signal!(SignalKind::terminate());
         let mut sighup = register_signal!(SignalKind::hangup());
-        let mut sigtstp = register_signal!(SignalKind::from_raw(libc::SIGTSTP));
-        let mut sigcont = register_signal!(SignalKind::from_raw(libc::SIGCONT));
+        let mut sigtstp = register_signal!(SignalKind::from_raw(SIGTSTP as i32));
+        let mut sigcont = register_signal!(SignalKind::from_raw(SIGCONT as i32));
         let mut sigquit = register_signal!(SignalKind::quit());
 
         loop {
