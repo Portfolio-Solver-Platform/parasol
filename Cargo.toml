@@ -22,7 +22,6 @@ anyhow = "1.0.100"
 nix =  { version="0.31.1", features = ["sched", "signal"]}
 core_affinity = "0.8.3"
 directories = "6.0.0"
-libc = "0.2.180"
 
 [dev-dependencies]
 predicates = "=3.1.3"
