@@ -116,7 +116,7 @@ fn get_model_interface_cmd(
         cmd.arg(data);
     }
     cmd.arg("--model-interface-only");
-    cmd.args(["--solver", &GECODE_ID.to_string()]);
+    cmd.args(["--solver", GECODE_ID]);
 
     cmd
 }
