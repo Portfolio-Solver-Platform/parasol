@@ -19,6 +19,7 @@ mod solvers;
 mod static_schedule;
 
 use std::process::exit;
+use std::time::Instant;
 
 use crate::args::{Cli, Command, CommonArgs};
 use crate::backup_solvers::run_backup_solver;
@@ -29,6 +30,7 @@ use tokio_util::sync::CancellationToken;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    let start_time = Instant::now();
     let cli = Cli::parse();
     logging::init(cli.verbosity);
 
@@ -53,6 +55,7 @@ async fn main() {
                 args,
                 program_cancellation_token.clone(),
                 suspend_and_resume_signal_rx,
+                start_time,
             )
             .await
             .map_err(orchestrator::Error::from);

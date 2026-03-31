@@ -2,6 +2,8 @@ use std::path::Path;
 use std::process::ExitStatus;
 use tokio::process::Command;
 
+use crate::solvers::GECODE_ID;
+
 pub type ObjectiveValue = i64;
 
 #[derive(Debug, thiserror::Error)]
@@ -12,8 +14,8 @@ pub enum ModelParseError {
     IoError(#[from] std::io::Error),
     #[error("regex failed")]
     RegexError(#[from] regex::Error),
-    #[error("command failed: {0}")]
-    CommandFailed(ExitStatus),
+    #[error("model interface command failed (exit status: {status}): {stderr}")]
+    CommandFailed { status: ExitStatus, stderr: String },
     #[error("error occurred when parsing the command output")]
     CommandOutputError(#[from] CommandOutputError),
 }
@@ -47,8 +49,9 @@ impl ObjectiveType {
 pub async fn get_objective_type(
     minizinc_command: &Path,
     model_path: &Path,
+    data_path: Option<&Path>,
 ) -> Result<ObjectiveType, ModelParseError> {
-    let output = run_model_interface_cmd(minizinc_command, model_path).await?;
+    let output = run_model_interface_cmd(minizinc_command, model_path, data_path).await?;
     let json: serde_json::Value =
         serde_json::from_str(&output).map_err(|_| CommandOutputError::NonJsonOutput(output))?;
     let serde_json::Value::Object(object) = json else {
@@ -86,22 +89,34 @@ fn parse_method_from_json_object(
 async fn run_model_interface_cmd(
     minizinc_command: &Path,
     model_path: &Path,
+    data_path: Option<&Path>,
 ) -> Result<String, ModelParseError> {
-    let mut cmd = get_model_interface_cmd(minizinc_command, model_path);
+    let mut cmd = get_model_interface_cmd(minizinc_command, model_path, data_path);
     let output = cmd.output().await?;
     if !output.status.success() {
-        return Err(ModelParseError::CommandFailed(output.status));
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(ModelParseError::CommandFailed {
+            status: output.status,
+            stderr,
+        });
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-fn get_model_interface_cmd(minizinc_command: &Path, model_path: &Path) -> Command {
+fn get_model_interface_cmd(
+    minizinc_command: &Path,
+    model_path: &Path,
+    data_path: Option<&Path>,
+) -> Command {
     let mut cmd = Command::new(minizinc_command);
     cmd.kill_on_drop(true);
     cmd.arg(model_path);
+    if let Some(data) = data_path {
+        cmd.arg(data);
+    }
     cmd.arg("--model-interface-only");
-    cmd.args(["--solver", "coinbc"]);
+    cmd.args(["--solver", GECODE_ID]);
 
     cmd
 }

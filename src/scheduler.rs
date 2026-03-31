@@ -113,6 +113,7 @@ impl Scheduler {
         compilation_manager: Arc<CompilationScheduler>,
         program_cancellation_token: CancellationToken,
         mut suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
+        start_time: std::time::Instant,
     ) -> std::result::Result<Self, Error> {
         let scheduler_cancellation_token = program_cancellation_token.child_token();
         let solver_manager = Arc::new(
@@ -122,6 +123,7 @@ impl Scheduler {
                 solver_info,
                 Arc::clone(&compilation_manager),
                 CancellationToken::clone(&program_cancellation_token),
+                start_time,
             )
             .await?,
         );
