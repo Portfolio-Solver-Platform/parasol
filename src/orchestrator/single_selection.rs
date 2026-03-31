@@ -72,7 +72,11 @@ impl SingleSelection {
 
         let config = Config::new(&solvers);
 
-        logging::info!("AI kind: {:?}, AI config: {:?}", args.ai.kind, args.ai.config);
+        logging::info!(
+            "AI kind: {:?}, AI config: {:?}",
+            args.ai.kind,
+            args.ai.config
+        );
         let ai = args::unpack_ai(&args.ai)?;
 
         Ok(Self {
