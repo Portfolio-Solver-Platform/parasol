@@ -25,6 +25,7 @@
     ["--solver-config-mode", "Whether to discover solvers at startup or load from a pre-generated cache. Loading from cache is faster", "string", "discover"],
     ["--compilation-priority", "Optional path to a solver compiler priority configuration file", "string", ""],
     ["--output-solver", "When a solution is found, outputs the ID of the solver that found the solution", "bool", ""],
+    ["--output-time", "Print elapsed time after each solution", "bool", ""],
     ["--verbosity", "Logging verbosity level (quiet, error, warning, info)", "string", "warning"]
   ],
   "inputType": "MZN",

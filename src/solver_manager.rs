@@ -1,7 +1,7 @@
 use crate::args::CommonArgs;
 use crate::insert_objective::ObjectiveInserter;
 use crate::model_parser::{ModelParseError, ObjectiveType, ObjectiveValue, get_objective_type};
-use crate::mzn_to_fzn::compilation_executor;
+use crate::mzn_to_fzn::compilation_executor::{self, WaitForError};
 use crate::mzn_to_fzn::compilation_scheduler::CompilationScheduler;
 use crate::process_tree::{
     get_process_tree_memory, recursive_force_kill, send_signals_to_process_tree,
@@ -23,6 +23,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::Instant;
 use sysinfo::System;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
@@ -40,7 +41,7 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("failed to parse solver output")]
     OutputParse(#[from] solver_output::Error),
-    #[error("failed to parse model")]
+    #[error("failed to parse model: {0}")]
     ModelParse(#[from] ModelParseError),
     #[error("failed to convert MiniZinc (mzn) to FlatZinc (fzn) format")]
     FznConversion(#[from] mzn_to_fzn::ConversionError),
@@ -131,8 +132,14 @@ impl SolverManager {
         solver_info: Arc<solver_config::Solvers>,
         compilation_manager: Arc<CompilationScheduler>,
         program_cancellation_token: CancellationToken,
+        start_time: Instant,
     ) -> std::result::Result<Self, Error> {
-        let objective_type = get_objective_type(&args.minizinc.minizinc_exe, &args.model).await?;
+        let objective_type = get_objective_type(
+            &args.minizinc.minizinc_exe,
+            &args.model,
+            args.data.as_deref(),
+        )
+        .await?;
         let (tx, rx) = mpsc::unbounded_channel::<Msg>();
         let (error_tx, error_rx) = mpsc::unbounded_channel::<SolverError>();
         let solvers = Arc::new(Mutex::new(HashMap::new()));
@@ -141,6 +148,7 @@ impl SolverManager {
 
         let shared_objective = Arc::clone(&best_objective);
         let output_solver = args.output_solver;
+        let output_time = args.output_time;
         tokio::spawn(async move {
             Self::receiver(
                 rx,
@@ -148,6 +156,8 @@ impl SolverManager {
                 shared_objective,
                 program_cancellation_token,
                 output_solver,
+                output_time,
+                start_time,
             )
             .await
         });
@@ -189,6 +199,8 @@ impl SolverManager {
         shared_objective: Arc<RwLock<Option<ObjectiveValue>>>,
         program_cancellation_token: CancellationToken,
         output_solver: bool,
+        output_time: bool,
+        start_time: Instant,
     ) {
         let mut objective: Option<ObjectiveValue> = None;
 
@@ -211,6 +223,9 @@ impl SolverManager {
                             logging::output_note!("{solver_name} found objective {o}");
                         }
                         println!("{}", s.trim_end());
+                        if output_time {
+                            println!("% time elapsed: {:.3}", start_time.elapsed().as_secs_f64());
+                        }
                         let _ = std::io::stdout().flush();
                     }
                 }
@@ -225,6 +240,9 @@ impl SolverManager {
                         logging::output_note!("{solver_name} found solution");
                     }
                     println!("{}", s.trim_end());
+                    if output_time {
+                        println!("% time elapsed: {:.3}", start_time.elapsed().as_secs_f64());
+                    }
                     let _ = std::io::stdout().flush();
                     // In satisfaction problems, we are only interested in a single solution
                     program_cancellation_token.cancel();
@@ -237,6 +255,9 @@ impl SolverManager {
                             logging::output_note!("{solver_name} got status {dzn_string}");
                         }
                         println!("{dzn_string}");
+                        if output_time {
+                            println!("% time elapsed: {:.3}", start_time.elapsed().as_secs_f64());
+                        }
                         let _ = std::io::stdout().flush();
                         program_cancellation_token.cancel();
                         break;
@@ -349,8 +370,18 @@ impl SolverManager {
             return PrepareResult::Cancelled;
         };
 
-        let Ok(conversion_paths) = conversion_paths.map_err(|e| logging::error!(e.into())) else {
-            return PrepareResult::Error(format!("Compilation failed for solver '{solver_name}'"));
+        let conversion_paths = match conversion_paths {
+            Ok(s) => s,
+            Err(WaitForError::Cancelled) => {
+                logging::info!("Error");
+                return PrepareResult::Cancelled;
+            }
+            Err(e) => {
+                logging::error!(e.into());
+                return PrepareResult::Error(format!(
+                    "Compilation failed for solver '{solver_name}'"
+                ));
+            }
         };
 
         // Create ObjectiveInserter inside the spawn
@@ -695,7 +726,12 @@ impl SolverManager {
     ) -> Result<()> {
         let pid = match solvers_guard.get(&id) {
             Some(state) => state.pid,
-            None => return Err(Error::InvalidSolver(format!("Solver {id} not running"))),
+            None => {
+                logging::warning!(
+                    "Tried to send signal to solver {id}, however it is not running. Maybe it is compiling?"
+                );
+                return Ok(());
+            }
         };
         send_signals_to_process_tree(pid, signals)
             .map_err(|e| Error::InvalidSolver(format!("Failed to send signals: {}", e)))
@@ -706,33 +742,19 @@ impl SolverManager {
         ids: &[u64],
         solver_processes: tokio::sync::MutexGuard<'_, HashMap<u64, SolverProcess>>,
     ) -> std::result::Result<(), Vec<(Error, u64)>> {
-        let futures = ids.iter().map(async |id| {
-            let pid = match solver_processes.get(id) {
-                Some(state) => state.pid,
+        for id in ids.iter() {
+            match solver_processes.get(id) {
                 None => {
-                    return (
-                        Err(Error::InvalidSolver(format!("Solver {id} not running"))),
-                        id,
+                    logging::warning!(
+                        "Tried to send signal to solver {id}, however it is not running. Maybe it is compiling?"
                     );
                 }
-            };
-            (
-                send_signals_to_process_tree(pid, signals.clone())
-                    .map_err(|e| Error::InvalidSolver(format!("Failed to send signals: {}", e))),
-                id,
-            )
-        });
-        let results = join_all(futures).await;
-        let errors: Vec<(Error, u64)> = results
-            .into_iter()
-            .filter_map(|(res, id)| res.err().map(|e| (e, *id)))
-            .collect();
-
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors)
+                Some(state) => {
+                    send_signals_to_process_tree(state.pid, signals.clone());
+                }
+            }
         }
+        Ok(())
     }
 
     #[allow(dead_code)]
@@ -900,7 +922,9 @@ impl SolverManager {
     ) -> Result<()> {
         // let RAII clean up the solver. Look in drop function for SolverProcess.
         if solvers_map.remove(&id).is_none() {
-            return Err(Error::InvalidSolver(format!("Solver {id} not running")));
+            logging::warning!(
+                "Tried to kill solver {id}, however it is not running, maybe it is compiling?"
+            );
         }
 
         Ok(())

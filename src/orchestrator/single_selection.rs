@@ -1,5 +1,6 @@
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::args::{SsoArgs, UnpackAiError};
 use crate::config::Config;
@@ -31,7 +32,7 @@ pub enum Error {
     Ai(#[from] ai::Error),
     #[error("Task join error")]
     JoinError(#[from] tokio::task::JoinError),
-    #[error("Solver manager error")]
+    #[error("Solver manager error: {0}")]
     SolverManager(#[from] solver_manager::Error),
     #[error("All solvers failed, could not continue")]
     SolverFailure,
@@ -48,6 +49,7 @@ pub struct SingleSelection {
     solvers: Arc<solver_config::Solvers>,
     program_cancellation_token: CancellationToken,
     suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
+    start_time: Instant,
 }
 
 impl From<Error> for crate::orchestrator::Error {
@@ -64,11 +66,13 @@ impl SingleSelection {
         args: SsoArgs,
         program_cancellation_token: CancellationToken,
         suspend_and_resume_signal_rx: tokio::sync::mpsc::UnboundedReceiver<SignalEvent>,
+        start_time: Instant,
     ) -> Result<Self, Error> {
         let solvers = Arc::new(solver_config::load_from_args(&args.common).await);
 
         let config = Config::new(&solvers);
 
+        logging::info!("AI kind: {:?}, AI config: {:?}", args.ai.kind, args.ai.config);
         let ai = args::unpack_ai(&args.ai)?;
 
         Ok(Self {
@@ -78,6 +82,7 @@ impl SingleSelection {
             solvers,
             program_cancellation_token,
             suspend_and_resume_signal_rx,
+            start_time,
         })
     }
 }
@@ -99,6 +104,7 @@ impl Orchestrator for SingleSelection {
             Arc::clone(&compilation_manager),
             self.program_cancellation_token.clone(),
             self.suspend_and_resume_signal_rx,
+            self.start_time,
         )
         .await
         .map_err(Error::from)?;

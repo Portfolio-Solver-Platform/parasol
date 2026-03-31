@@ -126,6 +126,10 @@ pub struct CommonArgs {
     #[arg(long, help_heading = "Output")]
     pub output_solver: bool,
 
+    /// Print elapsed time after each solution
+    #[arg(long, help_heading = "Output")]
+    pub output_time: bool,
+
     // === Execution ===
     /// The number of cores parasol should use
     #[arg(long, short = 'p', default_value = "2", help_heading = "Execution")]
