@@ -99,9 +99,9 @@ RUN wget -q https://github.com/google/or-tools/releases/download/v9.15/or-tools_
 FROM base AS choco
 
 WORKDIR /choco
-ARG CHOCO_VERSION=5.0.0
-ARG CHOCO_SRC_SHA256=0c99663fc51124907c05c6d72e4a039bfa55bdf920c16fa5a3649b3c0473e0ef
-ARG CHOCO_JAR_SHA256=8f3c9ceac4028f5fbefc0e02233e30c5a54fa5f15c890785109b29737dbb3cca
+ARG CHOCO_VERSION=5.0.1
+ARG CHOCO_SRC_SHA256=67911b8df1c3b7bae0b216abc68b5240993150255fa79487a8a81a112e7acce3
+ARG CHOCO_JAR_SHA256=9f41ba0a41e4d3330e3742a0cfa3fe37db1ca051674852f732c4d4750b4d7533
 RUN wget -q https://github.com/chocoteam/choco-solver/archive/refs/tags/v${CHOCO_VERSION}.tar.gz -O choco.tar.gz \
     && echo "${CHOCO_SRC_SHA256}  choco.tar.gz" | sha256sum -c - \
     && wget -q https://github.com/chocoteam/choco-solver/releases/download/v${CHOCO_VERSION}/choco-solver-${CHOCO_VERSION}-light.jar -O choco.jar \
