@@ -62,6 +62,3 @@ jobs:
 
     - name: Run end-to-end tests
       run: docker run -t ${{ vars.DOCKER_REPO }}:latest cargo test --tests --release --locked
-
-      - name: Run end-to-end tests
-        run: docker run -t ${{ vars.DOCKER_REPO }}:latest cargo test --tests --release --locked
