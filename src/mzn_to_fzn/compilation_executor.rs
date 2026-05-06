@@ -198,7 +198,7 @@ impl CompilationExecutor {
                 .cloned()
                 .collect::<Vec<_>>()
         };
-        self.stop_many(solvers_to_stop.into_iter()).await;
+        self.stop_many(solvers_to_stop).await;
     }
 }
 
