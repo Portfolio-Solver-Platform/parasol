@@ -28,7 +28,7 @@ use crate::signal_handler::{SignalEvent, spawn_signal_handler};
 use clap::Parser;
 use tokio_util::sync::CancellationToken;
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() {
     let start_time = Instant::now();
     let cli = Cli::parse();
