@@ -286,18 +286,11 @@ RUN wget -qO source.tar.gz https://github.com/nfzhou/fzn_picat/archive/${FZN_PIC
 FROM base-small AS final
 
 # Install Python
-RUN apt-get update -qq && apt-get install -qq -y --no-install-recommends \
-    software-properties-common \
-    && add-apt-repository universe \
-    && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get install -qq -y \
-        python3.13 \
-        python3.13-venv \
-    && apt-get clean -qq && rm -rf /var/lib/apt/lists/*
-RUN python3.13 -m ensurepip --upgrade
-
+COPY --from=ghcr.io/astral-sh/uv:0.11.2@sha256:c4f5de312ee66d46810635ffc5df34a1973ba753e7241ce3a08ef979ddd7bea5 /uv /uvx /bin/
+RUN uv venv /opt/venv --python 3.13
+ENV PATH="/opt/venv/bin:$PATH"
 COPY command-line-ai/requirements.txt ./requirements.txt
-RUN python3.13 -m pip install --quiet -r ./requirements.txt
+RUN uv pip install --quiet -r ./requirements.txt
 
 COPY --from=scip /opt/scip/package.deb ./scip-package.deb
 RUN apt-get update -qq && apt-get install -qq -y ./scip-package.deb \
@@ -365,8 +358,6 @@ FROM final AS ci-end-to-end
 
     # Undo Gecode DLL modifications
 RUN rm /etc/ld.so.conf.d/gecode.conf && ldconfig \
-    # Remove Python apt-get repository
-    && rm -f /etc/apt/sources.list.d/deadsnakes* \
     # Install build tools (because the CI builds the application)
     && apt-get update -qq \
     && apt-get install -y -qq --no-install-recommends \
