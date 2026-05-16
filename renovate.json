@@ -1,0 +1,8 @@
+{
+  "packageRules": [
+    {
+      "matchManagers": ["cargo"],
+      "rangeStrategy": "pin"
+    }
+  ]
+}
