@@ -230,8 +230,6 @@ RUN echo "${GUROBI_SHA256}  source.tar.gz" | sha256sum -c - \
     && rm source.tar.gz \
     && mv ./lib/libgurobi.so.* ./lib/libgurobi.so
 
-COPY ./gurobi.lic ./gurobi.lic
-
 
 FROM base AS solver-configs
 
@@ -343,9 +341,8 @@ RUN echo "/opt/gecode/lib" > /etc/ld.so.conf.d/gecode.conf \
 
 
 # NOTE: For Gurobi support:
-#       1. Copy your Gurobi license into the root of this repository and name it "gurobi.lic"
-#       2. Uncomment the following line of code:
-# COPY --from=gurobi /opt/gurobi/ /opt/gurobi/
+#       1. Mount your Gurobi license at /opt/gurobi/gurobi.lic
+COPY --from=gurobi /opt/gurobi/ /opt/gurobi/
 
 RUN parasol build-solver-cache
 
