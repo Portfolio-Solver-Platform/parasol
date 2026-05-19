@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -eou pipefail
+
+VERSION=$1
+CHART_DIR="helm/"
+REGISTRY="ghcr.io/portfolio-solver-platform"
+IMAGE_NAME="user"
+IMAGE_URI="$REGISTRY/$IMAGE_NAME:$VERSION"
+
+echo "Building and pushing Docker image ($IMAGE_URI)..."
+docker buildx build --push -t "$IMAGE_URI" --metadata-file build-metadata.json .
+
+echo "Extracting image SHA digest..."
+DIGEST=$(jq -r '.["containerimage.digest"]' build-metadata.json)
+
+echo "Success! Image pushed with digest: $DIGEST"
+
+echo "Updating Helm chart versions..."
+yq -i ".version = \"$VERSION\"" $CHART_DIR/Chart.yaml
+yq -i ".appVersion = \"$VERSION\"" $CHART_DIR/Chart.yaml
+
+yq -i ".image = \"$IMAGE_URI@$DIGEST\"" $CHART_DIR/values.yaml
+
+echo "Prepare complete."
