@@ -1,5 +1,5 @@
 {
-  "name": "user-release",
+  "name": "parasol-release",
   "private": true,
   "devDependencies": {
     "@semantic-release/commit-analyzer": "^13.0.0",
