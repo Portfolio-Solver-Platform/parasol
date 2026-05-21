@@ -11,6 +11,12 @@ GIT_SHA=$(git rev-parse --short HEAD)
 IMAGE_URI="$IMAGE_BASE:$VERSION"
 IMAGE_URI_HASH="$IMAGE_BASE:$GIT_SHA"
 IMAGE_URI_LATEST="$IMAGE_BASE:latest"
+CACHE_URI="$IMAGE_BASE:buildcache"
 
 echo "Building and pushing Docker image ($IMAGE_URI)..."
-docker buildx build --push -t "$IMAGE_URI" -t "$IMAGE_URI_LATEST" -t "$IMAGE_URI_HASH" --metadata-file build-metadata.json .
+docker buildx build --push \
+  -t "$IMAGE_URI" \
+  -t "$IMAGE_URI_LATEST" \
+  -t "$IMAGE_URI_HASH" \
+  --cache-from type=registry,ref="$CACHE_URI" \
+  --metadata-file build-metadata.json .
