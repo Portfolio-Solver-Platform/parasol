@@ -34,6 +34,12 @@ jobs:
       - name: Install environment
         run: nix develop .#release
 
+      - name: Pull image cache
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          target: ci-end-to-end
+          cache-from: type=registry,ref=ghcr.io/portfolio-solver-platform/parasol:buildcache
+
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
