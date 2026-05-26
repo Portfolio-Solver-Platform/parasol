@@ -1,4 +1,4 @@
-ARG RUST_VERSION=1.95@sha256:0861191076afc8e2dfcf0bec6ad6c2dec8494b3a1e9249729e1989690afed5ec
+ARG RUST_VERSION=1.95@sha256:f49565f188ee00bc2a18dd418183f2c5f23ef7d6e691890517ed341a598f67c3
 # The number of make jobs used when `make` is called
 ARG MAKE_JOBS=2
 
