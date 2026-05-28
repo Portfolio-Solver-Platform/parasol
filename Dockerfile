@@ -125,9 +125,9 @@ RUN mkdir -p /opt/choco/bin \
 
 FROM base AS pumpkin
 
-# Version 0.2.2
-ARG PUMPKIN_SHA256=0abf3495945e31c7ebf731bcdc00bae978b6da0b59ff3a8830a0c9335e672ca3
-RUN wget -q https://github.com/ConSol-Lab/Pumpkin/archive/62b2f09f4b28d0065e4a274d7346f34598b44898.tar.gz -O pumpkin.tar.gz \
+# Version 0.3
+ARG PUMPKIN_SHA256=2cd08992413ff383115566f7214c333a5389b2db5e6c35b79b43c9ca0958f0cf
+RUN wget -q https://github.com/ConSol-Lab/Pumpkin/archive/refs/tags/pumpkin-solver-v0.3.0.tar.gz -O pumpkin.tar.gz \
     && echo "${PUMPKIN_SHA256}  pumpkin.tar.gz" | sha256sum -c - \
     && tar -xzf pumpkin.tar.gz \
     && rm pumpkin.tar.gz \
@@ -221,8 +221,8 @@ RUN jq '.executable = "/opt/izplus/bin/fzn-izplus"' ./izplus.msc.template \
 
 FROM base AS gurobi
 
-ARG GUROBI_LINK=https://packages.gurobi.com/13.0/gurobi13.0.1_linux64.tar.gz
-ARG GUROBI_SHA256=ec623217ac5fa0657799a752ed7c02b2141fbb9c0ff34129d6e1f8c9a8fe4ed8
+ARG GUROBI_LINK=https://packages.gurobi.com/13.0/gurobi13.0.2_linux64.tar.gz
+ARG GUROBI_SHA256=cffd4ee3c1990294e80446626bd1772045e420d7c34c379839b6acca16f0a23b
 WORKDIR /opt/gurobi
 RUN wget -qO source.tar.gz "${GUROBI_LINK}"
 RUN echo "${GUROBI_SHA256}  source.tar.gz" | sha256sum -c - \
