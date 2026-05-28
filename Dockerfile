@@ -99,9 +99,9 @@ RUN wget -q https://github.com/google/or-tools/releases/download/v9.15/or-tools_
 FROM base AS choco
 
 WORKDIR /choco
-ARG CHOCO_VERSION=5.0.1
-ARG CHOCO_SRC_SHA256=67911b8df1c3b7bae0b216abc68b5240993150255fa79487a8a81a112e7acce3
-ARG CHOCO_JAR_SHA256=9f41ba0a41e4d3330e3742a0cfa3fe37db1ca051674852f732c4d4750b4d7533
+ARG CHOCO_VERSION=6.0.1
+ARG CHOCO_SRC_SHA256=e246f1632d94aa40de6dd60a7e4b8219b69a5febe26df77a50bc3211e2259bb8
+ARG CHOCO_JAR_SHA256=1cd6383f40feb1dc3a9789b8eb1c12e2d70b06006350d886e4a1722f790e2e56
 RUN wget -q https://github.com/chocoteam/choco-solver/archive/refs/tags/v${CHOCO_VERSION}.tar.gz -O choco.tar.gz \
     && echo "${CHOCO_SRC_SHA256}  choco.tar.gz" | sha256sum -c - \
     && wget -q https://github.com/chocoteam/choco-solver/releases/download/v${CHOCO_VERSION}/choco-solver-${CHOCO_VERSION}-light.jar -O choco.jar \
@@ -125,13 +125,13 @@ RUN mkdir -p /opt/choco/bin \
 
 FROM base AS pumpkin
 
-# Version 0.2.2
-ARG PUMPKIN_SHA256=0abf3495945e31c7ebf731bcdc00bae978b6da0b59ff3a8830a0c9335e672ca3
-RUN wget -q https://github.com/ConSol-Lab/Pumpkin/archive/62b2f09f4b28d0065e4a274d7346f34598b44898.tar.gz -O pumpkin.tar.gz \
+ARG PUMPKIN_TAG=pumpkin-solver-v0.3.0
+ARG PUMPKIN_SHA256=2cd08992413ff383115566f7214c333a5389b2db5e6c35b79b43c9ca0958f0cf
+RUN wget -q https://github.com/ConSol-Lab/Pumpkin/archive/refs/tags/${PUMPKIN_TAG}.tar.gz -O pumpkin.tar.gz \
     && echo "${PUMPKIN_SHA256}  pumpkin.tar.gz" | sha256sum -c - \
     && tar -xzf pumpkin.tar.gz \
     && rm pumpkin.tar.gz \
-    && mv Pumpkin-62b2f09f4b28d0065e4a274d7346f34598b44898 /pumpkin
+    && mv "Pumpkin-${PUMPKIN_TAG}" /pumpkin
 WORKDIR /pumpkin
 RUN cargo build --release --quiet -p pumpkin-solver
 # We can't use the .msc file from the repository because it is currently not valid JSON
@@ -147,8 +147,8 @@ RUN mkdir -p /opt/pumpkin/bin \
 FROM base AS minizinc-source
 
 WORKDIR /source
-ENV MINIZINC_SOURCE_VERSION=2.9.5
-ARG MINIZINC_SHA256=591f70e49e49ddead9a4c091ad2450f972abde8de3acdff544d3bed50b279e44
+ENV MINIZINC_SOURCE_VERSION=2.9.7
+ARG MINIZINC_SHA256=7e78d3a1d6feec2f5b6a43628632decb6995755ade92ff4e51a2188c54ca6399
 RUN wget -qO minizinc.tgz https://github.com/MiniZinc/MiniZincIDE/releases/download/${MINIZINC_SOURCE_VERSION}/MiniZincIDE-${MINIZINC_SOURCE_VERSION}-bundle-linux-x86_64.tgz \
     && echo "${MINIZINC_SHA256}  minizinc.tgz" | sha256sum -c - \
     && tar xf minizinc.tgz --strip-components=1 \
@@ -221,8 +221,8 @@ RUN jq '.executable = "/opt/izplus/bin/fzn-izplus"' ./izplus.msc.template \
 
 FROM base AS gurobi
 
-ARG GUROBI_LINK=https://packages.gurobi.com/13.0/gurobi13.0.1_linux64.tar.gz
-ARG GUROBI_SHA256=ec623217ac5fa0657799a752ed7c02b2141fbb9c0ff34129d6e1f8c9a8fe4ed8
+ARG GUROBI_LINK=https://packages.gurobi.com/13.0/gurobi13.0.2_linux64.tar.gz
+ARG GUROBI_SHA256=cffd4ee3c1990294e80446626bd1772045e420d7c34c379839b6acca16f0a23b
 WORKDIR /opt/gurobi
 RUN wget -qO source.tar.gz "${GUROBI_LINK}"
 RUN echo "${GUROBI_SHA256}  source.tar.gz" | sha256sum -c - \
@@ -266,8 +266,8 @@ RUN bash install --no-xcsp
 
 FROM base AS picat
 
-ARG PICAT_SHA256=938f994ab94c95d308a1abcade0ea04229171304ae2a64ddcea56a49cdd4faa0
-RUN wget -qO picat.tar.gz https://picat-lang.org/download/picat394_linux64.tar.gz \
+ARG PICAT_SHA256=9a5c612894cc4c7987c66f2a3a335e9e3c52eca085fa4ddc7c7c579e7c50c52b
+RUN wget -qO picat.tar.gz https://picat-lang.org/download/picat398_linux64.tar.gz \
     && echo "${PICAT_SHA256}  picat.tar.gz" | sha256sum -c - \
     && tar -xzf picat.tar.gz -C /opt \
     && ln -s /opt/Picat/picat /usr/local/bin/picat \
