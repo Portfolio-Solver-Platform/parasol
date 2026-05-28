@@ -125,7 +125,6 @@ RUN mkdir -p /opt/choco/bin \
 
 FROM base AS pumpkin
 
-# Version 0.3
 ARG PUMPKIN_TAG=pumpkin-solver-v0.3.0
 ARG PUMPKIN_SHA256=2cd08992413ff383115566f7214c333a5389b2db5e6c35b79b43c9ca0958f0cf
 RUN wget -q https://github.com/ConSol-Lab/Pumpkin/archive/refs/tags/${PUMPKIN_TAG}.tar.gz -O pumpkin.tar.gz \
