@@ -8,6 +8,10 @@ jobs:
   ci:
     uses: ./.github/workflows/ci.yml
     secrets: inherit
+    permissions:
+      pull-requests: read
+      contents: read
+      packages: write
     with:
       update_image_cache: true
 
@@ -15,3 +19,8 @@ jobs:
     needs: ci
     uses: ./.github/workflows/cd.yml
     secrets: inherit
+    permissions:
+      contents: write
+      packages: write
+      issues: write
+      pull-requests: write

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -eou pipefail
+
+VERSION=$1
+
+cargo set-version "$VERSION"
