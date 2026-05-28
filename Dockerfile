@@ -235,7 +235,8 @@ FROM base AS solver-configs
 
 COPY ./minizinc/solvers/ /solvers/
 WORKDIR /solvers
-RUN jq '.executable[0] = "/usr/local/bin/parasol"' ./parasol.msc.template > ./parasol.msc
+ARG PARASOL_TEMPLATE="./parasol.msc.template"
+RUN jq '.executable[0] = "/usr/local/bin/parasol"' "${PARASOL_TEMPLATE}" > ./parasol.msc
 RUN jq '.executable = "/usr/local/bin/fzn-picat"' ./picat.msc.template > picat.msc.temp
 RUN jq '.mznlib = "/opt/fzn_picat/mznlib"' picat.msc.temp > ./picat.msc
 COPY --from=huub /huub/share/minizinc/solvers/huub.msc ./huub.msc.template

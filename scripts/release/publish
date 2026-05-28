@@ -4,19 +4,34 @@ set -eou pipefail
 VERSION=$1
 REGISTRY="ghcr.io/portfolio-solver-platform"
 IMAGE_NAME="parasol"
-
-IMAGE_BASE="$REGISTRY/$IMAGE_NAME"
 GIT_SHA=$(git rev-parse --short HEAD)
 
-IMAGE_URI="$IMAGE_BASE:$VERSION"
-IMAGE_URI_HASH="$IMAGE_BASE:$GIT_SHA"
-IMAGE_URI_LATEST="$IMAGE_BASE:latest"
-CACHE_URI="$IMAGE_BASE:buildcache"
-
-echo "Building and pushing Docker image ($IMAGE_URI)..."
+IMAGE_BASE_MAIN="$REGISTRY/$IMAGE_NAME"
+CACHE_URI="$IMAGE_BASE_MAIN:buildcache"
+echo "Building and pushing main Docker image ($IMAGE_BASE_MAIN)..."
 docker buildx build --push \
   --cache-from="type=registry,ref=$CACHE_URI" \
-  -t "$IMAGE_URI" \
-  -t "$IMAGE_URI_LATEST" \
-  -t "$IMAGE_URI_HASH" \
-  --metadata-file build-metadata.json .
+  -t "$IMAGE_BASE_MAIN:$VERSION" \
+  -t "$IMAGE_BASE_MAIN:latest" \
+  -t "$IMAGE_BASE_MAIN:$GIT_SHA" \
+  .
+
+IMAGE_BASE_ELIGIBLE="$REGISTRY/$IMAGE_NAME-challenge-eligible"
+echo "Building and pushing eligible challenge Docker image ($IMAGE_BASE_ELIGIBLE)..."
+docker buildx build --push \
+  --build-arg PARASOL_TEMPLATE=parasol-challenge-eligible.msc.template \
+  --cache-from="type=registry,ref=$CACHE_URI" \
+  -t "$IMAGE_BASE_ELIGIBLE:$VERSION" \
+  -t "$IMAGE_BASE_ELIGIBLE:latest" \
+  -t "$IMAGE_BASE_ELIGIBLE:$GIT_SHA" \
+  .
+
+IMAGE_BASE_INELIGIBLE="$REGISTRY/$IMAGE_NAME-challenge-ineligible"
+echo "Building and pushing ineligible challenge Docker image ($IMAGE_BASE_INELIGIBLE)..."
+docker buildx build --push \
+  --build-arg PARASOL_TEMPLATE=parasol-challenge-ineligible.msc.template \
+  --cache-from="type=registry,ref=$CACHE_URI" \
+  -t "$IMAGE_BASE_INELIGIBLE:$VERSION" \
+  -t "$IMAGE_BASE_INELIGIBLE:latest" \
+  -t "$IMAGE_BASE_INELIGIBLE:$GIT_SHA" \
+  .
