@@ -6,7 +6,11 @@ use std::{
     process::exit,
 };
 
-use crate::{ai::{SimpleAi, svc::SvcAi}, logging, mzn_to_fzn::compilation_scheduler::SolverPriority};
+use crate::{
+    ai::{SimpleAi, svc::SvcAi},
+    logging,
+    mzn_to_fzn::compilation_scheduler::SolverPriority,
+};
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about)]
@@ -282,7 +286,9 @@ pub fn unpack_ai(ai: &AiArgs) -> Result<Option<Box<dyn crate::ai::Ai + Send>>, U
             Some(Box::new(crate::ai::commandline::Ai::new(command.clone())))
         }
         Ai::SvcK1 => Some(Box::new(SvcAi::k1().map_err(UnpackAiError::SvcLoadFailed)?)),
-        Ai::SvcEk1 => Some(Box::new(SvcAi::ek1().map_err(UnpackAiError::SvcLoadFailed)?)),
+        Ai::SvcEk1 => Some(Box::new(
+            SvcAi::ek1().map_err(UnpackAiError::SvcLoadFailed)?,
+        )),
     })
 }
 

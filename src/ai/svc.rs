@@ -125,7 +125,10 @@ impl BagSvc {
             acc += r.read_u32()? as usize;
             sv_offsets.push(acc);
         }
-        assert_eq!(acc, total_svs, "sv_counts sum mismatches total_svs in header");
+        assert_eq!(
+            acc, total_svs,
+            "sv_counts sum mismatches total_svs in header"
+        );
 
         let support_vectors = r.read_f64_vec(total_svs * n_features)?;
         let dual_coef = r.read_f64_vec(total_svs)?;
