@@ -6,7 +6,7 @@ use std::{
     process::exit,
 };
 
-use crate::{ai::SimpleAi, logging, mzn_to_fzn::compilation_scheduler::SolverPriority};
+use crate::{ai::{SimpleAi, svc::SvcAi}, logging, mzn_to_fzn::compilation_scheduler::SolverPriority};
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about)]
@@ -199,6 +199,10 @@ pub enum Ai {
     Simple,
     /// Use the command line AI. MUST specify ai-config with `command=<command-path>`.
     CommandLine,
+    /// Bagged SVC scheduler for the cpsat8 vs k1-8c-8s-v1 portfolio. Model embedded in the binary.
+    SvcK1,
+    /// Bagged SVC scheduler for the cpsat8 vs ek1-8c-8s-v2 portfolio. Model embedded in the binary.
+    SvcEk1,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -277,6 +281,8 @@ pub fn unpack_ai(ai: &AiArgs) -> Result<Option<Box<dyn crate::ai::Ai + Send>>, U
 
             Some(Box::new(crate::ai::commandline::Ai::new(command.clone())))
         }
+        Ai::SvcK1 => Some(Box::new(SvcAi::k1().map_err(UnpackAiError::SvcLoadFailed)?)),
+        Ai::SvcEk1 => Some(Box::new(SvcAi::ek1().map_err(UnpackAiError::SvcLoadFailed)?)),
     })
 }
 
@@ -284,4 +290,6 @@ pub fn unpack_ai(ai: &AiArgs) -> Result<Option<Box<dyn crate::ai::Ai + Send>>, U
 pub enum UnpackAiError {
     #[error("'{0}' not provided in AI configuration when commandline AI has been specified")]
     CommandLineAiConfigMissing(String),
+    #[error("failed to load embedded SVC model: {0}")]
+    SvcLoadFailed(crate::ai::Error),
 }
