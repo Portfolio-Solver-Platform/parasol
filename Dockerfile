@@ -266,8 +266,8 @@ RUN bash install --no-xcsp
 
 FROM base AS picat
 
-ARG PICAT_SHA256=938f994ab94c95d308a1abcade0ea04229171304ae2a64ddcea56a49cdd4faa0
-RUN wget -qO picat.tar.gz https://picat-lang.org/download/picat394_linux64.tar.gz \
+ARG PICAT_SHA256=9a5c612894cc4c7987c66f2a3a335e9e3c52eca085fa4ddc7c7c579e7c50c52b
+RUN wget -qO picat.tar.gz https://picat-lang.org/download/picat398_linux64.tar.gz \
     && echo "${PICAT_SHA256}  picat.tar.gz" | sha256sum -c - \
     && tar -xzf picat.tar.gz -C /opt \
     && ln -s /opt/Picat/picat /usr/local/bin/picat \
