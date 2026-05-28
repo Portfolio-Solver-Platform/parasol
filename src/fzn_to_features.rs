@@ -33,10 +33,10 @@ async fn run_fzn_to_feat_cmd(fzn_model: &Path) -> Result<String, Error> {
 }
 
 fn get_fzn_to_feat_cmd(fzn_model: &Path) -> Command {
-    let mut cmd = Command::new("mzn2feat");
+    let mut cmd = Command::new("fzn2feat");
     cmd.kill_on_drop(true);
-    cmd.arg("-i");
     cmd.arg(fzn_model);
+    cmd.arg("csv");
 
     cmd
 }

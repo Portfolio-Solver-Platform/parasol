@@ -1,4 +1,5 @@
 pub mod commandline;
+pub mod svc;
 use crate::{
     scheduler::{Portfolio, SolverInfo},
     solvers,
