@@ -99,9 +99,9 @@ RUN wget -q https://github.com/google/or-tools/releases/download/v9.15/or-tools_
 FROM base AS choco
 
 WORKDIR /choco
-ARG CHOCO_VERSION=5.0.1
-ARG CHOCO_SRC_SHA256=67911b8df1c3b7bae0b216abc68b5240993150255fa79487a8a81a112e7acce3
-ARG CHOCO_JAR_SHA256=9f41ba0a41e4d3330e3742a0cfa3fe37db1ca051674852f732c4d4750b4d7533
+ARG CHOCO_VERSION=6.0.1
+ARG CHOCO_SRC_SHA256=e246f1632d94aa40de6dd60a7e4b8219b69a5febe26df77a50bc3211e2259bb8
+ARG CHOCO_JAR_SHA256=1cd6383f40feb1dc3a9789b8eb1c12e2d70b06006350d886e4a1722f790e2e56
 RUN wget -q https://github.com/chocoteam/choco-solver/archive/refs/tags/v${CHOCO_VERSION}.tar.gz -O choco.tar.gz \
     && echo "${CHOCO_SRC_SHA256}  choco.tar.gz" | sha256sum -c - \
     && wget -q https://github.com/chocoteam/choco-solver/releases/download/v${CHOCO_VERSION}/choco-solver-${CHOCO_VERSION}-light.jar -O choco.jar \
@@ -147,8 +147,8 @@ RUN mkdir -p /opt/pumpkin/bin \
 FROM base AS minizinc-source
 
 WORKDIR /source
-ENV MINIZINC_SOURCE_VERSION=2.9.5
-ARG MINIZINC_SHA256=591f70e49e49ddead9a4c091ad2450f972abde8de3acdff544d3bed50b279e44
+ENV MINIZINC_SOURCE_VERSION=2.9.7
+ARG MINIZINC_SHA256=7e78d3a1d6feec2f5b6a43628632decb6995755ade92ff4e51a2188c54ca6399
 RUN wget -qO minizinc.tgz https://github.com/MiniZinc/MiniZincIDE/releases/download/${MINIZINC_SOURCE_VERSION}/MiniZincIDE-${MINIZINC_SOURCE_VERSION}-bundle-linux-x86_64.tgz \
     && echo "${MINIZINC_SHA256}  minizinc.tgz" | sha256sum -c - \
     && tar xf minizinc.tgz --strip-components=1 \
