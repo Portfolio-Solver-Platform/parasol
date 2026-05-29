@@ -2,7 +2,7 @@
   "name" : "parasol",
   "version": "1.0",
   "id": "org.psp.parasol",
-  "executable": ["${EXE_PATH}", "sso", "--solver-config-mode", "cache", "--verbosity", "quiet", "--static-runtime", "0", "--restart-interval", "10000000000", "--ai", "command-line", "--ai-config", "command=./command-line-ai/svc_k1.py", "--static-schedule", "static-schedules/k1.csv"],
+  "executable": ["${EXE_PATH}", "sso", "--solver-config-mode", "cache", "--verbosity", "quiet", "--static-runtime", "0", "--restart-interval", "10000000000", "--ai", "svc-k1", "--static-schedule", "static-schedules/k1.csv"],
   "tags": ["portfolio"],
   "stdFlags": ["-p"],
   "extraFlags": [
