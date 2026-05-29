@@ -239,9 +239,12 @@ pub enum SolverConfigMode {
 }
 
 pub fn parse_ai_config(config: Option<&str>) -> HashMap<String, String> {
+    let Some(config) = config else {
+        return HashMap::new();
+    };
     config
-        .unwrap_or_default()
         .split(',')
+        .filter(|s| !s.is_empty())
         .map(|key_value| {
             let Some((key, value)) = key_value.split_once('=') else {
                 logging::error_msg!("Key-value pair is missing '=' in the AI configuration. The key-value: '{key_value}'");
