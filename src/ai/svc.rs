@@ -1,8 +1,17 @@
 use super::{Ai as AiTrait, Error, Features, Result};
 use crate::scheduler::{Portfolio, SolverInfo};
 
-const K1_BYTES: &[u8] = include_bytes!("svc/data/svc_k1.bin");
-const EK1_BYTES: &[u8] = include_bytes!("svc/data/svc_ek1.bin");
+const K1_ALL_BYTES: &[u8] = include_bytes!("svc/data/svc_k1.bin");
+const K1_NO2020_BYTES: &[u8] = include_bytes!("svc/data/svc_k1_no2020.bin");
+const K1_NO2021_BYTES: &[u8] = include_bytes!("svc/data/svc_k1_no2021.bin");
+const K1_NO2022_BYTES: &[u8] = include_bytes!("svc/data/svc_k1_no2022.bin");
+
+const EK1_ALL_BYTES: &[u8] = include_bytes!("svc/data/svc_ek1.bin");
+const EK1_NO2020_BYTES: &[u8] = include_bytes!("svc/data/svc_ek1_no2020.bin");
+const EK1_NO2021_BYTES: &[u8] = include_bytes!("svc/data/svc_ek1_no2021.bin");
+const EK1_NO2022_BYTES: &[u8] = include_bytes!("svc/data/svc_ek1_no2022.bin");
+
+pub const SUPPORTED_HELD_OUT_YEARS: &[u16] = &[2020, 2021, 2022];
 
 const CP_SAT: &str = "cp-sat";
 
@@ -31,20 +40,55 @@ pub struct SvcAi {
 }
 
 impl SvcAi {
-    pub fn k1() -> Result<Self> {
+    pub fn k1(held_out_year: Option<u16>) -> Result<Self> {
+        let bytes = pick_bytes(
+            "svc_k1",
+            held_out_year,
+            K1_ALL_BYTES,
+            K1_NO2020_BYTES,
+            K1_NO2021_BYTES,
+            K1_NO2022_BYTES,
+        )?;
         Ok(Self {
-            bag: BagSvc::from_bytes(K1_BYTES)
+            bag: BagSvc::from_bytes(bytes)
                 .map_err(|e| Error::Other(format!("svc_k1 model load: {e}")))?,
             portfolio: K1_PORTFOLIO,
         })
     }
 
-    pub fn ek1() -> Result<Self> {
+    pub fn ek1(held_out_year: Option<u16>) -> Result<Self> {
+        let bytes = pick_bytes(
+            "svc_ek1",
+            held_out_year,
+            EK1_ALL_BYTES,
+            EK1_NO2020_BYTES,
+            EK1_NO2021_BYTES,
+            EK1_NO2022_BYTES,
+        )?;
         Ok(Self {
-            bag: BagSvc::from_bytes(EK1_BYTES)
+            bag: BagSvc::from_bytes(bytes)
                 .map_err(|e| Error::Other(format!("svc_ek1 model load: {e}")))?,
             portfolio: EK1_PORTFOLIO,
         })
+    }
+}
+
+fn pick_bytes(
+    portfolio: &str,
+    held_out_year: Option<u16>,
+    all_bytes: &'static [u8],
+    no2020_bytes: &'static [u8],
+    no2021_bytes: &'static [u8],
+    no2022_bytes: &'static [u8],
+) -> Result<&'static [u8]> {
+    match held_out_year {
+        None => Ok(all_bytes),
+        Some(2020) => Ok(no2020_bytes),
+        Some(2021) => Ok(no2021_bytes),
+        Some(2022) => Ok(no2022_bytes),
+        Some(y) => Err(Error::Other(format!(
+            "{portfolio}: no model with held-out-year={y}; available: {SUPPORTED_HELD_OUT_YEARS:?} (or omit for all-years)"
+        ))),
     }
 }
 
@@ -297,8 +341,15 @@ mod tests {
 
     const PROBA_TOL: f64 = 1e-12;
 
-    const K1_FIXTURE: &[u8] = include_bytes!("svc/data/svc_k1_fixture.bin");
-    const EK1_FIXTURE: &[u8] = include_bytes!("svc/data/svc_ek1_fixture.bin");
+    const K1_ALL_FIXTURE: &[u8] = include_bytes!("svc/data/svc_k1_fixture.bin");
+    const K1_NO2020_FIXTURE: &[u8] = include_bytes!("svc/data/svc_k1_no2020_fixture.bin");
+    const K1_NO2021_FIXTURE: &[u8] = include_bytes!("svc/data/svc_k1_no2021_fixture.bin");
+    const K1_NO2022_FIXTURE: &[u8] = include_bytes!("svc/data/svc_k1_no2022_fixture.bin");
+
+    const EK1_ALL_FIXTURE: &[u8] = include_bytes!("svc/data/svc_ek1_fixture.bin");
+    const EK1_NO2020_FIXTURE: &[u8] = include_bytes!("svc/data/svc_ek1_no2020_fixture.bin");
+    const EK1_NO2021_FIXTURE: &[u8] = include_bytes!("svc/data/svc_ek1_no2021_fixture.bin");
+    const EK1_NO2022_FIXTURE: &[u8] = include_bytes!("svc/data/svc_ek1_no2022_fixture.bin");
 
     struct Fixture {
         n_features: usize,
@@ -393,12 +444,48 @@ mod tests {
     }
 
     #[test]
-    fn svc_k1_matches_python_fixture() {
-        check("k1", K1_BYTES, K1_FIXTURE);
+    fn svc_k1_all() {
+        check("k1", K1_ALL_BYTES, K1_ALL_FIXTURE);
+    }
+    #[test]
+    fn svc_k1_no2020() {
+        check("k1_no2020", K1_NO2020_BYTES, K1_NO2020_FIXTURE);
+    }
+    #[test]
+    fn svc_k1_no2021() {
+        check("k1_no2021", K1_NO2021_BYTES, K1_NO2021_FIXTURE);
+    }
+    #[test]
+    fn svc_k1_no2022() {
+        check("k1_no2022", K1_NO2022_BYTES, K1_NO2022_FIXTURE);
     }
 
     #[test]
-    fn svc_ek1_matches_python_fixture() {
-        check("ek1", EK1_BYTES, EK1_FIXTURE);
+    fn svc_ek1_all() {
+        check("ek1", EK1_ALL_BYTES, EK1_ALL_FIXTURE);
+    }
+    #[test]
+    fn svc_ek1_no2020() {
+        check("ek1_no2020", EK1_NO2020_BYTES, EK1_NO2020_FIXTURE);
+    }
+    #[test]
+    fn svc_ek1_no2021() {
+        check("ek1_no2021", EK1_NO2021_BYTES, EK1_NO2021_FIXTURE);
+    }
+    #[test]
+    fn svc_ek1_no2022() {
+        check("ek1_no2022", EK1_NO2022_BYTES, EK1_NO2022_FIXTURE);
+    }
+
+    #[test]
+    fn svcai_constructors_accept_supported_years_and_reject_others() {
+        for year in SUPPORTED_HELD_OUT_YEARS {
+            SvcAi::k1(Some(*year)).expect("k1 should accept supported year");
+            SvcAi::ek1(Some(*year)).expect("ek1 should accept supported year");
+        }
+        SvcAi::k1(None).expect("k1 should accept all-years (None)");
+        SvcAi::ek1(None).expect("ek1 should accept all-years (None)");
+        assert!(SvcAi::k1(Some(2019)).is_err());
+        assert!(SvcAi::ek1(Some(2023)).is_err());
     }
 }

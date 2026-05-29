@@ -285,11 +285,29 @@ pub fn unpack_ai(ai: &AiArgs) -> Result<Option<Box<dyn crate::ai::Ai + Send>>, U
 
             Some(Box::new(crate::ai::commandline::Ai::new(command.clone())))
         }
-        Ai::SvcK1 => Some(Box::new(SvcAi::k1().map_err(UnpackAiError::SvcLoadFailed)?)),
-        Ai::SvcEk1 => Some(Box::new(
-            SvcAi::ek1().map_err(UnpackAiError::SvcLoadFailed)?,
-        )),
+        Ai::SvcK1 => {
+            let year = parse_held_out_year(ai.config.as_deref())?;
+            Some(Box::new(
+                SvcAi::k1(year).map_err(UnpackAiError::SvcLoadFailed)?,
+            ))
+        }
+        Ai::SvcEk1 => {
+            let year = parse_held_out_year(ai.config.as_deref())?;
+            Some(Box::new(
+                SvcAi::ek1(year).map_err(UnpackAiError::SvcLoadFailed)?,
+            ))
+        }
     })
+}
+
+fn parse_held_out_year(config: Option<&str>) -> Result<Option<u16>, UnpackAiError> {
+    let cfg = parse_ai_config(config);
+    let Some(raw) = cfg.get("held-out-year") else {
+        return Ok(None);
+    };
+    raw.parse::<u16>()
+        .map(Some)
+        .map_err(|_| UnpackAiError::SvcHeldOutYearInvalid(raw.clone()))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -298,4 +316,6 @@ pub enum UnpackAiError {
     CommandLineAiConfigMissing(String),
     #[error("failed to load embedded SVC model: {0}")]
     SvcLoadFailed(crate::ai::Error),
+    #[error("--ai-config held-out-year='{0}' is not a valid year (expected an integer)")]
+    SvcHeldOutYearInvalid(String),
 }
