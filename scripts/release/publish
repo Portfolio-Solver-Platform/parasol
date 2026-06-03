@@ -8,7 +8,7 @@ IMAGE_NAME="parasol"
 GIT_SHA=$(git rev-parse --short HEAD)
 
 IMAGE_BASE_MAIN="$GHCR_REGISTRY/$IMAGE_NAME"
-CACHE_URI="$IMAGE_BASE_MAIN:buildcache"
+CACHE_URI="$IMAGE_BASE_MAIN:latest"
 
 echo "Building and pushing main Docker image ($IMAGE_BASE_MAIN) to GHCR..."
 docker buildx build --push \
