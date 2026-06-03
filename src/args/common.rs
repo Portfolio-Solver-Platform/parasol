@@ -145,7 +145,13 @@ pub struct CommonArgs {
     // === Execution ===
     /// The number of cores parasol should use.
     /// `--parallel` is a challenge alias: the PAR-class .mpc forwards `--parallel <n>`.
-    #[arg(long, short = 'p', alias = "parallel", default_value = "2", help_heading = "Execution")]
+    #[arg(
+        long,
+        short = 'p',
+        alias = "parallel",
+        default_value = "2",
+        help_heading = "Execution"
+    )]
     pub cores: usize,
 
     /// Pin specific solvers to dedicated CPU cores. Provide a comma-separated list of solver IDs to pin.
