@@ -26,7 +26,9 @@
     ["--compilation-priority", "Optional path to a solver compiler priority configuration file", "string", ""],
     ["--output-solver", "When a solution is found, outputs the ID of the solver that found the solution", "bool", ""],
     ["--output-time", "Print elapsed time after each solution", "bool", ""],
-    ["--verbosity", "Logging verbosity level (quiet, error, warning, info)", "string", "warning"]
+    ["--verbosity", "Logging verbosity level (quiet, error, warning, info)", "string", "warning"],
+    ["--parallel", "Challenge alias for -p (number of cores)", "int", ""],
+    ["--free-search", "Challenge free-search flag (no-op; the portfolio always searches freely)", "bool", "false"]
   ],
   "inputType": "MZN",
   "supportsMzn": true,

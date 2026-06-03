@@ -18,7 +18,7 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs \
 COPY src ./src
 RUN touch src/main.rs && cargo build --release --locked --quiet
 
-FROM minizinc/mznc2026:latest@sha256:874b347fd84a0136dc1eadf4d287c8a258cd1cd918b0061697d28d69b75effba AS base-small
+FROM minizinc/mznc2026:latest AS base-small
 
 WORKDIR /app
 
