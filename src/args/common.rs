@@ -122,6 +122,14 @@ pub struct CommonArgs {
     )]
     pub output_mode: OutputMode,
 
+    /// This is only there for the competition, it will always produce intermediate solutions
+    #[arg(long, short = 'i', help_heading = "Output")]
+    pub intermediate_solutions: bool,
+
+    // This is only there for the competition, it will always use free search
+    #[arg(long, short = 'f', help_heading = "Output")]
+    pub free_search: bool,
+
     /// This is only there for the competition, it will always output objective
     #[arg(long, help_heading = "Output")]
     pub output_objective: bool,
