@@ -4,7 +4,7 @@
   "id": "org.psp.parasol",
   "executable": ["${EXE_PATH}", "sso"],
   "tags": ["portfolio"],
-  "stdFlags": ["-p"],
+  "stdFlags": ["-p", "-i", "-f"],
   "extraFlags": [
     ["--ai", "The AI used to determine the solver schedule dynamically (none, simple, command-line)", "string", "simple"],
     ["--ai-config", "Configuration for the AI in format: <key1>=<value1>,<key2>=<value2>,...", "string", ""],
@@ -26,7 +26,9 @@
     ["--compilation-priority", "Optional path to a solver compiler priority configuration file", "string", ""],
     ["--output-solver", "When a solution is found, outputs the ID of the solver that found the solution", "bool", ""],
     ["--output-time", "Print elapsed time after each solution", "bool", ""],
-    ["--verbosity", "Logging verbosity level (quiet, error, warning, info)", "string", "warning"]
+    ["--verbosity", "Logging verbosity level (quiet, error, warning, info)", "string", "warning"],
+    ["--parallel", "Challenge alias for -p (number of cores)", "int", ""],
+    ["--free-search", "Challenge free-search flag (no-op; the portfolio always searches freely)", "bool", "false"]
   ],
   "inputType": "MZN",
   "supportsMzn": true,

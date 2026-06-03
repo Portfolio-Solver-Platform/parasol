@@ -122,6 +122,14 @@ pub struct CommonArgs {
     )]
     pub output_mode: OutputMode,
 
+    /// This is only there for the competition, it will always produce intermediate solutions
+    #[arg(long, short = 'i', help_heading = "Output")]
+    pub intermediate_solutions: bool,
+
+    // This is only there for the competition, it will always use free search
+    #[arg(long, short = 'f', help_heading = "Output")]
+    pub free_search: bool,
+
     /// This is only there for the competition, it will always output objective
     #[arg(long, help_heading = "Output")]
     pub output_objective: bool,
@@ -135,8 +143,15 @@ pub struct CommonArgs {
     pub output_time: bool,
 
     // === Execution ===
-    /// The number of cores parasol should use
-    #[arg(long, short = 'p', default_value = "2", help_heading = "Execution")]
+    /// The number of cores parasol should use.
+    /// `--parallel` is a challenge alias: the PAR-class .mpc forwards `--parallel <n>`.
+    #[arg(
+        long,
+        short = 'p',
+        alias = "parallel",
+        default_value = "2",
+        help_heading = "Execution"
+    )]
     pub cores: usize,
 
     /// Pin specific solvers to dedicated CPU cores. Provide a comma-separated list of solver IDs to pin.
