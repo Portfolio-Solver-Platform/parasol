@@ -1,42 +1,43 @@
 # Parasol
 
-A multi-threaded, low-overhead universal portfolio executor for MiniZinc, written in Rust.
+Parasol is a portfolio executor for MiniZinc, written in Rust. It takes care of running a portfolio of solvers, so a portfolio selector only has to decide which solvers to run and with how many cores. Parasol can be installed as a normal MiniZinc solver.
 
-No single constraint solver is best on every problem, so portfolio solvers choose which solvers to run for each problem: one solver on all cores, or several in parallel. Parasol does the execution: it compiles the model for each solver, runs the solvers and coordinates them. A portfolio selector then only has to decide *which solvers to run, on how many cores*. Parasol installs as a regular MiniZinc solver.
-
-**Showcase:** an SVC selector built on Parasol won **silver in the [MiniZinc Challenge 2026](https://www.minizinc.org/challenge/2026/results/) (Open category)**, second only to Google's OR-Tools CP-SAT. [More below](#showcase-minizinc-challenge-2026).
+To show what Parasol can do, we built a selector on top of it and got second place (silver) in the Open category of the [MiniZinc Challenge 2026](https://www.minizinc.org/challenge/2026/results/), only behind Google's OR-Tools CP-SAT. See [MiniZinc Challenge 2026](#minizinc-challenge-2026).
 
 ## How it works
 
-1. **Pre-solving.** An optional static schedule of solvers starts right away. Meanwhile, Parasol compiles the model on one core and extracts its features with [fzn2feat](https://github.com/CP-Unibo/mzn2feat).
-2. **Selection.** The selector receives the features and the core budget, and returns a portfolio: a list of solvers with a number of cores each. If feature extraction takes too long, an optional timeout schedule is used instead.
-3. **Execution.** Parasol switches from the static schedule to the selected portfolio, starting, suspending and resuming solvers as needed. At a fixed interval, solvers that are behind are restarted with the best objective found so far as a bound.
+No single solver is best on every problem, so a portfolio solver picks which solvers to run for each problem. This can be one solver on all cores or several solvers in parallel.
 
-Along the way, Parasol also:
-- discovers the solvers installed for MiniZinc, or loads them from a prebuilt cache
-- compiles the model for each solver in parallel, and pre-compiles for solvers a selector is likely to pick (`--compilation-priority`) without taking cores from running solvers
-- manages each solver as a whole process tree, so suspending or killing a solver also reaches its child processes
-- kills solvers when memory runs low (`--enforce-memory`), can pin solvers to dedicated cores (`--pin-solvers`), and falls back to CP-SAT if the orchestrator fails (`--backup-solver`)
+A run has three steps:
+1. A static schedule of solvers can start right away. Meanwhile Parasol compiles the model on one core and extracts its features with [fzn2feat](https://github.com/CP-Unibo/mzn2feat).
+2. The selector gets the features and the number of cores, and returns a portfolio, which is a list of solvers with a number of cores each. If extracting the features takes too long, a timeout schedule can be used instead.
+3. Parasol switches from the static schedule to the portfolio, and starts, suspends and resumes solvers as needed. Every few seconds, solvers that are behind are restarted with the best objective found so far as a bound.
 
-## Plug in your own selector
+Parasol also:
+- finds the solvers installed for MiniZinc, or loads them from a cache
+- compiles the model for each solver in parallel, and can compile ahead for solvers the selector is likely to pick (`--compilation-priority`)
+- controls each solver's whole process tree, so suspending or killing a solver also hits its child processes
+- kills solvers if memory runs low (`--enforce-memory`), can pin solvers to their own cores (`--pin-solvers`), and falls back to CP-SAT if something fails (`--backup-solver`)
 
-Choose the selector with `--ai`:
+## Using your own selector
+
+You choose the selector with `--ai`:
 
 | `--ai` | Selector |
 |---|---|
-| `none` | Only the static schedule |
-| `simple` | One core each for the first known solvers (default) |
-| `command-line` | Any external program, see below |
-| `svc-k1`, `svc-ek1` | Our challenge selectors, embedded in the binary (see [Showcase](#showcase-minizinc-challenge-2026)) |
+| `none` | Only runs the static schedule |
+| `simple` | One core each for the first solvers it knows (default) |
+| `command-line` | Your own program, see below |
+| `svc-k1`, `svc-ek1` | Our selectors from the MiniZinc Challenge, built into the binary |
 
-With `command-line`, Parasol runs your program with the core budget and the comma-separated features:
+With `command-line`, Parasol runs your program with the number of cores and the features as a comma separated list:
 
 ```bash
 parasol sso model.mzn data.dzn --ai command-line --ai-config command=./my-selector
-# Parasol then calls: ./my-selector -p <cores> <f1>,<f2>,...,<fn>
+# Parasol then runs: ./my-selector -p <cores> <f1>,<f2>,...,<fn>
 ```
 
-The program prints one `<solver-id>,<cores>` line per solver to stdout:
+Your program should print one `<solver-id>,<cores>` line per solver:
 
 ```
 cp-sat,4
@@ -44,15 +45,13 @@ org.gecode.gecode,2
 org.minizinc.mip.gurobi,2
 ```
 
-See [`command-line-ai/example.py`](command-line-ai/example.py) for a minimal selector. To build a selector into Parasol itself, implement the `Ai` trait in [`src/ai.rs`](src/ai.rs).
+There is a minimal example in [`command-line-ai/example.py`](command-line-ai/example.py). You can also build a selector into Parasol by implementing the `Ai` trait in [`src/ai.rs`](src/ai.rs).
 
-## Showcase: MiniZinc Challenge 2026
+## MiniZinc Challenge 2026
 
-To show what Parasol can do, we built a selector on top of it and entered it in the [MiniZinc Challenge 2026](https://www.minizinc.org/challenge/2026/results/), where it won silver in the Open category, second only to Google's OR-Tools CP-SAT.
+Our selector picks between running CP-SAT on all 8 cores and running a portfolio of other solvers. It is a bagged ensemble of 30 support vector classifiers (SVCs) with RBF kernels, trained on 95 features. Everything else is handled by Parasol. The training code and experiments are in [ai-tools](https://github.com/Portfolio-Solver-Platform/ai-tools).
 
-The selector makes a single choice per instance: run CP-SAT on all 8 cores, or run a portfolio of complementary solvers. It is a bagged ensemble of 30 support vector classifiers (SVCs) with RBF kernels over 95 instance features. Everything else, from compiling the model to running and coordinating the solvers, is Parasol. Training code and experiments are in [ai-tools](https://github.com/Portfolio-Solver-Platform/ai-tools).
-
-We entered two configurations, which differ in the portfolio the selector can choose:
+We submitted two versions, which have different solvers in the portfolio:
 
 | Solver | Parasol-e (`svc-ek1`) | Parasol-i (`svc-k1`) |
 |---|:-:|:-:|
@@ -66,7 +65,7 @@ We entered two configurations, which differ in the portfolio the selector can ch
 | Chuffed | | 1 |
 | Gecode | | 2 |
 
-Numbers are cores. The exact configurations are in [`minizinc/solvers/`](minizinc/solvers/).
+The numbers are cores. The configurations are in [`minizinc/solvers/`](minizinc/solvers/).
 
 ## Usage
 
@@ -112,8 +111,8 @@ and remove the `.template` suffix from the file name and replace `${EXE_PATH}` i
 
 ### Static schedules
 
-`--static-schedule` (together with `--static-runtime`) sets the schedule that runs before the selector's portfolio. The file is a CSV without a header, with one `<solver-id>,<cores>` line per solver. Examples are in [`static-schedules/`](static-schedules/).
+You set the static schedule with `--static-schedule` together with `--static-runtime`. The file is a CSV without a header, with one `<solver-id>,<cores>` line per solver. There are examples in [`static-schedules/`](static-schedules/).
 
 ## Authors
 
-Parasol was developed as part of a master's thesis at the University of Southern Denmark by [Jonas Bork Jørgensen](https://github.com/jonas-bork) and [Sofus Hesseldahl Laubel](https://github.com/sofusl90), supervised by Jacopo Mauro and in collaboration with Alessio Pellegrino. It is part of the [Portfolio Solver Platform](https://github.com/Portfolio-Solver-Platform).
+Parasol was made as part of our master's thesis at the University of Southern Denmark by [Jonas Bork Jørgensen](https://github.com/jonas-bork) and [Sofus Hesseldahl Laubel](https://github.com/sofusl90), supervised by Jacopo Mauro and in collaboration with Alessio Pellegrino. It is part of the [Portfolio Solver Platform](https://github.com/Portfolio-Solver-Platform).
